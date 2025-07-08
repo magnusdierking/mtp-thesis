@@ -81,6 +81,10 @@ class PushTFranka(Task):
                                     np.pi/4])  # Initialize ctrl to qpos for the first 7 controls
         return mj_model, mj_data
 
+    ##################################
+    ##       Goal Error Terms       ##
+    ##################################
+    
     def _get_position_err(self, state: mjx.Data) -> jax.Array:
         """ Get the position error of the block relative to a goal position."""
         sensor_adr = self.model.sensor_adr[self.block_position_sensor]
@@ -93,18 +97,36 @@ class PushTFranka(Task):
         goal_quat = jnp.array([1.0, 0.0, 0.0, 0.0])
         return mjx._src.math.quat_sub(block_quat, goal_quat)
     
+    ##################################
+    ##  Safety Penalties / Rewards  ##
+    ##################################
+    
     def _get_table_collision_err(self, state: mjx.Data) -> jax.Array:
         """Check if robot end effector is colliding with the table."""
         sensor_adr = self.model.sensor_adr[self.ee_position_sensor]
         # Get the end effector position
         # Assuming the end effector position is given by a 3D vector in the sensor data
-        ee_pos_z = state.sensordata[sensor_adr + 2]  # z-coordinate of the end effector
-        dist = jnp.abs(ee_pos_z - 0.005)  # Assuming the table is at z = 0.005
-        log_barrier_cost = -jnp.log(dist + 1e-8)  # Adding a small value to avoid log(0)
-        # proximity term to keep close to the table
-        target = 0.005
-        proximity_cost = jnp.square(ee_pos_z - target)
-        return log_barrier_cost + proximity_cost
+        ee_pos_z = state.sensordata[sensor_adr + 2]  
+        # if below table get error, else 0
+        table_height = 0.002  # Assuming the table is at z=0
+        table_collision = jnp.where(ee_pos_z < table_height, 1.0, 0.0)
+        return table_collision  # Return 1 if colliding with table, else 0
+        
+    def _get_safezone_reward(self, state: mjx.Data) -> jax.Array:
+        """Reward for being in a safe zone."""
+        sensor_adr = self.model.sensor_adr[self.ee_position_sensor]
+        # Get the end effector position
+        ee_pos = state.sensordata[sensor_adr : sensor_adr + 3]
+        # if z in [-0.001, 0.01]
+        safe_zone = jnp.logical_and(ee_pos[2] >= -0.001, ee_pos[2] <= 0.01)
+        return jnp.where(safe_zone, -1.0, 0.0)  # Reward of 1 if in safe zone, else 0
+         
+    
+    
+    
+    ################################## 
+    ##      End Effector Terms      ##
+    ##################################
     
     def _get_ee_block_distance(self, state: mjx.Data) -> jax.Array:
         """Get the distance between the end effector and the block."""
@@ -126,6 +148,8 @@ class PushTFranka(Task):
         ee_quat = state.sensordata[sensor_adr : sensor_adr + 4]
         goal_quat = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # Assuming goal orientation is aligned with x-axis
         return mjx._src.math.quat_sub(ee_quat, goal_quat)
+    
+    
 
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
         position_err = self._get_position_err(state)
@@ -133,14 +157,20 @@ class PushTFranka(Task):
         table_err = self._get_table_collision_err(state)
         ee_orientation_err = self._get_ee_orientation_err(state)
         ee_block_distance = self._get_ee_block_distance(state)
+        safezone_reward = self._get_safezone_reward(state)
         
         position_cost = jnp.sum(jnp.square(position_err))
         orientation_cost = jnp.sum(jnp.square(orientation_err))
         table_collision_cost = jnp.sum(jnp.square(table_err))
         ee_orientation_cost = jnp.sum(jnp.square(ee_orientation_err))
         ee_block_distance_cost = jnp.square(ee_block_distance)
+        safezone_reward = jnp.sum(safezone_reward)
                                                                               
-        return 5 * position_cost + orientation_cost + ee_block_distance_cost #0.2 * ee_orientation_cost  
+        return 5 * position_cost + orientation_cost \
+                                 + ee_block_distance_cost \
+                                 + safezone_reward \
+                                 + 0.25*table_collision_cost 
+        #0.2 * ee_orientation_cost  
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         return self.running_cost(state, jnp.zeros(self.model.nu))
