@@ -11,15 +11,6 @@ from mujoco import mjx
 
 from hydrax.alg_base import SamplingBasedController
 
-"""
-Utilities for asynchronous simulation, with the simulator and controller running
-in separate processes. The controller runs as fast as possible, while the
-simulator runs in real time.
-
-This is more realistic than deterministic simulation, but supports a limited set
-of features (e.g., no trace visualization, zero-order-hold interpolation only).
-"""
-
 
 class SharedMemoryNumpyArray:
     """Helper class to store a numpy array in shared memory."""
@@ -77,6 +68,9 @@ class SharedMemoryMujocoData:
             mj_data: The mujoco data object to store in shared memory.
             ctx: The multiprocessing context to use.
         """
+        # store flag whether all real states have been set
+        self.states_received = ctx.Value("b", False)
+        
         # N.B. we use float32 to match JAX's default precision
         self.qpos = SharedMemoryNumpyArray(
             np.array(mj_data.qpos, dtype=np.float32), ctx
@@ -100,7 +94,6 @@ class SharedMemoryMujocoData:
 def run_controller(
     ctrl: SamplingBasedController,
     shm_data: SharedMemoryMujocoData,
-    ready: Event,
     finished: Event,
     seed: int = 0,
 ) -> None:
@@ -132,10 +125,8 @@ def run_controller(
     policy_params = jit_optimize(mjx_data, policy_params)
     print(f"Time to jit: {time.time() - st}")
 
-    # Signal that we're ready to start
-    ready.set()
 
-    while not finished.is_set():
+    while shm_data.states_received.value and not finished.is_set(): # Wait until we have received the initial state from the actual robot
         st = time.time()
 
         # Set the start state for the controller, reading the lastest state info
@@ -157,6 +148,7 @@ def run_controller(
         # TODO: send the full parameters rather than assuming zero-order
         # hold and a sufficiently high control rate
         a = get_action(policy_params, 0.0)
+        
         shm_data.ctrl[:] = np.array(
             a, dtype=np.float32
         )
@@ -171,7 +163,6 @@ def run_controller(
 
 def run_ros2_interface(
     shm_data: SharedMemoryMujocoData,
-    ready: Event,
     finished: Event,
     delay_ctrl_start: bool=False,
 ) -> None:
@@ -185,40 +176,24 @@ def run_ros2_interface(
         finished: Shared flag for stopping the simulation.
         delay_ctrl_start: Whether to delay the controller start.
     """
-    # Wait for the controller to be ready
-    if not delay_ctrl_start:
-        ready.wait()
 
-    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
-        while viewer.is_running():
-            start_time = time.time()
-
-            # Write the latest state to shared memory for the controller to read
-            shm_data.qpos[:] = mj_data.qpos
-            shm_data.qvel[:] = mj_data.qvel
-
-            if len(mj_data.mocap_pos) > 0:
-                shm_data.mocap_pos[:] = mj_data.mocap_pos
-                shm_data.mocap_quat[:] = mj_data.mocap_quat
-
-            # Read the lastest control values from shared memory
-            # TODO: actually query the spline rather than assuming zero-order
-            # hold and a sufficiently high control rate
-            if ready.is_set():
-                mj_data.ctrl[:] = shm_data.ctrl[:]
-
-            # Step the simulation
-            mujoco.mj_step(mj_model, mj_data)
-            viewer.sync()
-
-            # Try to run in roughly real-time
-            elapsed_time = time.time() - start_time
-            if elapsed_time < mj_model.opt.timestep:
-                time.sleep(mj_model.opt.timestep - elapsed_time)
-
-    # Signal that the simulation is done
-    finished.set()
-
+    rclpy.init(args=args)
+    
+    robot = PandaBridge(shm_data,
+                        robot_ip='10.90.90.144', 
+                        gripper_type=None)
+    
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(robot)
+    
+    try:   
+        executor.spin()
+    finally:
+        robot.destroy_node()
+        finished.set()
+        rclpy.shutdown()
+        
+        
 
 def run_interactive(
     controller: SamplingBasedController,
@@ -245,10 +220,10 @@ def run_interactive(
     ready = ctx.Event()
     finished = ctx.Event()
 
-    # Set up the simulator and controller processes
+    # Set up ros interface 
     sim = ctx.Process(
-        target=run_simulator,
-        args=(mj_model, mj_data, shm_data, ready, finished, delay_ctrl_start),
+        target=run_ros2_interface,
+        args=(shm_data, ready, finished, delay_ctrl_start),
     )
     control = ctx.Process(
         target=run_controller, args=(controller, shm_data, ready, finished)
