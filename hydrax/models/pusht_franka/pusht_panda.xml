@@ -7,6 +7,9 @@
       <joint armature="0.1" damping="1" axis="0 0 1" range="-2.8973 2.8973"/>
       <general dyntype="none" biastype="affine" ctrlrange="-2.8973 2.8973" forcerange="-87 87"/>
       <position forcerange="-100 100"/>
+      <default class="panda_vel">
+        <velocity ctrllimited="true" ctrlrange="-2.0 2.0" kv="50"/>
+      </default>
       <default class="finger">
         <joint axis="0 1 0" type="slide" range="0 0.04"/>
       </default>
@@ -283,21 +286,46 @@
   </equality> -->
 
   <actuator>
-    <position class="panda" name="actuator1" joint="joint1" kp="1000" kv="20"
-     ctrlrange="-2.8973 2.8973"/>
-    <position class="panda" name="actuator2" joint="joint2" kp="1000" kv="20"
-     ctrlrange="-1.7628 1.7628"/>
-    <position class="panda" name="actuator3" joint="joint3" kp="750" kv="4"
-     ctrlrange="-2.8973 2.8973"/>
-    <position class="panda" name="actuator4" joint="joint4" kp="750" kv="4"
-     ctrlrange="-3.0718 -0.0698"/>
-    <position class="panda" name="actuator5" joint="joint5" kp="300" kv="2"
-     forcerange="-12 12" ctrlrange="-2.8973 2.8973"/>
-    <position class="panda" name="actuator6" joint="joint6" kp="300" kv="2" forcerange="-12 12"
-      ctrlrange="-0.0175 3.7525"/>
+    <!-- <position class="panda" name="actuator1" joint="joint1" kp="1000" kv="20" ctrlrange="-2.8973 2.8973"/>
+    <position class="panda" name="actuator2" joint="joint2" kp="1000" kv="20" ctrlrange="-1.7628 1.7628"/>
+    <position class="panda" name="actuator3" joint="joint3" kp="750" kv="4" ctrlrange="-2.8973 2.8973"/>
+    <position class="panda" name="actuator4" joint="joint4" kp="750" kv="4" ctrlrange="-3.0718 -0.0698"/>
+    <position class="panda" name="actuator5" joint="joint5" kp="300" kv="2" forcerange="-12 12" ctrlrange="-2.8973 2.8973"/>
+    <position class="panda" name="actuator6" joint="joint6" kp="300" kv="2" forcerange="-12 12" ctrlrange="-0.0175 3.7525"/>
     <position class="panda" name="actuator7" joint="joint7" kp="300" kv="2" forcerange="-12 12"/>
-    <!-- <general class="panda" name="actuator8" joint="finger_joint1"
+    <general class="panda" name="actuator8" joint="finger_joint1"
      ctrlrange="0 0.04" gainprm="350 0 0" biasprm="0 -350 -10" forcerange="-200 200"/> -->
+
+    <!-- <position class="panda" name="actuator1" joint="joint1" kp="1000" kv="20"
+              ctrlrange="-2.7437 2.7437" forcerange="-87.0 87.0"/>
+    <position class="panda" name="actuator2" joint="joint2" kp="1000" kv="20"
+              ctrlrange="-1.7837 1.7837" forcerange="-87.0 87.0"/>
+    <position class="panda" name="actuator3" joint="joint3" kp="750" kv="4"
+              ctrlrange="-2.9007 2.9007" forcerange="-87.0 87.0"/>
+    <position class="panda" name="actuator4" joint="joint4" kp="750" kv="4"
+              ctrlrange="-3.0421 -0.1518" forcerange="-87.0 87.0"/>
+    <position class="panda" name="actuator5" joint="joint5" kp="300" kv="2"
+              ctrlrange="-2.8065 2.8065" forcerange="-12.0 12.0"/>
+    <position class="panda" name="actuator6" joint="joint6" kp="300" kv="2"
+              ctrlrange="0.5445 4.5169" forcerange="-12.0 12.0"/>
+    <position class="panda" name="actuator7" joint="joint7" kp="300" kv="2"
+              ctrlrange="-3.0159 3.0159" forcerange="-12.0 12.0"/> -->
+
+    <!-- <velocity class="panda_vel" name="vel_joint1" joint="joint1" ctrlrange="-2.62 2.62" forcerange="-87.0 87.0"/>
+    <velocity class="panda_vel" name="vel_joint2" joint="joint2" ctrlrange="-2.62 2.62" forcerange="-87.0 87.0"/>
+    <velocity class="panda_vel" name="vel_joint3" joint="joint3" ctrlrange="-2.62 2.62" forcerange="-87.0 87.0"/>
+    <velocity class="panda_vel" name="vel_joint4" joint="joint4" ctrlrange="-2.62 2.62" forcerange="-87.0 87.0"/>
+    <velocity class="panda_vel" name="vel_joint5" joint="joint5" ctrlrange="-5.26 5.26" forcerange="-12.0 12.0"/>
+    <velocity class="panda_vel" name="vel_joint6" joint="joint6" ctrlrange="-4.18 4.18" forcerange="-12.0 12.0"/>
+    <velocity class="panda_vel" name="vel_joint7" joint="joint7" ctrlrange="-5.26 5.26" forcerange="-12.0 12.0"/> -->
+
+    <velocity class="panda_vel" name="vel_joint1_half" joint="joint1" ctrlrange="-1.31 1.31" forcerange="-43.5 43.5"/>
+    <velocity class="panda_vel" name="vel_joint2_half" joint="joint2" ctrlrange="-1.31 1.31" forcerange="-43.5 43.5"/>
+    <velocity class="panda_vel" name="vel_joint3_half" joint="joint3" ctrlrange="-1.31 1.31" forcerange="-43.5 43.5"/>
+    <velocity class="panda_vel" name="vel_joint4_half" joint="joint4" ctrlrange="-1.31 1.31" forcerange="-43.5 43.5"/>
+    <velocity class="panda_vel" name="vel_joint5_half" joint="joint5" ctrlrange="-2.63 2.63" forcerange="-6.0 6.0"/>
+    <velocity class="panda_vel" name="vel_joint6_half" joint="joint6" ctrlrange="-2.09 2.09" forcerange="-6.0 6.0"/>
+    <velocity class="panda_vel" name="vel_joint7_half" joint="joint7" ctrlrange="-2.63 2.63" forcerange="-6.0 6.0"/>
   </actuator>
 
   <sensor>

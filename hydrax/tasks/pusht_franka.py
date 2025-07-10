@@ -14,7 +14,7 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 5, sim_steps_per_control_step: int = 10
+        self, planning_horizon: int = 15, sim_steps_per_control_step: int = 10
     ):
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(
@@ -118,7 +118,7 @@ class PushTFranka(Task):
         # Get the end effector position
         ee_pos = state.sensordata[sensor_adr : sensor_adr + 3]
         # if z in [-0.001, 0.01]
-        safe_zone = jnp.logical_and(ee_pos[2] >= -0.001, ee_pos[2] <= 0.01)
+        safe_zone = jnp.logical_and(ee_pos[2] >= 0.01, ee_pos[2] <= 0.4)
         return jnp.where(safe_zone, -1.0, 0.0)  # Reward of 1 if in safe zone, else 0
          
     
@@ -149,28 +149,50 @@ class PushTFranka(Task):
         goal_quat = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # Assuming goal orientation is aligned with x-axis
         return mjx._src.math.quat_sub(ee_quat, goal_quat)
     
-    
+
+    ################################## 
+    ##          For Testing         ##
+    ##################################
+
+    def _get_dummy_error(self, state: mjx.Data) -> jax.Array:
+        # simply push back to initial position
+        initial_position = jnp.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4]) 
+
 
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
+        # goal based
         position_err = self._get_position_err(state)
         orientation_err = self._get_orientation_err(state)
-        table_err = self._get_table_collision_err(state)
-        ee_orientation_err = self._get_ee_orientation_err(state)
-        ee_block_distance = self._get_ee_block_distance(state)
-        safezone_reward = self._get_safezone_reward(state)
-        
         position_cost = jnp.sum(jnp.square(position_err))
         orientation_cost = jnp.sum(jnp.square(orientation_err))
-        table_collision_cost = jnp.sum(jnp.square(table_err))
+        
+        total_goal_err = 7 * position_cost + 2 * orientation_cost
+        
+        # This seems to lead to a behavior where the ee doesnt watn tto be in contact, as this increases error
+        ee_orientation_err = self._get_ee_orientation_err(state)
         ee_orientation_cost = jnp.sum(jnp.square(ee_orientation_err))
-        ee_block_distance_cost = jnp.square(ee_block_distance)
+        
+        # safety based
+        ee_block_distance = self._get_ee_block_distance(state)
+        safezone_reward = self._get_safezone_reward(state)
+        ee_block_distance_cost = jnp.square(ee_block_distance)# seems to be important for greavity compensation
         safezone_reward = jnp.sum(safezone_reward)
+        
+        total_safety_err = 0.75 * ee_block_distance_cost + 0.5 * safezone_reward
+        
+        # sacle up goal error to be at least as important as the safety terms
+        scaling = 2 * total_safety_err / (total_goal_err + 1e-6)  # avoid division by zero
+        
+        # TODO for velocity a control error makes sense
+        
+        
+        error = jax.lax.cond(total_goal_err < total_safety_err,
+                             lambda x: scaling * total_goal_err + total_safety_err,
+                             lambda x: total_goal_err + total_safety_err,
+                             operand=None)
+        
+        return error + jnp.sum(jnp.square(control)) * 0.01 + ee_orientation_cost * 0.1
                                                                               
-        return 5 * position_cost + orientation_cost \
-                                 + ee_block_distance_cost \
-                                 + safezone_reward \
-                                 + 0.25*table_collision_cost 
-        #0.2 * ee_orientation_cost  
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         return self.running_cost(state, jnp.zeros(self.model.nu))
