@@ -223,10 +223,10 @@ def run_interactive(
     # Set up ros interface 
     sim = ctx.Process(
         target=run_ros2_interface,
-        args=(shm_data, ready, finished, delay_ctrl_start),
+        args=(shm_data, finished, delay_ctrl_start),
     )
     control = ctx.Process(
-        target=run_controller, args=(controller, shm_data, ready, finished)
+        target=run_controller, args=(controller, shm_data, finished)
     )
 
     # Run the simulation and controller in parallel

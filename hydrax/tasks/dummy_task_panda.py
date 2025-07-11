@@ -18,7 +18,7 @@ class Dummy(Task):
     ):
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(
-            (get_root_path() / "hydrax" / "models" / "pusht_franka" / "scene.xml").as_posix()
+            (get_root_path() / "hydrax" / "models" / "dummy" / "scene.xml").as_posix()
         )
 
         super().__init__(
