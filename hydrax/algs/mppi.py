@@ -1,8 +1,9 @@
-from typing import Tuple, Any
+from typing import Tuple, Any, Optional, Callable
 
 import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
+from mujoco import mjx
 
 from hydrax.alg_base import SamplingBasedController, Trajectory
 from hydrax.risk import RiskStrategy
@@ -40,6 +41,7 @@ class MPPI(SamplingBasedController):
         num_randomizations: int = 1,
         risk_strategy: RiskStrategy = None,
         seed: int = 0,
+        control_mapper: Optional[Callable[[mjx.Model, mjx.Data, jax.Array], jax.Array]] = None,
     ):
         """Initialize the controller.
 
@@ -54,7 +56,7 @@ class MPPI(SamplingBasedController):
                            Defaults to average cost.
             seed: The random seed for domain randomization.
         """
-        super().__init__(task, num_randomizations, risk_strategy, seed)
+        super().__init__(task, num_randomizations, risk_strategy, seed, control_mapper)
         self.noise_level = noise_level
         self.num_samples = num_samples
         self.temperature = temperature
@@ -62,7 +64,7 @@ class MPPI(SamplingBasedController):
     def init_params(self, seed: int = 0) -> MPPIParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
-        mean = jnp.zeros((self.task.planning_horizon, self.task.model.nu))
+        mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
         return MPPIParams(mean=mean, rng=rng)
 
     def sample_controls(
@@ -75,7 +77,7 @@ class MPPI(SamplingBasedController):
             (
                 self.num_samples,
                 self.task.planning_horizon,
-                self.task.model.nu,
+                self.task.nu,
             ),
         )
         controls = params.mean + self.noise_level * noise

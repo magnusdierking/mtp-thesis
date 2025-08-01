@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional, Callable
 
 import jax
 import jax.numpy as jnp
@@ -39,6 +39,7 @@ class SamplingBasedController(ABC):
         num_randomizations: int,
         risk_strategy: RiskStrategy,
         seed: int,
+        control_mapper: Optional[Callable[[mjx.Model, mjx.Data, jax.Array], jax.Array]] = None,
     ):
         """Initialize the MPC controller.
 
@@ -59,6 +60,9 @@ class SamplingBasedController(ABC):
         # Use a single model (no domain randomization) by default
         self.model = task.model
         self.randomized_axes = None
+        
+        # Control mapper for applying controls to the model
+        self.control_mapper = control_mapper
 
         # Set the random seed for domain randomization
         self.set_seed(seed)
@@ -148,7 +152,7 @@ class SamplingBasedController(ABC):
             costs=costs, controls=controls, trace_sites=trace_sites
         )
 
-    @partial(jax.vmap, in_axes=(None, None, None, 0))
+    @partial(jax.vmap, in_axes=(None, None, None, 0)) # 0 to vectorize over num_rollotus
     def eval_rollouts(
         self, model: mjx.Model, state: mjx.Data, controls: jax.Array
     ) -> Tuple[mjx.Data, Trajectory]:
@@ -169,7 +173,10 @@ class SamplingBasedController(ABC):
         ) -> Tuple[mjx.Data, Tuple[mjx.Data, jax.Array, jax.Array]]:
             """Compute the cost and observation, then advance the state."""
             x = mjx.forward(model, x)  # compute site positions
-            cost = self.task.dt * self.task.running_cost(x, u)
+            print(f"Control shape: {u.shape}")
+            u_mapped = self.control_mapper(model, x, u) if self.control_mapper else u
+            
+            cost = self.task.dt * self.task.running_cost(x, u_mapped)
             sites = self.task.get_trace_sites(x)
 
             # Advance the state for several steps, zero-order hold on control
@@ -177,7 +184,7 @@ class SamplingBasedController(ABC):
                 0,
                 self.task.sim_steps_per_control_step,
                 lambda _, x: mjx.step(model, x),
-                x.replace(ctrl=u),
+                x.replace(ctrl=u_mapped),
             )
 
             return x, (x, cost, sites)

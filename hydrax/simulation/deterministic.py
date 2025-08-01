@@ -18,6 +18,76 @@ from hydrax.utils.video import VideoRecorder
 Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
 """
+def inverse_kinematics(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    target_pos: jax.Array,
+    target_quat: jax.Array = None,
+) -> jax.Array:
+    """Perform inverse kinematics to find joint positions for a target pose."""
+    body_id = model.body("ee_frame").id
+    
+    # Create writable, float64 NumPy arrays for the Jacobians
+    jacp = np.zeros((3, model.nv), dtype=np.float64)
+    jacr = np.zeros((3, model.nv), dtype=np.float64)
+
+    # Convert target to proper NumPy float64 array
+    if target_quat is not None:
+        goal = np.concatenate([
+            np.asarray(target_pos, dtype=np.float64),
+            np.asarray(target_quat, dtype=np.float64)
+        ])
+    else:
+        goal = np.asarray(target_pos, dtype=np.float64)
+
+    # Ensure goal is shape (3,) or (3, 1)
+    point = data.xpos[body_id, :3].copy()
+
+    mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
+
+    # Use jacobian transpose control to estimate target q
+    q_target = jacp.T @ goal[:3]  # shape: (nv,)
+
+    # Clip to actuator control range
+    print(q_target.shape)
+    print(model.actuator_ctrlrange.shape)
+    q_target = jnp.clip(q_target[3:], model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
+
+    return q_target
+    
+    
+def ik_2d(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    target_vel: jax.Array,
+) -> jax.Array:
+    """Perform inverse kinematics for a 2D task."""
+    body_id = model.body("ee_frame").id
+    dq_curr = data.qvel 
+            
+    jacp = np.zeros((3, model.nv), dtype=np.float64)
+    point = data.xpos[body_id, :3].copy()
+    mujoco.mj_jac(model, data, jacp, None, point, body_id)
+
+    # get ee z pos and vel
+    z_pos = data.xpos[body_id, 2]
+    z_vel = jacp[2, 3:] @ dq_curr[3:]  # Exclude base DOF
+    
+    Kp_z = 5.0
+    Kd_z = 1.0
+    error = (z_pos - 0.08)
+    jax.lax.cond(error > 0, lambda x: x / 3, lambda x: x, operand=Kp_z)
+    z_vel_feedback = - Kp_z * error - Kd_z * z_vel
+    goal = np.array([target_vel[0], target_vel[1], z_vel_feedback], dtype=np.float64) # this is for 2d case
+
+    J_xyz = jacp[:, 3:]  # Exclude base DOF
+    lam = 1e-3
+    J_xyz_damped_pinv = J_xyz.T @ jnp.linalg.inv(J_xyz @ J_xyz.T + lam * jnp.eye(J_xyz.shape[0]))
+    
+    dq = J_xyz_damped_pinv @ goal
+    dq = jnp.clip(dq, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
+    return dq
+
 
 
 def run_interactive(  # noqa: PLR0912, PLR0915
@@ -97,6 +167,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     )
     policy_params = controller.init_params(seed)
     jit_optimize = jax.jit(controller.optimize, donate_argnums=(1,))
+    #jit_optimize = controller.optimize
 
     # Warm-up the controller
     print("Jitting the controller...")
@@ -222,11 +293,28 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 t = i * mj_model.opt.timestep
                 u = controller.get_action(policy_params, t)
                 # if any u is nan, stop 
+                print(f"Control action shape: {u.shape}")
+                print(f"Control action: {u}")
 
                 if delay_ctrl_start > 0:
                     delay_ctrl_start -= 1
                     # print(f"Delaying controller start for {delay_ctrl_start} steps")
                 else:
+                    # remap controls if a control mapper is provided
+                    if controller.control_mapper is not None:
+                        # use ik functiojn to remap controls
+                        # u = inverse_kinematics(
+                        #     mj_model,
+                        #     mj_data,
+                        #     u,  # Exclude base DOF
+                        # )
+                        u = ik_2d(
+                            mj_model,
+                            mj_data,
+                            u,  # Exclude base DOF
+                        )
+                        print(f"Remapped control action: {u}")
+                    # Apply the control to the simulation
                     mj_data.ctrl[:] = np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
