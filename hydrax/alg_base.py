@@ -172,13 +172,20 @@ class SamplingBasedController(ABC):
             x: mjx.Data, u: jax.Array
         ) -> Tuple[mjx.Data, Tuple[mjx.Data, jax.Array, jax.Array]]:
             """Compute the cost and observation, then advance the state."""
+            
+            # jax.debug.print("qpos shape: {}, dtype: {}, norm: {}", x.qpos.shape, x.qpos.dtype, jnp.linalg.norm(x.qpos))
+            # jax.debug.print("qvel shape: {}, dtype: {}, norm: {}", x.qvel.shape, x.qvel.dtype, jnp.linalg.norm(x.qvel))
             x = mjx.forward(model, x)  # compute site positions
             print(f"Control shape: {u.shape}")
             u_mapped = self.control_mapper(model, x, u) if self.control_mapper else u
             
             cost = self.task.dt * self.task.running_cost(x, u_mapped)
             sites = self.task.get_trace_sites(x)
+            # jax.debug.print("After running cost and trace sites")
 
+            def _step_debug(_, x):
+                return mjx.step(model, x)
+            
             # Advance the state for several steps, zero-order hold on control
             x = jax.lax.fori_loop(
                 0,
@@ -186,9 +193,15 @@ class SamplingBasedController(ABC):
                 lambda _, x: mjx.step(model, x),
                 x.replace(ctrl=u_mapped),
             )
-
+            # jax.debug.print("After mjx.step")
             return x, (x, cost, sites)
+        
+        # jax.debug.print("NaN check — any NaNs in controls: {}", jnp.isnan(controls).any())
+        # jax.debug.print("Inf check — any Infs in controls: {}", jnp.isinf(controls).any())
+        # jax.debug.print("qpos shape: {}, dtype: {}, norm: {}", state.qpos.shape, state.qpos.dtype, jnp.linalg.norm(state.qpos))
+        # jax.debug.print("qvel shape: {}, dtype: {}, norm: {}", state.qvel.shape, state.qvel.dtype, jnp.linalg.norm(state.qvel))
 
+        # jax.debug.print("Starting rollout with controls: {}", controls)
         final_state, (states, costs, trace_sites) = jax.lax.scan(
             _scan_fn, state, controls
         )
