@@ -9,6 +9,11 @@ import numpy as np
 from hydrax.files import get_root_path
 from hydrax.task_base import Task
 
+from scipy.optimize import minimize
+from scipy.spatial.transform import Rotation as R
+
+def mujoco_to_scipy_quat(q):
+    return np.array([q[1], q[2], q[3], q[0]])
 
 class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
@@ -50,17 +55,18 @@ class PushTFranka(Task):
         )
         
         # special to this task
-        self.body_id = self.mj_model.body("ee_frame").id # The body of the T-shaped block
+        self.body_id = self.mj_model.body("ee_frame").id
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
         # Set the random seed for reproducibility
         np.random.seed(seed)
         mj_model = self.mj_model
-        mj_model.opt.timestep = 0.001
+        mj_model.opt.timestep = 0.002
         mj_model.opt.iterations = 100
         mj_model.opt.ls_iterations = 50
         mj_data = mujoco.MjData(self.mj_model)
+        # Randomize the block's position and orientation
         pos_x = np.random.uniform(low=-0.25, high=0.25)
         pos_y = np.random.uniform(low=-0.15, high=0.05)
         angle = np.random.uniform(-np.pi, np.pi)
@@ -70,28 +76,81 @@ class PushTFranka(Task):
         mj_data.qpos[1] = -0.1 + pos_y
         mj_data.qpos[2] = angle
         
-        # set the initial joint angles of the robot
-        # mj_data.qpos[3:] = np.array([0.0, 
-        #                             -np.pi/4,
-        #                             0.0,
-        #                             -9*np.pi/10,
-        #                             0.0,
-        #                             3*np.pi/4,
-        #                             np.pi/4]) 
-        mj_data.qpos[3:] = np.array([0.0,
-                                    -0.145,
-                                    0.0,
-                                    -2.43,
-                                    0.0,
-                                    2.36,
-                                    0.78])
-        # mj_data.ctrl[:] = np.array([0.0, 
-        #                             -np.pi/4,
-        #                             0.0,
-        #                             -9*np.pi/10,
-        #                             0.0,
-        #                             3*np.pi/4,
-        #                             np.pi/4])  # Initialize ctrl to qpos for the first 7 controls
+        # Joint index range (skip floating base joints if any)
+        des_pos = np.array([0.0, -0.35, 0.025])
+        des_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
+        
+        j_start = 3  # Adjust based on your model (e.g., 3 if floating base)
+        n_joints = self.model.nv - j_start
+
+        # Joint limits
+        joint_limits = np.array([self.model.jnt_range[i] for i in range(j_start, self.model.njnt)])
+
+        # # Initial guess
+        q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
+
+        # IK loop parameters
+        max_iters = 100
+        tolerance = 1e-4
+        damping = 100e-3
+
+        for i in range(max_iters):
+            # Set current joint state
+            mj_data.qpos[j_start:] = q
+            mujoco.mj_forward(self.mj_model, mj_data)
+
+            # Current EE pose
+            current_pos = mj_data.xpos[self.body_id]
+            current_quat = mj_data.xquat[self.body_id]
+
+            # Position error
+            pos_err = des_pos - current_pos  # shape (3,)
+
+            # Orientation error (quaternion distance -> angular velocity vector)
+            r_current = R.from_quat(mujoco_to_scipy_quat(current_quat))
+            r_desired = R.from_quat(mujoco_to_scipy_quat(des_quat))
+
+            # Rotation needed to go from current to desired
+            r_error = r_desired * r_current.inv()
+
+            # Convert to rotation vector (axis-angle * angle)
+            orn_err = r_error.as_rotvec()  # shape (3,)
+
+            # Combined 6D task error
+            err = np.concatenate([pos_err, orn_err])  # shape (6,)
+
+            if np.linalg.norm(err) < tolerance:
+                print(f"Converged in {i} iterations.")
+                break
+
+            # Compute Jacobian of the EE
+            J_pos = np.zeros((3, self.mj_model.nv))
+            J_rot = np.zeros((3, self.mj_model.nv))
+            mujoco.mj_jacBody(self.mj_model, mj_data, J_pos, J_rot, self.body_id)
+
+            # Slice columns corresponding to actuated joints
+            J = np.vstack([J_pos[:, j_start:], J_rot[:, j_start:]])  # shape (6, n_joints)
+
+            # Solve damped least squares: dq = (JᵀJ + λ²I)⁻¹ Jᵀ e
+            JTJ = J.T @ J
+            H = JTJ + damping * np.eye(n_joints)
+            g = J.T @ err
+            dq = np.linalg.solve(H, g)
+
+            # Update joint configuration
+            q += dq
+
+            # Clamp to joint limits
+            for j in range(n_joints):
+                low, high = joint_limits[j]
+                q[j] = np.clip(q[j], low, high)
+
+        else:
+            print("IK did not converge.")
+        
+        mj_data.qpos[3:] = q  # Set the robot's joint positions
+
+        # initial control
         mj_data.ctrl[:] = np.zeros(mj_model.nu)
         return mj_model, mj_data
 
@@ -174,13 +233,15 @@ class PushTFranka(Task):
 
 
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
-        # goal based
+        
+        # Goal error terms 
         position_err = self._get_position_err(state)
         orientation_err = self._get_orientation_err(state)
         position_cost = jnp.sum(jnp.square(position_err))
         orientation_cost = jnp.sum(jnp.square(orientation_err))
         
         total_goal_err = 10 * position_cost + 2 * orientation_cost
+        
         
         # This seems to lead to a behavior where the ee doesnt watn tto be in contact, as this increases error
         ee_orientation_err = self._get_ee_orientation_err(state)
@@ -268,9 +329,21 @@ class PushTFranka(Task):
         def fk_fn(qpos):
             data = mjx.make_data(model)
             data = data.replace(qpos=qpos)
-            return mjx.forward(model, data).xpos[self.body_id]
-        
+            data = mjx.forward(model, data)
+            # return end effector position and orientation
+            axis, angle = mjx._src.math.quat_to_axis_angle(data.xquat[self.body_id])
+            test = angle * axis
+            print(f"Axis shape: {test.shape}")
+            print(f"xpos shape: {data.xpos[self.body_id].shape}")
+            ee_pose = jnp.hstack([
+                data.xpos[self.body_id],
+                angle * axis
+            ])
+            print(f"EE pose shape: {ee_pose.shape}")
+            return ee_pose
+
         J = jax.jacobian(lambda qpos: fk_fn(qpos))(q)
+        print(f"Jacobian shape: {J.shape}, control shape: {control.shape}")
         
         # get deviation in z
         z_pos = data.site_xpos[self.body_id, 2]  # z position of the end effector
@@ -284,19 +357,14 @@ class PushTFranka(Task):
         # Proportional-Derivative control for z position
         z_vel_feedback = - Kp_z * error - Kd_z * z_vel
 
-        
-        
-        # Extract the relevant parts of the Jacobian for the robot
-        # J_xy = J[:2, 3:]
-        # J_z = J[2, 3:]
-        J_xyz = J[:, 3:]  # Full Jacobian for the robot
+        J_full = J[:, 3:]  # Full Jacobian for the robot
         lam = 1e-3
         # J_z_damped_pinv = J_z.T @ jnp.linalg.inv(J_z @ J_z.T + lam * jnp.eye(1))
         # J_xy_damped_pinv = jnp.linalg.pinv(J_xy + lam * jnp.eye(J_xy.shape[0]))
-        J_xyz_damped_pinv = J_xyz.T @ jnp.linalg.inv(J_xyz @ J_xyz.T + lam * jnp.eye(J_xyz.shape[0]))
-        
-        adapted_control = jnp.concatenate([control[:2], jnp.array([z_vel_feedback])])
-        dq = J_xyz_damped_pinv @ adapted_control
+        J_full_damped_pinv = J_full.T @ jnp.linalg.inv(J_full @ J_full.T + lam * jnp.eye(J_full.shape[0]))
+
+        adapted_control = jnp.concatenate([control[:2], jnp.array([z_vel_feedback]), jnp.zeros(J_full.shape[0] - 3)])  # adapt control to 2D
+        dq = J_full_damped_pinv @ adapted_control
         dq = jnp.clip(dq, self.act_min, self.act_max)
             
         return dq

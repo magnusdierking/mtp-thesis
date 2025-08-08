@@ -66,8 +66,9 @@ def ik_2d(
     dq_curr = data.qvel 
             
     jacp = np.zeros((3, model.nv), dtype=np.float64)
+    jacr = np.zeros((3, model.nv), dtype=np.float64)
     point = data.xpos[body_id, :3].copy()
-    mujoco.mj_jac(model, data, jacp, None, point, body_id)
+    mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
 
     # get ee z pos and vel
     z_pos = data.xpos[body_id, 2]
@@ -78,13 +79,17 @@ def ik_2d(
     error = (z_pos - 0.08)
     jax.lax.cond(error > 0, lambda x: x / 3, lambda x: x, operand=Kp_z)
     z_vel_feedback = - Kp_z * error - Kd_z * z_vel
-    goal = np.array([target_vel[0], target_vel[1], z_vel_feedback], dtype=np.float64) # this is for 2d case
-
-    J_xyz = jacp[:, 3:]  # Exclude base DOF
-    lam = 1e-3
-    J_xyz_damped_pinv = J_xyz.T @ jnp.linalg.inv(J_xyz @ J_xyz.T + lam * jnp.eye(J_xyz.shape[0]))
     
-    dq = J_xyz_damped_pinv @ goal
+    goal_lin = np.array([target_vel[0], target_vel[1], z_vel_feedback], dtype=np.float64) # this is for 2d case
+    goal_ori = np.zeros(3, dtype=np.float64)
+
+    J_full = np.vstack((jacp[:, 3:], jacr[:, 3:]))   # shape (6, n)
+    goal_full = np.concatenate((goal_lin, goal_ori)) # shape (6,)
+
+    lam = 1e-3
+    J_full_damped_pinv = J_full.T @ jnp.linalg.inv(J_full @ J_full.T + lam * jnp.eye(J_full.shape[0]))
+
+    dq = J_full_damped_pinv @ goal_full
     dq = jnp.clip(dq, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
     return dq
 
@@ -288,6 +293,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     viewer.user_scn,
                 )
 
+            # for k in range(controller.nbr_actions):
+            
             # Step the simulation
             for i in range(sim_steps_per_replan):
                 t = i * mj_model.opt.timestep

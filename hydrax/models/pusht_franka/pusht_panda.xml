@@ -120,6 +120,7 @@
 
   <worldbody>
     <light name="top" pos="0 0 2" mode="trackcom"/>
+    <!-- <site name="target_site_w" pos="0.0 -0.35 0.025" size="0.01" rgba="1 0 0 1" type="sphere"/> -->
     <body name="link0" childclass="panda" pos="0.0 -0.65 0.0" quat="0.7071 0 0 0.7071">
       <inertial mass="0.629769" pos="-0.041018 -0.00014 0.049974"
         fullinertia="0.00315 0.00388 0.004285 8.2904e-7 0.00015 8.2299e-6"/>
@@ -135,6 +136,8 @@
       <geom mesh="link0_10" material="off_white" class="visual"/>
       <geom mesh="link0_11" material="white" class="visual"/>
       <geom mesh="link0_c" class="collision"/>
+
+
       <body name="link1" pos="0 0 0.333">
         <inertial mass="4.970684" pos="0.003875 0.002081 -0.04762"
           fullinertia="0.70337 0.70661 0.0091170 -0.00013900 0.0067720 0.019169"/>
@@ -211,21 +214,18 @@
                     <geom mesh="link7_7" material="white" class="visual"/>
                     <geom mesh="link7_c" class="collision"/>
                     <body name="hand" pos="0 0 0.107" quat="0.9238795 0 0 -0.3826834">
-                        <body name="ee_link" pos="0 0 0.1">
+                        <body name="ee_link" pos="0 0 0.0">
                         <!-- Long box as arm -->
-                        <geom type="box" size="0.01 0.01 0.1" pos="0 0 0" rgba="0.3 0.3 0.3 0.5"/>
+                        <geom type="box" size="0.01 0.01 0.07" pos="0 0 0" rgba="0.3 0.3 0.3 0.5"/>
                         
                         <!-- Sphere at the tip of the box to act as end effector -->
-                        <body name="ee_frame" pos="0 0 0.1">
+                        <body name="ee_frame" pos="0 0 0.07">
                           <geom type="sphere" size="0.015" pos="0 0 0" rgba="0.1 0.6 0.1 1"/>
                           <site name="ee_site" pos="0 0 0.0" size="0.015" rgba="0 1 0 1"/>
-                          <!-- <geom type="cylinder" fromto="0 0 0 0.05 0 0" size="0.002" rgba="1 0 0 1"/> -->
-      
-                          <!-- Y-axis (green) -->
-                          <!-- <geom type="cylinder" fromto="0 0 0 0 0.05 0" size="0.002" rgba="0 1 0 1"/> -->
-                          
-                          <!-- Z-axis (blue) -->
-                          <!-- <geom type="cylinder" fromto="0 0 0 0 0 0.05" size="0.002" rgba="0 0 1 1"/> -->
+
+                          <!-- <geom type="box" fromto="0 0 0 0.05 0 0" size="0.002" rgba="1 0 0 1"/>  -->
+                          <!-- <geom type="box" fromto="0 0 0 0 0.05 0" size="0.002" rgba="0 1 0 1"/>                     -->
+                          <!-- <geom type="box" fromto="0 0 0 0 0 0.05" size="0.002" rgba="0 0 1 1"/>  -->
                           </body>
                         </body>
 
