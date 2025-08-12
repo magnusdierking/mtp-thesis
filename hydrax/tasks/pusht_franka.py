@@ -19,13 +19,13 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 10, sim_steps_per_control_step: int = 10, 
+        self, planning_horizon: int = 10, sim_steps_per_control_step: int = 5, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-2.0, -2.0]), "u_max": jnp.array([2.0, 2.0])}
+        ctrl_limits = {"u_min": jnp.array([-0.5, -0.5]), "u_max": jnp.array([0.5, 0.5])}
     ):
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(
-            (get_root_path() / "hydrax" / "models" / "pusht_franka" / "scene.xml").as_posix()
+            (get_root_path() / "hydrax" / "models" / "pusht_franka_planar" / "scene_mjx.xml").as_posix()
         )
 
         super().__init__(
@@ -77,14 +77,14 @@ class PushTFranka(Task):
         mj_data.qpos[2] = angle
         
         # Joint index range (skip floating base joints if any)
-        des_pos = np.array([0.0, -0.35, 0.025])
+        des_pos = np.array([0.0, 0.25, 0.035])
         des_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
         
         j_start = 3  # Adjust based on your model (e.g., 3 if floating base)
-        n_joints = self.model.nv - j_start
+        n_joints = 7
 
         # Joint limits
-        joint_limits = np.array([self.model.jnt_range[i] for i in range(j_start, self.model.njnt)])
+        joint_limits = np.array([self.model.jnt_range[i] for i in range(j_start, j_start + n_joints)])
 
         # # Initial guess
         q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
@@ -96,7 +96,7 @@ class PushTFranka(Task):
 
         for i in range(max_iters):
             # Set current joint state
-            mj_data.qpos[j_start:] = q
+            mj_data.qpos[j_start:j_start+n_joints] = q
             mujoco.mj_forward(self.mj_model, mj_data)
 
             # Current EE pose
@@ -129,7 +129,7 @@ class PushTFranka(Task):
             mujoco.mj_jacBody(self.mj_model, mj_data, J_pos, J_rot, self.body_id)
 
             # Slice columns corresponding to actuated joints
-            J = np.vstack([J_pos[:, j_start:], J_rot[:, j_start:]])  # shape (6, n_joints)
+            J = np.vstack([J_pos[:, j_start:j_start+n_joints], J_rot[:, j_start:j_start+n_joints]])  # shape (6, n_joints)
 
             # Solve damped least squares: dq = (JᵀJ + λ²I)⁻¹ Jᵀ e
             JTJ = J.T @ J
@@ -147,8 +147,8 @@ class PushTFranka(Task):
 
         else:
             print("IK did not converge.")
-        
-        mj_data.qpos[3:] = q  # Set the robot's joint positions
+
+        mj_data.qpos[j_start:j_start+n_joints] = q  # Set the robot's joint positions
 
         # initial control
         mj_data.ctrl[:] = np.zeros(mj_model.nu)
@@ -245,25 +245,17 @@ class PushTFranka(Task):
         
         # This seems to lead to a behavior where the ee doesnt watn tto be in contact, as this increases error
         ee_orientation_err = self._get_ee_orientation_err(state)
-        ee_orientation_cost = jnp.sum(jnp.square(ee_orientation_err))
+        # ee_orientation_cost = jnp.sum(jnp.square(ee_orientation_err))
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
         ee_block_distance_cost = jnp.square(ee_block_distance)
         
-        # total_safety_err = 0.75 * ee_block_distance_cost + 0.5 * safezone_reward
-        
-        # sacle up goal error to be at least as important as the safety terms
-        # scaling = 2 * total_safety_err / (total_goal_err + 1e-6)  # avoid division by zero
-        
-        # TODO for velocity a control error makes sense (is already implicitly in the algo)
+        # TODO for velocity a control error makes sense
+        control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
         
         
-        error = 0.5 * ee_block_distance_cost + total_goal_err #+ ee_orientation_cost
-        # jax.lax.cond(total_goal_err < total_safety_err,
-        #                      lambda x: scaling * total_goal_err + total_safety_err,
-        #                      lambda x: total_goal_err + total_safety_err,
-        #                      operand=None)
+        error = 0.5 * ee_block_distance_cost + total_goal_err + 0.1 * control_cost
         
         return error 
                                                                               
@@ -283,39 +275,89 @@ class PushTFranka(Task):
     ##            Special           ##
     ##################################
     
-    # @jax.jit
-    def ik_mapper(
+    
+    
+    def make_control_mapper(self):
+        j_start = 3
+        n_joints = 7
+        idx = jnp.array([0, 1, 3, 4, 5])  # x, y, roll, pitch, yaw
+
+        model = self.model
+        body_id = self.body_id
+        act_min = self.act_min
+        act_max = self.act_max
+
+        # Reuse a template data; replace qpos each call (keeps purity for JAX)
+        data0 = mjx.make_data(model)
+
+        # FK as a pure function of qpos
+        def fk_fn(qpos):
+            d = data0.replace(qpos=qpos)
+            d = mjx.forward(model, d)
+            pos = d.xpos[body_id]  # (3,)
+            # Use the private quat->axis/angle you prefer
+            axis, angle = mjx._src.math.quat_to_axis_angle(d.xquat[body_id])
+            rotvec = angle * axis  # (3,)
+            return jnp.concatenate([pos[:2], rotvec], axis=0)  # (5,) ignore z
+
+        # Small output (6) => reverse-mode Jacobian is efficient
+        fk_jac = jax.jit(jax.jacrev(fk_fn))
+
+        @jax.jit
+        def ik_mapper_transpose(data: mjx.Data, control: jax.Array) -> jax.Array:
+            qpos = data.qpos
+            
+            J = fk_jac(qpos)  # (6, nq)
+            # Select task rows and the joint columns we actuate
+            J_xy = J[idx, j_start : j_start + n_joints]  # (5, n_joints)
+            # Control only for x,y; pad the rest to match selected rows
+            adapted_control = jnp.concatenate(
+                [control[:2], jnp.zeros(3, dtype=control.dtype)], axis=0
+            )  # (5,)
+
+            dq = J_xy.T @ adapted_control                 # (n_joints,)
+            dq = jnp.clip(dq, act_min, act_max)
+            return dq
+
+        return ik_mapper_transpose
+    
+    
+    
+    def ik_mapper_transpose(
         self, model: mjx.Model, data: mjx.Data, control: jax.Array
     ) -> jax.Array:
-        """Map the end-effector velocity to joint velocities using Jacobian transpose IK."""
-
-        q = data.qpos[3:]
-        q_base = data.qpos[:3]  # floating base
-
-        # Pass q_base into fk_fn explicitly
-        def fk_fn(qpos, q_base):
-            qpos = jnp.asarray(qpos).reshape(-1)
-            q_base = jnp.asarray(q_base).reshape(-1)
-
-            full_qpos = jnp.concatenate([q_base, qpos])
-            assert full_qpos.ndim == 1, f"Expected 1D qpos, got shape {full_qpos.shape}"
-            assert full_qpos.shape[0] == model.nq, f"Expected qpos.shape == {model.nq}, got {full_qpos.shape}"
-
-            data = mjx.make_data(model)
-            data = data.replace(qpos=full_qpos)
-
-            return mjx.forward(model, data).xpos[self.body_id]
         
-        # Ensure types and shapes are correct
-        assert q.shape[0] == model.nv - 3, "Joint positions must match model's degrees of freedom."
-        assert q_base.shape[0] == 3, "Base should have 3 DOF."
+        j_start = 3  
+        n_joints = 7
+        q = data.qpos
+        
+        # Pass q_base into fk_fn explicitly
+        def fk_fn(qpos):
+            data = mjx.make_data(model)
+            data = data.replace(qpos=qpos)
+            data = mjx.forward(model, data)
+            # return end effector position and orientation
+            axis, angle = mjx._src.math.quat_to_axis_angle(data.xquat[self.body_id])
+            test = angle * axis
+            print(f"Axis shape: {test.shape}")
+            print(f"xpos shape: {data.xpos[self.body_id].shape}")
+            ee_pose = jnp.hstack([
+                data.xpos[self.body_id],
+                angle * axis
+            ])
+            print(f"EE pose shape: {ee_pose.shape}")
+            return ee_pose
 
-        J = jax.jacobian(lambda qpos: fk_fn(qpos, q_base))(q)
+        J = jax.jacobian(lambda qpos: fk_fn(qpos))(q)
+        print(f"Jacobian shape: {J.shape}, control shape: {control.shape}")
 
-
-        dq = J.T @ control
-        dq_clipped = jnp.clip(dq, self.act_min, self.act_max)
-        return dq_clipped
+        idx = [0, 1, 3, 4, 5] # Indices for x, y, roll, pitch, yaw
+        J_xy = J[:idx, j_start:j_start+n_joints]  # Jacobian for x, y, roll, pitch, yaw
+        
+        adapted_control = jnp.concatenate([control[:2], jnp.zeros(3)])  
+        dq = J_xy.T @ adapted_control
+        dq = jnp.clip(dq, self.act_min, self.act_max)
+        return dq
     
     
     def ik_mapper_2d(

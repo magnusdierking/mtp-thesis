@@ -62,7 +62,7 @@ class SamplingBasedController(ABC):
         self.randomized_axes = None
         
         # Control mapper for applying controls to the model
-        self.control_mapper = control_mapper
+        self.control_mapper = None
 
         # Set the random seed for domain randomization
         self.set_seed(seed)
@@ -176,15 +176,15 @@ class SamplingBasedController(ABC):
             # jax.debug.print("qpos shape: {}, dtype: {}, norm: {}", x.qpos.shape, x.qpos.dtype, jnp.linalg.norm(x.qpos))
             # jax.debug.print("qvel shape: {}, dtype: {}, norm: {}", x.qvel.shape, x.qvel.dtype, jnp.linalg.norm(x.qvel))
             x = mjx.forward(model, x)  # compute site positions
-            print(f"Control shape: {u.shape}")
-            u_mapped = self.control_mapper(model, x, u) if self.control_mapper else u
+            # jax.debug.print(f"Control shape: {u.shape}")
+            u_mapped = self.control_mapper(x, u) if self.control_mapper else u
             
             cost = self.task.dt * self.task.running_cost(x, u_mapped)
             sites = self.task.get_trace_sites(x)
             # jax.debug.print("After running cost and trace sites")
 
-            def _step_debug(_, x):
-                return mjx.step(model, x)
+            # def _step_debug(_, x):
+            #     return mjx.step(model, x)
             
             # Advance the state for several steps, zero-order hold on control
             x = jax.lax.fori_loop(
