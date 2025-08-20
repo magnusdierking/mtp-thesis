@@ -14,7 +14,7 @@ class PushT(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 5, sim_steps_per_control_step: int = 10
+        self, planning_horizon: int = 25, sim_steps_per_control_step: int = 10
     ):
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(
@@ -41,7 +41,7 @@ class PushT(Task):
         # Set the random seed for reproducibility
         np.random.seed(seed)
         mj_model = self.mj_model
-        mj_model.opt.timestep = 0.001
+        mj_model.opt.timestep = 0.002
         mj_model.opt.iterations = 100
         mj_model.opt.ls_iterations = 50
         mj_data = mujoco.MjData(self.mj_model)
@@ -71,13 +71,13 @@ class PushT(Task):
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
         position_err = self._get_position_err(state)
         orientation_err = self._get_orientation_err(state)
-        # close_to_block_err = self._close_to_block_err(state)
+        close_to_block_err = self._close_to_block_err(state)
 
         position_cost = jnp.sum(jnp.square(position_err))
         orientation_cost = jnp.sum(jnp.square(orientation_err))
-        # close_to_block_cost = jnp.sum(jnp.square(close_to_block_err))
+        close_to_block_cost = jnp.sum(jnp.square(close_to_block_err))
 
-        return 5 * position_cost + orientation_cost # + 0.01 * close_to_block_cost
+        return 5 * position_cost + orientation_cost + 0.01 * close_to_block_cost + 0.01 * jnp.sum(jnp.square(control))
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         return self.running_cost(state, jnp.zeros(self.model.nu))
