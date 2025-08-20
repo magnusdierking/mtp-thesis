@@ -1,12 +1,15 @@
 import argparse
 
-import evosax
-import evosax.algorithms
+from evosax.algorithms import (
+    Open_ES,
+    DiffusionEvolution,
+)
 import mujoco
-
+from mtp.mtp import MTP
 from hydrax.algs import CEM, MPPI, Evosax, PredictiveSampling
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.tasks.cube import CubeRotation
+from hydrax.simulation.deterministic import run_interactive
 
 """
 Run an interactive simulation of the cube rotation task.
@@ -16,7 +19,9 @@ Double click on the floating target cube, then change the goal orientation with
 """
 
 # Define the task (cost and dynamics)
-task = CubeRotation()
+task = CubeRotation(
+    planning_horizon=3,
+)
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
@@ -28,23 +33,28 @@ subparsers = parser.add_subparsers(
 subparsers.add_parser("ps", help="Predictive Sampling")
 subparsers.add_parser("mppi", help="Model Predictive Path Integral Control")
 subparsers.add_parser("cem", help="Cross-Entropy Method")
-subparsers.add_parser("cmaes", help="CMA-ES")
+subparsers.add_parser("oes", help="OpenAIES")
+subparsers.add_parser("de", help="Diffusion Evolution")
+subparsers.add_parser("mtp", help="MTP")
 args = parser.parse_args()
+
+seed = 111
 
 # Set the controller based on command-line arguments
 if args.algorithm == "ps" or args.algorithm is None:
     print("Running predictive sampling")
     ctrl = PredictiveSampling(
-        task, num_samples=32, noise_level=0.2, num_randomizations=32
+        task, num_samples=128, noise_level=0.15, num_randomizations=8, seed=seed
     )
 elif args.algorithm == "mppi":
     print("Running MPPI")
     ctrl = MPPI(
         task,
         num_samples=128,
-        noise_level=0.2,
-        temperature=0.001,
+        noise_level=0.15,
+        temperature=0.1,
         num_randomizations=8,
+        seed=seed,
     )
 elif args.algorithm == "cem":
     print("Running CEM")
@@ -52,18 +62,33 @@ elif args.algorithm == "cem":
         task,
         num_samples=128,
         num_elites=5,
-        sigma_start=0.5,
-        sigma_min=0.5,
+        sigma_min=0.15,
+        sigma_start=0.3,
         num_randomizations=8,
+        seed=seed,
     )
-elif args.algorithm == "cmaes":
-    print("Running CMA-ES")
-    ctrl = Evosax(
+elif args.algorithm == "mtp":
+    print("Running MTP")
+    ctrl = MTP(
         task,
-        evosax.algorithms.Sep_CMA_ES,
         num_samples=128,
+        M=2,
+        N=50,
+        sigma_min=0.15,
+        num_elites=5,
+        beta=0.5,
+        alpha=0.1,
+        interpolation='akima',
         num_randomizations=8,
+        seed=seed,
     )
+elif args.algorithm == "oes":
+    print("Running OpenES")
+    ctrl = Evosax(task, Open_ES, num_samples=128, num_randomizations=8, seed=seed)
+
+elif args.algorithm == "de":
+    print("Running Diffusion Evolution (DE)")
+    ctrl = Evosax(task, DiffusionEvolution, num_samples=128, num_randomizations=8, seed=seed)
 else:
     parser.error("Invalid algorithm")
 
@@ -76,9 +101,10 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=25,
-    fixed_camera_id=None,
-    show_traces=True,
-    max_traces=1,
-    trace_color=[1.0, 1.0, 1.0, 1.0],
+    frequency=50,
+    show_traces=False,
+    fixed_camera_id=0,
+    show_ui=False,
+    record_video=False,
+    seed=seed,
 )

@@ -4,10 +4,12 @@ import evosax
 import evosax.algorithms
 import mujoco
 
+from mtp.mtp import MTP
 from hydrax.algs import MPPI, Evosax, PredictiveSampling
 from hydrax.risk import WorstCase
 from hydrax.simulation.deterministic import run_interactive
-from hydrax.tasks.particle import Particle
+from hydrax.simulation.deterministic_experiment import run_headless_simulation
+from hydrax.tasks.bugtrap import BugTrap
 
 """
 Run an interactive simulation of the particle tracking task.
@@ -16,11 +18,11 @@ Double click on the green target, then drag it around with [ctrl + right-click].
 """
 
 # Define the task (cost and dynamics)
-task = Particle()
+task = BugTrap()
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
-    description="Run an interactive simulation of the particle tracking task."
+    description="Run an interactive simulation of the bug trap task."
 )
 subparsers = parser.add_subparsers(
     dest="algorithm", help="Sampling algorithm (choose one)"
@@ -34,10 +36,13 @@ subparsers.add_parser(
 subparsers.add_parser("de", help="Differential Evolution")
 subparsers.add_parser("gld", help="Gradient-Less Descent")
 subparsers.add_parser("rs", help="Uniform Random Search")
+subparsers.add_parser("mtp", help="MTP")
 args = parser.parse_args()
 
 # Set the controller based on command-line arguments
-if args.algorithm == "ps" or args.algorithm is None:
+if args.algorithm is None: 
+    args.algorithm = "mtp"  # Default to MTP
+if args.algorithm == "ps":
     print("Running predictive sampling")
     ctrl = PredictiveSampling(
         task,
@@ -49,7 +54,8 @@ if args.algorithm == "ps" or args.algorithm is None:
 
 elif args.algorithm == "mppi":
     print("Running MPPI")
-    ctrl = MPPI(task, num_samples=16, noise_level=0.3, temperature=0.01)
+    ctrl = MPPI(task, num_samples=32, noise_level=0.3, temperature=0.01)
+    save_path = "./../data/headless_bugtrap_mppi"
 
 elif args.algorithm == "cmaes":
     print("Running CMA-ES")
@@ -67,6 +73,24 @@ elif args.algorithm == "gld":
     print("Running Gradient-Less Descent (GLD)")
     ctrl = Evosax(task, evosax.algorithms.GradientlessDescent, num_samples=16)
 
+elif args.algorithm == "mtp":
+    print("Running MTP")
+    seed = 0
+    ctrl = MTP(
+            task,
+            num_samples=32,
+            M=3,
+            N=32,
+            sigma_min=0.1,
+            num_elites=3,
+            beta=0.25,
+            alpha=0.1,
+            interpolation='bspline',
+            num_randomizations=1,
+            seed=seed,
+        )
+    save_path = "./../data/headless_bugtrap_mtp"
+    
 elif args.algorithm == "rs":
     print("Running uniform random search")
     # es_params = evosax.strategies.random.EvoParams(
@@ -90,5 +114,19 @@ run_interactive(
     mj_data,
     frequency=50,
     show_traces=True,
-    max_traces=5,
+    trace_width=0.25,
+    max_traces=25,
+    record_video=True,
 )
+
+# run headless simulation
+# seeds = [0, 1, 2, 3, 4]
+# run_headless_simulation(
+#     task,
+#     ctrl,
+#     seeds=seeds,
+#     frequency=50,
+#     max_step=1000,       
+#     log_file_prefix="bugtrap",
+#     save_path=save_path,
+# )
