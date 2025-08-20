@@ -11,7 +11,8 @@ from hydrax.task_base import Task
 from tqdm import tqdm
 import os
 from chrono import Timer
-
+import os, pickle
+from pathlib import Path
 
 def run_headless_simulation(
     task: Task,
@@ -65,6 +66,7 @@ def run_headless_simulation(
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
 
             step = 0
+            state_bins = np.zeros((60, 60))  # Initialize state bins for visualization
             for step in tqdm(range(max_step)):
                 step += 1
                 
@@ -98,6 +100,10 @@ def run_headless_simulation(
                         break
                 
                 task_success |= controller.task.success(mj_data)
+                
+                counts = jnp.array(rollouts.state_bins)
+                
+                state_bins += counts.sum(axis=tuple(range(len(counts.shape) - 2)))
 
                 logs.append({
                     "step": step,
@@ -120,6 +126,16 @@ def run_headless_simulation(
             continue
 
         finally:
+            # save pickle file for bins
+            if log_file_prefix:
+                log_dir = Path(save_path)
+                log_dir.mkdir(parents=True, exist_ok=True)   # create directory if missing
+                log_file = log_dir / f"{log_file_prefix}_seed_{seed}.pkl"
+                with open(log_file, "wb") as f:
+                    pickle.dump(state_bins, f, protocol=pickle.HIGHEST_PROTOCOL)
+                print(f"State bins saved to {log_file}")
+                
+            #########################################################   
             plan_times = np.array(plan_times)
             print(f"Iteration time: {np.mean(plan_times)} \\pm {np.std(plan_times)} seconds")
             if log_file_prefix:

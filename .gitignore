@@ -12,7 +12,7 @@ hydrax/recordings/# Created by https://www.toptal.com/developers/gitignore/api/p
 
 # custom
 data/
-
+img/
 
 
 ### Python ###

@@ -17,7 +17,72 @@ from hydrax.utils.video import VideoRecorder
 """
 Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
-"""
+"""    
+    
+def ik_2d(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    target_vel: jax.Array,
+) -> jax.Array:
+    """Perform inverse kinematics for a 2D task."""
+    body_id = model.body("ee_frame").id
+    dq_curr = data.qvel 
+            
+    jacp = np.zeros((3, model.nv), dtype=np.float64)
+    jacr = np.zeros((3, model.nv), dtype=np.float64)
+    point = data.xpos[body_id, :3].copy()
+    mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
+
+    # get ee z pos and vel
+    z_pos = data.xpos[body_id, 2]
+    z_vel = jacp[2, 3:] @ dq_curr[3:]  # Exclude base DOF
+    
+    Kp_z = 5.0
+    Kd_z = 1.0
+    error = (z_pos - 0.08)
+    jax.lax.cond(error > 0, lambda x: x / 3, lambda x: x, operand=Kp_z)
+    z_vel_feedback = - Kp_z * error - Kd_z * z_vel
+    
+    goal_lin = np.array([target_vel[0], target_vel[1], z_vel_feedback], dtype=np.float64) # this is for 2d case
+    goal_ori = np.zeros(3, dtype=np.float64)
+
+    J_full = np.vstack((jacp[:, 3:], jacr[:, 3:]))   # shape (6, n)
+    goal_full = np.concatenate((goal_lin, goal_ori)) # shape (6,)
+
+    lam = 1e-3
+    J_full_damped_pinv = J_full.T @ jnp.linalg.inv(J_full @ J_full.T + lam * jnp.eye(J_full.shape[0]))
+
+    dq = J_full_damped_pinv @ goal_full
+    dq = jnp.clip(dq, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
+    return dq
+
+def ik_transpose(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    target_vel: jax.Array,
+) -> jax.Array:
+    """Perform inverse kinematics using transpose Jacobian."""
+    body_id = model.body("ee_frame").id
+
+    jacp = np.zeros((3, model.nv), dtype=np.float64)
+    jacr = np.zeros((3, model.nv), dtype=np.float64)
+    point = data.xpos[body_id, :3].copy()
+    mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
+
+    J_full = np.vstack((jacp[:2, 3:10], jacr[:, 3:10]))   # shape (6, n)
+    
+    goal_full = np.concatenate((target_vel[:2], np.zeros(3)), axis=0) # shape (6,)
+    
+    J_full_transpose = J_full.T
+    dq = J_full_transpose @ goal_full
+    print(f"Jacobian shape: {J_full.shape}, dq shape: {dq.shape}")
+    print(f"Control action before clipping: {dq}")
+    # print control action range
+    print(f"Control action range: {model.actuator_ctrlrange.shape}")
+    dq = jnp.clip(dq, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
+
+    return dq
+
 
 
 def run_interactive(  # noqa: PLR0912, PLR0915
@@ -29,7 +94,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     show_traces: bool = True,
     max_traces: int = 5,
     trace_width: float = 5.0,
-    trace_color: Sequence = [1.0, 1.0, 1.0, 0.1],
+    trace_color: Sequence = [1.0, 1.0, 1.0, 0.4],
     reference: np.ndarray = None,
     reference_fps: float = 30.0,
     delay_ctrl_start: int = 0,
@@ -97,6 +162,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     )
     policy_params = controller.init_params(seed)
     jit_optimize = jax.jit(controller.optimize, donate_argnums=(1,))
+    #jit_optimize = controller.optimize
 
     # Warm-up the controller
     print("Jitting the controller...")
@@ -184,6 +250,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             plan_start = time.time()
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
             plan_time = time.time() - plan_start
+            
 
             # Visualize the rollouts
             if show_traces:
@@ -217,16 +284,35 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     viewer.user_scn,
                 )
 
+            # for k in range(controller.nbr_actions):
+            
             # Step the simulation
             for i in range(sim_steps_per_replan):
                 t = i * mj_model.opt.timestep
                 u = controller.get_action(policy_params, t)
                 # if any u is nan, stop 
+                # print(f"Control action shape: {u.shape}")
+                # print(f"Control action: {u}")
 
                 if delay_ctrl_start > 0:
                     delay_ctrl_start -= 1
                     # print(f"Delaying controller start for {delay_ctrl_start} steps")
                 else:
+                    # remap controls if a control mapper is provided
+                    if controller.control_mapper is not None:
+                        # use ik functiojn to remap controls
+                        # u = inverse_kinematics(
+                        #     mj_model,
+                        #     mj_data,
+                        #     u,  # Exclude base DOF
+                        # )
+                        u = ik_transpose(
+                            mj_model,
+                            mj_data,
+                            u,  # Exclude base DOF
+                        )
+                        # print(f"Remapped control action: {u}")
+                    # Apply the control to the simulation
                     mj_data.ctrl[:] = np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
