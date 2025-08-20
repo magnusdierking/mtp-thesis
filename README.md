@@ -1,4 +1,4 @@
-# Hydrax
+# Thesis
 
 Sampling-based model predictive control on GPU with
 [JAX](https://jax.readthedocs.io/) and
@@ -24,6 +24,7 @@ Available methods:
 | [MPPI](https://arxiv.org/abs/1707.02342) | Take an exponentially weighted average of the rollouts. | [`hydrax.algs.MPPI`](hydrax/algs/mppi.py) |
 | [Cross Entropy Method](https://en.wikipedia.org/wiki/Cross-entropy_method) | Fit a Gaussian distribution to the `n` best "elite" rollouts. | [`hydrax.algs.CEM`](hydrax/algs/cem.py) |
 | [Evosax](https://github.com/RobertTLange/evosax/) | Any of the 30+ evolution strategies implemented in `evosax`. Includes CMA-ES, differential evolution, and many more. | [`hydrax.algs.Evosax`](hydrax/algs.evosax.py) |
+| [MTP](https://github.com/anindex/mtp) | Model Tensor Planning base implementation | [`hydrax.algs.mtp.MTP`](hydrax/algs.mtp.mtp.py) |
 
 ## Setup (conda)
 
