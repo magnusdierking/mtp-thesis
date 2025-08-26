@@ -1,6 +1,6 @@
-<mujoco model="particle_scene">
+<mujoco model="bugtrap_scene">
   <!-- Model that includes like lighting and a ground. -->
-  <include file="particle.xml"/>
+  <include file="bugtrap.xml"/>
 
   <statistic center="0 0 0" extent="0.9"/>
 
