@@ -3,9 +3,8 @@ import copy
 from pprint import pformat
 import argparse
 
-from mtp.mtp import MTP
-from hydrax.algs import MPPI
-from hydrax.tasks.dummy_task_panda import Dummy
+from hydrax.algs import MPPI, MTP, AnMTP
+from hydrax.tasks.pusht_franka import PushTFranka
 from hydrax.alg_base import SamplingBasedController
 
 import numpy as np
@@ -13,7 +12,7 @@ import rclpy
 from scipy.spatial.transform import Rotation as R
 
 from shape_msgs.msg import Mesh, MeshTriangle, SolidPrimitive
-from robot_interfaces.robots.franka_panda_server import FrankaPandaServer
+from franka_panda_server import FrankaPandaServer
 
 
 class FR3_PushT_SMPC_Controller(FrankaPandaServer):
