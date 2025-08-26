@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Sequence
+from typing import Dict, Sequence, Optional
 
 import jax
 import jax.numpy as jnp
@@ -26,6 +26,8 @@ class Task(ABC):
         planning_horizon: int,
         sim_steps_per_control_step: int,
         trace_sites: Sequence[str] = [],
+        nu: Optional[int] = None,
+        ctrl_limits: Optional[Dict[str, jnp.ndarray]] = None,
     ):
         """Set the model and simulation parameters.
 
@@ -35,28 +37,44 @@ class Task(ABC):
             sim_steps_per_control_step: The number of simulation steps to take
                                         for each control step.
             trace_sites: A list of site names to visualize with traces.
+            nu: The number of control inputs (if not specified, inferred from the model).
+            
 
         Note: many other simulator parameters, e.g., simulator time step,
               Newton iterations, etc., are set in the model itself.
+              
+        Warning: If the control cimension nu is not specified, it will be inferred
+                 from the model. If the specififed nu is different from the model, the algorithm has to 
+                 implement a mapping function
         """
         assert isinstance(mj_model, mujoco.MjModel)
         self.mj_model = mj_model
         self.model = mjx.put_model(mj_model)
         self.planning_horizon = planning_horizon
         self.sim_steps_per_control_step = sim_steps_per_control_step
-
+        
         # Set actuator limits
-        self.u_min = jnp.where(
+        self.act_min = jnp.where(
             mj_model.actuator_ctrllimited,
             mj_model.actuator_ctrlrange[:, 0],
             -jnp.inf,
         )
-        self.u_max = jnp.where(
+        self.act_max = jnp.where(
             mj_model.actuator_ctrllimited,
             mj_model.actuator_ctrlrange[:, 1],
             jnp.inf,
         )
-
+        self.nu = nu if nu is not None else self.model.nu    
+        
+        if nu is None:
+            # Set actuator limits
+            self.u_min = self.act_min
+            self.u_max = self.act_max
+        else:
+            assert ctrl_limits is not None, "Control limits must be provided if nu is specified."
+            self.u_min = ctrl_limits.get("u_min", jnp.full(nu, -np.inf))
+            self.u_max = ctrl_limits.get("u_max", jnp.full(nu, np.inf))
+            
         # Timestep for each control step
         self.dt = mj_model.opt.timestep * sim_steps_per_control_step
 
@@ -85,6 +103,11 @@ class Task(ABC):
         self.task_success = False
         return self.mj_model, mujoco.MjData(self.mj_model)
 
+    def make_control_mapper(self):
+        """Override this method to provide a custom control mapper.
+        """
+        return None
+    
     @abstractmethod
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
         """The running cost ℓ(xₜ, uₜ).

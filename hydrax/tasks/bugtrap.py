@@ -13,11 +13,11 @@ class BugTrap(Task):
     """A velocity-controlled planar point mass chases a target position."""
 
     def __init__(
-        self, planning_horizon: int = 20, sim_steps_per_control_step: int = 5
+        self, planning_horizon: int = 15, sim_steps_per_control_step: int = 5
     ):
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(
-            (get_root_path() / "hydrax" / "models" / "bugtrap" / "scene.xml").as_posix()
+            (get_root_path() / "models" / "bugtrap" / "scene.xml").as_posix()
         )
 
         super().__init__(

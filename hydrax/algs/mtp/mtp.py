@@ -11,8 +11,8 @@ from hydrax.alg_base import SamplingBasedController, Trajectory
 
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
-from mtp.splines.akima import poly_akima, poly_interpolation
-from mtp.splines.bsplines import compute_b_spline_matrix
+from .splines.akima import poly_akima, poly_interpolation
+from .splines.bsplines import compute_b_spline_matrix
 
 
 @dataclass

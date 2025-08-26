@@ -1,8 +1,8 @@
 import time
 from typing import Sequence
-import os
 import csv
 
+from hydrax.algs.mtp.beta_scheduler import RatioEMAScheduler
 import jax
 import jax.numpy as jnp
 import mujoco
@@ -13,6 +13,8 @@ from mujoco import mjx
 from hydrax.alg_base import SamplingBasedController
 from hydrax.files import get_root_path
 from hydrax.utils.video import VideoRecorder
+
+from hydrax.algs.mtp.beta_scheduler import *
 
 """
 Tools for deterministic (synchronous) simulation, with the simulator and
@@ -232,7 +234,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 mj_model, ref_data, vopt, pert, catmask, viewer.user_scn
             )
 
+        # --- init ---
         step = 0
+        alpha = 0.15          
+        kw = {"beta_min": 0.1, "beta_max": 0.6}
+        sched = RatioEMAScheduler(alpha=alpha, **kw).init(mj_data.qpos)
+
         while viewer.is_running():
             step += 1
             start_time = time.time()
@@ -245,6 +252,15 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 mocap_quat=jnp.array(mj_data.mocap_quat),
                 time=mj_data.time,
             )
+
+            # ----- adaptive beta (single alpha) -----
+            x = jnp.array(mj_data.qpos)
+            beta = sched.update(x)
+            controller.update_beta(float(beta))
+            print(f"Updated beta to {float(beta):.3f}")
+            # -------------------------------------------
+
+            print(controller.task.contact_cost(mjx_data))
 
             # Do a replanning step
             plan_start = time.time()

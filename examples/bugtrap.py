@@ -1,15 +1,18 @@
 import argparse
-
+import os
+os.environ["JAX_LOG_COMPILES"] = "1"
 import evosax
 import evosax.algorithms
 import mujoco
 
-from mtp.mtp import MTP
+from hydrax.algs import MTP
+from hydrax.algs import AnMTP
 from hydrax.algs import MPPI, Evosax, PredictiveSampling
 from hydrax.risk import WorstCase
 from hydrax.simulation.deterministic import run_interactive
-from hydrax.simulation.deterministic_experiment import run_headless_simulation
+# from hydrax.simulation.deterministic_experiment import run_headless_simulation
 from hydrax.tasks.bugtrap import BugTrap
+
 
 """
 Run an interactive simulation of the particle tracking task.
@@ -37,6 +40,7 @@ subparsers.add_parser("de", help="Differential Evolution")
 subparsers.add_parser("gld", help="Gradient-Less Descent")
 subparsers.add_parser("rs", help="Uniform Random Search")
 subparsers.add_parser("mtp", help="MTP")
+subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
 # Set the controller based on command-line arguments
@@ -83,6 +87,24 @@ elif args.algorithm == "mtp":
             N=32,
             sigma_min=0.1,
             num_elites=3,
+            beta=0.25,
+            alpha=0.1,
+            interpolation='bspline',
+            num_randomizations=1,
+            seed=seed,
+        )
+    save_path = "./../data/headless_bugtrap_mtp"
+
+elif args.algorithm == "anmtp":
+    print("Running Annealed MTP")
+    seed = 0
+    ctrl = AnMTP(
+            task,
+            num_samples=32,
+            M=3,
+            N=32,
+            sigma_min=0.1,
+            num_elites=4,
             beta=0.25,
             alpha=0.1,
             interpolation='bspline',
