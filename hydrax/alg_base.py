@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional, Callable
 
 import jax
 import jax.numpy as jnp
@@ -39,6 +39,7 @@ class SamplingBasedController(ABC):
         num_randomizations: int,
         risk_strategy: RiskStrategy,
         seed: int,
+        control_mapper: Optional[Callable[[mjx.Model, mjx.Data, jax.Array], jax.Array]] = None,
     ):
         """Initialize the MPC controller.
 
@@ -59,6 +60,9 @@ class SamplingBasedController(ABC):
         # Use a single model (no domain randomization) by default
         self.model = task.model
         self.randomized_axes = None
+        
+        # Control mapper for applying controls to the model
+        self.control_mapper = None
 
         # Set the random seed for domain randomization
         self.set_seed(seed)
@@ -148,7 +152,7 @@ class SamplingBasedController(ABC):
             costs=costs, controls=controls, trace_sites=trace_sites
         )
 
-    @partial(jax.vmap, in_axes=(None, None, None, 0))
+    @partial(jax.vmap, in_axes=(None, None, None, 0)) # 0 to vectorize over num_rollotus
     def eval_rollouts(
         self, model: mjx.Model, state: mjx.Data, controls: jax.Array
     ) -> Tuple[mjx.Data, Trajectory]:
@@ -168,20 +172,36 @@ class SamplingBasedController(ABC):
             x: mjx.Data, u: jax.Array
         ) -> Tuple[mjx.Data, Tuple[mjx.Data, jax.Array, jax.Array]]:
             """Compute the cost and observation, then advance the state."""
+            
+            # jax.debug.print("qpos shape: {}, dtype: {}, norm: {}", x.qpos.shape, x.qpos.dtype, jnp.linalg.norm(x.qpos))
+            # jax.debug.print("qvel shape: {}, dtype: {}, norm: {}", x.qvel.shape, x.qvel.dtype, jnp.linalg.norm(x.qvel))
             x = mjx.forward(model, x)  # compute site positions
-            cost = self.task.dt * self.task.running_cost(x, u)
+            # jax.debug.print(f"Control shape: {u.shape}")
+            u_mapped = self.control_mapper(x, u) if self.control_mapper else u
+            
+            cost = self.task.dt * self.task.running_cost(x, u_mapped)
             sites = self.task.get_trace_sites(x)
+            # jax.debug.print("After running cost and trace sites")
 
+            # def _step_debug(_, x):
+            #     return mjx.step(model, x)
+            
             # Advance the state for several steps, zero-order hold on control
             x = jax.lax.fori_loop(
                 0,
                 self.task.sim_steps_per_control_step,
                 lambda _, x: mjx.step(model, x),
-                x.replace(ctrl=u),
+                x.replace(ctrl=u_mapped),
             )
-
+            # jax.debug.print("After mjx.step")
             return x, (x, cost, sites)
+        
+        # jax.debug.print("NaN check — any NaNs in controls: {}", jnp.isnan(controls).any())
+        # jax.debug.print("Inf check — any Infs in controls: {}", jnp.isinf(controls).any())
+        # jax.debug.print("qpos shape: {}, dtype: {}, norm: {}", state.qpos.shape, state.qpos.dtype, jnp.linalg.norm(state.qpos))
+        # jax.debug.print("qvel shape: {}, dtype: {}, norm: {}", state.qvel.shape, state.qvel.dtype, jnp.linalg.norm(state.qvel))
 
+        # jax.debug.print("Starting rollout with controls: {}", controls)
         final_state, (states, costs, trace_sites) = jax.lax.scan(
             _scan_fn, state, controls
         )
