@@ -194,4 +194,3 @@ dependencies:
       - urllib3==2.4.0
       - virtualenv==20.31.2
       - zipp==3.22.0
-prefix: /home/magnus/miniconda3/envs/mtp

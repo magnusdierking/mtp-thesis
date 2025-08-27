@@ -12,8 +12,7 @@ def mujoco_to_scipy_quat(q):
 
 
 # Load the MuJoCo model
-
-xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka_planar/scene_mjx.xml"
+xml_path = "./../../hydrax/models/pusht_franka_planar/scene_mjx.xml"
 # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
 xml_dir = os.path.dirname(xml_path)
 

@@ -11,7 +11,7 @@ from typing import Tuple
 import rclpy
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R
-from robot_interfaces.robots.robot_server import RobotServer
+from robot_server import RobotServer
 
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from sensor_msgs.msg import JointState
@@ -303,7 +303,11 @@ class FrankaPandaServer(RobotServer):
     def _print_joint_states(self):
         joint_states = self.get_joint_states()
         ee_pose = self.get_ee_pose(frame="base_link")
-        
+        # print quaternion
+        if ee_pose is not None:
+            quat_xyzw = R.from_matrix(ee_pose[:3, :3]).as_quat()
+            self.get_logger().info(f"End-effector quaternion: {quat_xyzw}")
+
         if joint_states:
             self.get_logger().info(f"\n{pformat(joint_states)}")
         else:
@@ -313,72 +317,3 @@ class FrankaPandaServer(RobotServer):
         else:
             self.get_logger().warn("End-effector pose not available.")
 
-
-# def main(args=None):
-#     rclpy.init(args=args)
-#     robot = FrankaPandaServer(robot_ip='10.90.90.144', gripper_type=None)
-#     executor = rclpy.executors.MultiThreadedExecutor()
-#     executor.add_node(robot)
-    
-#     try:
-#         # Get current EE pose
-#         timeout = 5.0  # seconds
-#         start_time = time.time()
-#         # while robot.get_ee_pose() is None and time.time() - start_time < timeout:
-#         #     rclpy.spin_once(robot, timeout_sec=0.1) 
-        
-#         # H_current = robot.get_ee_pose()
-#         # if H_current is None:
-#         #     robot.get_logger().error("Current EE pose not available.")
-#         # else:
-#         #     # Offset in Z by +0.05 m (5 cm)
-#         #     H_target = np.array(H_current)
-#         #     H_target[2, 3] = H_target[2, 3] + 0.05
-
-#         #     robot.get_logger().info("Planning motion with +5cm Z offset...")
-#         #     robot.plan_and_move_to_pose(H_target)
-            
-#         #     print("Current State: " + str(robot.moveit2.query_state()))
-#         # rate = robot.create_rate(10)
-#         # while robot.moveit2.query_state() != MoveIt2State.EXECUTING:
-#         #     rate.sleep()
-
-#         # # Get the future
-#         # print("Current State: " + str(robot.moveit2.query_state()))
-#         # future = robot.moveit2.get_execution_future()
-
-#         # # Wait until the future is done
-#         # while not future.done():
-#         #     rate.sleep()
-#         # Wait for joint state to become available
-#         timeout = 5.0
-#         start = time.time()
-#         while robot.get_joint_positions() is None and time.time() - start < timeout:
-#             rclpy.spin_once(robot, timeout_sec=0.1)
-
-#         # Get current joint positions as a list
-#         joint_pos_dict = robot.get_joint_positions()
-#         if not joint_pos_dict:
-#             robot.get_logger().error("Failed to get current joint positions.")
-#         else:
-#             joint_names = list(joint_pos_dict["fr3_arm"].keys())
-#             joint_positions = list(joint_pos_dict["fr3_arm"].values())
-
-#             print("Current Joint Positions: ", joint_positions)
-#             # Modify joint 4 (index 3)
-#             joint_index = 3
-#             joint_positions[joint_index] += 0.1
-
-#             robot.get_logger().info(
-#                 f"Moving from current config with joint {joint_names[joint_index]} increased by 0.1"
-#             )
-#             robot.plan_and_move_to_configuration(joint_positions)
-
-
-#         executor.spin()
-#     finally:
-#         robot.destroy_node()
-#         rclpy.shutdown()
-
-# if __name__ == "__main__":
-#     main()
