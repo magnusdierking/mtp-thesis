@@ -254,13 +254,11 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             )
 
             # ----- adaptive beta (single alpha) -----
-            x = jnp.array(mj_data.qpos)
-            beta = sched.update(x)
-            controller.update_beta(float(beta))
-            print(f"Updated beta to {float(beta):.3f}")
+            # x = jnp.array(mj_data.qpos)
+            # beta = sched.update(x)
+            # controller.update_beta(float(beta))
+            # print(f"Updated beta to {float(beta):.3f}")
             # -------------------------------------------
-
-            print(controller.task.contact_cost(mjx_data))
 
             # Do a replanning step
             plan_start = time.time()

@@ -304,16 +304,21 @@ class FrankaPandaServer(RobotServer):
         joint_states = self.get_joint_states()
         ee_pose = self.get_ee_pose(frame="base_link")
         # print quaternion
+        # if ee_pose is not None:
+        #     quat_xyzw = R.from_matrix(ee_pose[:3, :3]).as_quat()
+        #     self.get_logger().info(f"End-effector quaternion: {quat_xyzw}")
+            
+        # print ee position
         if ee_pose is not None:
-            quat_xyzw = R.from_matrix(ee_pose[:3, :3]).as_quat()
-            self.get_logger().info(f"End-effector quaternion: {quat_xyzw}")
+            ee_position = ee_pose[:3, 3]
+            self.get_logger().info(f"End-effector position: {ee_position}")
 
-        if joint_states:
-            self.get_logger().info(f"\n{pformat(joint_states)}")
-        else:
-            self.get_logger().warn("Waiting for joint states...")
-        if ee_pose is not None:
-                self.get_logger().info(f"End-effector pose in base_link frame:\n{ee_pose}")
-        else:
-            self.get_logger().warn("End-effector pose not available.")
+        # if joint_states:
+        #     self.get_logger().info(f"\n{pformat(joint_states)}")
+        # else:
+        #     self.get_logger().warn("Waiting for joint states...")
+        # if ee_pose is not None:
+        #         self.get_logger().info(f"End-effector pose in base_link frame:\n{ee_pose}")
+        # else:
+        #     self.get_logger().warn("End-effector pose not available.")
 

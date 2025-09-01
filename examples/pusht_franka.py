@@ -5,8 +5,7 @@ from evosax.algorithms import (
 )
 
 
-from mtp.mtp import MTP
-from hydrax.algs import CEM, PredictiveSampling, MPPI, Evosax
+from hydrax.algs import CEM, PredictiveSampling, MPPI, Evosax, MTP
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.tasks.pusht_franka import PushTFranka
 
@@ -51,18 +50,17 @@ elif args.algorithm == "mppi":
         temperature=0.1,
         num_randomizations=4,
         seed=seed,
-        control_mapper=task.ik_mapper_2d,
     )
-elif args.algorithm == "cem":
-    print("Running CEM")
-    ctrl = CEM(
-        task,
-        num_samples=128,
-        num_elites=20,
-        sigma_min=0.3,
-        sigma_start=1.0,
-        seed=seed,
-    )
+# elif args.algorithm == "cem":
+#     print("Running CEM")
+#     ctrl = CEM(
+#         task,
+#         num_samples=128,
+#         num_elites=20,
+#         sigma_min=0.3,
+#         sigma_start=1.0,
+#         seed=seed,
+#     )
 elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
@@ -75,7 +73,7 @@ elif args.algorithm == "mtp":
             num_elites=10,
             beta=0.25,
             alpha=0.1,
-            interpolation='akima',
+            interpolation='bspline',
             num_randomizations=2,
             seed=seed,
         )

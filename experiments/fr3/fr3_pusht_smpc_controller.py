@@ -14,11 +14,14 @@ import rclpy
 from scipy.spatial.transform import Rotation as R
 
 from shape_msgs.msg import Mesh, MeshTriangle, SolidPrimitive
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, TransformStamped
 from franka_panda_server import FrankaPandaServer
 
 from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityException, ExtrapolationException
 from tf2_geometry_msgs import do_transform_pose
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
+
+
 
 
 class FR3_PushT_SMPC_Controller(FrankaPandaServer):
@@ -61,14 +64,16 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
         ####################################
         ##       Move to initial pose     ##    
         ####################################
-        self.move_to_home()
-        # wait 
-        time.sleep(2.0)
+        # self.move_to_home()
+        # # wait 
+        # time.sleep(2.0)
         
-        self.init_pos = np.array([0.4, 0.0, 0.65])
+        self.init_pos = np.array([0.4, 0.0, 0.26])
+        # add small noise: keep x small, increase variance in y
+        self.init_pos[0] += np.random.normal(0, 0.01)   # x
+        self.init_pos[1] += np.random.normal(0, 0.05)   # y (larger variance)
         self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
-        # self.init_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [x, y, z, w]
-        # # quat to rotation matrix
+       
         self.init_rot = R.from_quat(self.init_quat).as_matrix()
         pose = np.eye(4)
         pose[:3, :3] = self.init_rot
@@ -76,9 +81,9 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
         self.plan_and_move_to_pose(pose)
         
         time.sleep(2.0)
-        
-        # TODO safe resulting configuration as home
-        
+
+        self.br = StaticTransformBroadcaster(self)
+        self._publish_static_robot_tf()
         
         ####################################
         ##            T Object            ##    
@@ -91,48 +96,79 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
         ##         JIT Controller         ##    
         ####################################
         # Wait until all states are received
-        while not self._states_received():
-            rclpy.spin_once(self, timeout_sec=0.1)
+        # while not self._states_received():
+        #     rclpy.spin_once(self, timeout_sec=0.1)
 
-        print("All states received, initializing controller...")
+        # print("All states received, initializing controller...")
 
-        self.ctrl = ctrl
-        self.mjx_data = mjx.make_data(self.ctrl.task.model)
-        self.policy_params = self.ctrl.init_params(seed)
-        print(
-            f"Planning with {self.ctrl.task.planning_horizon} steps "
-            f"over a {self.ctrl.task.planning_horizon * self.ctrl.task.dt} second horizon."
-        )
-        print("Jitting controller...")
-        print("This may take a while, please be patient.")
-        st = time.time()
-        self.mjx_data = mjx.forward(ctrl.task.model, self.mjx_data)
-        self.jit_optimize = jax.jit(
-            lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,)
-        )
-        self.get_action = jax.jit(ctrl.get_action)
-        self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
-        print(f"Time to jit: {time.time() - st}")
+        # self.ctrl = ctrl
+        # self.mjx_data = mjx.make_data(self.ctrl.task.model)
+        # self.policy_params = self.ctrl.init_params(seed)
+        # print(
+        #     f"Planning with {self.ctrl.task.planning_horizon} steps "
+        #     f"over a {self.ctrl.task.planning_horizon * self.ctrl.task.dt} second horizon."
+        # )
+        # print("Jitting controller...")
+        # print("This may take a while, please be patient.")
+        # st = time.time()
+        # self.mjx_data = mjx.forward(ctrl.task.model, self.mjx_data)
+        # self.jit_optimize = jax.jit(
+        #     lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,)
+        # )
+        # self.get_action = jax.jit(ctrl.get_action)
+        # self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
+        # print(f"Time to jit: {time.time() - st}")
         
         ####################################
         ##         Set up Timers          ##    
         ####################################
+        
+        self.create_timer(1.0, self._update_state)
 
-        # SMPC update 
-        self.mpc_freq = 20  # Hz
-        self.create_timer(1.0 / self.mpc_freq, self._run_controller)
+        # # SMPC update 
+        # self.mpc_freq = 20  # Hz
+        # self.create_timer(1.0 / self.mpc_freq, self._run_controller)
 
-        # # Command publisher
-        # self.action_timer = time.time()
-        self.get_logger().info("Starting servo...")
-        self.servo.enable_servo()
-        self.servo.use_twist()  # switch to twist commands
-        self.servo_freq = 35  # Hz
-        self.create_timer(1.0 / self.servo_freq, self._send_command)
+        # # # Command publisher
+        # # self.action_timer = time.time()
+        # self.get_logger().info("Starting servo...")
+        # self.servo.enable_servo()
+        # self.servo.use_twist()  # switch to twist commands
+        # self.servo_freq = 35  # Hz
+        # self.create_timer(1.0 / self.servo_freq, self._send_command)
         
-        # TODO - regularly check for error threshold and send robot home if below threshold
+        # # TODO - regularly check for error threshold and send robot home if below threshold
         
         
+    # TODO - reset function to
+    # reset the robot to its home pose, then trigger input to
+    # send to init pose wiht small noise
+    # reset simulation
+    # wait and ask to start planning
+    
+    
+    def _publish_static_robot_tf(self):
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = 'fr3_link0'
+        t.child_frame_id = 'optitrack'
+
+        # Translation (meters)
+        t.transform.translation.x = 1.79531
+        t.transform.translation.y = -1.91180
+        t.transform.translation.z = -0.22493
+
+        # Quaternion (x, y, z, w)
+        t.transform.rotation.x = 0.03747
+        t.transform.rotation.y = 0.02100
+        t.transform.rotation.z = 0.96082
+        t.transform.rotation.w = 0.27381
+
+        # Broadcast once; static transforms are latched
+        self.static_tf = t
+        self.br.sendTransform(t)
+        self.get_logger().info('Published static TF fr3_link0 -> optitrack')
+
 
         
     def _print(self):
@@ -142,38 +178,38 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
         
         try:
             # Use rclpy.time.Time() for "latest" available transform
-            tf = self.tf_buffer.lookup_transform(
+            opti_T_obj = self.tf_buffer.lookup_transform(
                 "optitrack", "objectPushT", rclpy.time.Time())
-            tr = tf.transform.translation
-            q = tf.transform.rotation
+            
+            world_T_obj = self.tf_buffer.lookup_transform(
+                "objectPushT", "fr3_link0", rclpy.time.Time())
 
-            self.latest_translation = (tr.x, tr.y, tr.z)
-            self.latest_rotation = (q.x, q.y, q.z, q.w)
-            print(f"Object position: {self.latest_translation}, orientation: {self.latest_rotation}")   
+            # world_T_obj = self.tf_buffer.transform(
+            #     "objectPushT",
+            #     "fr3_link0",  # target frame
+            #     timeout=rclpy.duration.Duration(seconds=0.5)
+            # )
         except (LookupException, ConnectivityException, ExtrapolationException) as e:
             self.get_logger().warn(f'TF lookup failed: {e}')
         
-        dq = np.squeeze(np.array([copy.deepcopy(self.mjx_data.qvel)]))
-        q = np.squeeze(np.array([copy.deepcopy(self.mjx_data.qpos)]))
+        # dq = np.squeeze(np.array([copy.deepcopy(self.mjx_data.qvel)]))
+        # q = np.squeeze(np.array([copy.deepcopy(self.mjx_data.qpos)]))
 
-        # print end effector pose matrix
-        w_H_ee = self.get_ee_pose()
-        print(f"End effector pose: \n{w_H_ee}")
-        # convert to quaternion
-        quat_xyzw = R.from_matrix(w_H_ee[:3, :3]).as_quat()
-        print(f"End effector quaternion: {quat_xyzw}")    
-                
-        with self._lock:
-            dq[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
-            q[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
+        # print world_T_obj lin and quat
+        print(f"World transform (translation): {world_T_obj.transform.translation}")
+        print(f"World transform (rotation): {world_T_obj.transform.rotation}")
+
+        # with self._lock:
+        #     dq[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
+        #     q[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
         
         # TODO update T 
         # ...
         
-        self.mjx_data = self.mjx_data.replace(
-            qpos=q,
-            qvel=dq,
-        )
+        # self.mjx_data = self.mjx_data.replace(
+        #     qpos=q,
+        #     qvel=dq,
+        # )
         
     def _send_command(self):
         

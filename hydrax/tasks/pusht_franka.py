@@ -21,7 +21,7 @@ class PushTFranka(Task):
     def __init__(
         self, planning_horizon: int = 10, sim_steps_per_control_step: int = 5, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-0.5, -0.5]), "u_max": jnp.array([0.5, 0.5])}
+        ctrl_limits = {"u_min": jnp.array([-0.1, -0.1]), "u_max": jnp.array([0.1, 0.1])}
     ):
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(

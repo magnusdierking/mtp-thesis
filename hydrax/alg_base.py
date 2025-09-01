@@ -39,7 +39,6 @@ class SamplingBasedController(ABC):
         num_randomizations: int,
         risk_strategy: RiskStrategy,
         seed: int,
-        control_mapper: Optional[Callable[[mjx.Model, mjx.Data, jax.Array], jax.Array]] = None,
     ):
         """Initialize the MPC controller.
 
@@ -62,7 +61,7 @@ class SamplingBasedController(ABC):
         self.randomized_axes = None
         
         # Control mapper for applying controls to the model
-        self.control_mapper = None
+        self.control_mapper = task.make_control_mapper()
 
         # Set the random seed for domain randomization
         self.set_seed(seed)
