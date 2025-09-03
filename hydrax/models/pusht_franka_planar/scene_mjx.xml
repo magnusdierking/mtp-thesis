@@ -46,9 +46,9 @@
       <geom type="plane" size="1 1 0.01" pos="0 0 0" mass="0.001" contype="0" conaffinity="0" rgba="0.9 0.9 0.9 0.05" />
     </body>
 
-    <geom type="box" fromto="0 0 0 0.05 0 0" size="0.002" rgba="1 0 0 1"/> 
-    <geom type="box" fromto="0 0 0 0 0.05 0" size="0.002" rgba="0 1 0 1"/>         
-    <geom type="box" fromto="0 0 0 0 0 0.05" size="0.002" rgba="0 0 1 1"/> 
+    <!-- <geom type="box" fromto="0 0 0 0.05 0 0" size="0.002" rgba="1 0 0 1"/>  -->
+    <!-- <geom type="box" fromto="0 0 0 0 0.05 0" size="0.002" rgba="0 1 0 1"/>          -->
+    <!-- <geom type="box" fromto="0 0 0 0 0 0.05" size="0.002" rgba="0 0 1 1"/>  -->
 
     <!-- Slider site to attach ee to for constraint -->
     <body name="plane_slider" pos="0 0.2 0.035">

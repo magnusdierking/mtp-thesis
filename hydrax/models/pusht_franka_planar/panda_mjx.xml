@@ -120,6 +120,9 @@
 
   <worldbody>
     <light name="top" pos="0 0 2" mode="trackcom"/>
+    <!-- <geom type="box" fromto="0 0 0 0.05 0 0" size="0.002" rgba="1 0 0 1"/>  -->
+    <!-- <geom type="box" fromto="0 0 0 0 0.05 0" size="0.002" rgba="0 1 0 1"/>                     -->
+    <!-- <geom type="box" fromto="0 0 0 0 0 0.05" size="0.002" rgba="0 0 1 1"/>  -->
     <!-- <site name="target_site_w" pos="0.0 -0.35 0.025" size="0.01" rgba="1 0 0 1" type="sphere"/> -->
     <body name="link0" childclass="panda" pos="0.0 0.0 0.0" quat="0.7071 0 0 0.7071">
       <inertial mass="0.629769" pos="-0.041018 -0.00014 0.049974"

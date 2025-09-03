@@ -1,3 +1,4 @@
+import os
 import time
 import copy
 from pprint import pformat
@@ -22,6 +23,11 @@ from tf2_geometry_msgs import do_transform_pose
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 
+def yaw_from_quat(x, y, z, w):
+    # standard ZYX Euler convention
+    yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z)) - 135
+    return yaw
+
 
 
 class FR3_PushT_SMPC_Controller(FrankaPandaServer):
@@ -29,7 +35,10 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
     def __init__(self, 
                  ctrl: SamplingBasedController,
                  robot_ip,
-                 seed
+                 seed,
+                 debug_model: None,
+                 debug_data: None,
+                 viewer: None
                  ):
         
         super().__init__(robot_ip, 
@@ -60,7 +69,6 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
         
-        
         ####################################
         ##       Move to initial pose     ##    
         ####################################
@@ -84,6 +92,7 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
 
         self.br = StaticTransformBroadcaster(self)
         self._publish_static_robot_tf()
+        time.sleep(1.0)
         
         ####################################
         ##            T Object            ##    
@@ -119,11 +128,21 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
         # self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
         # print(f"Time to jit: {time.time() - st}")
         
+        
+        ####################################
+        ##         Debug Simulator        ##    
+        ####################################
+        self.debug_model = debug_model
+        self.debug_data = debug_data
+        self.viewer = viewer
+
+        self.create_timer(1.0 / 10.0, self._step_debug_sim)
+
         ####################################
         ##         Set up Timers          ##    
         ####################################
-        
-        self.create_timer(1.0, self._update_state)
+
+        self.create_timer(1.0 / 20.0, self._update_state)
 
         # # SMPC update 
         # self.mpc_freq = 20  # Hz
@@ -138,13 +157,23 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
         # self.create_timer(1.0 / self.servo_freq, self._send_command)
         
         # # TODO - regularly check for error threshold and send robot home if below threshold
+
+    def _step_debug_sim(self):
+        if not self.viewer.is_running():
+            self.get_logger().info("Viewer closed — shutting down.")
+            # Cancel timer first to avoid callbacks during shutdown.
+            rclpy.shutdown()
+            return
+
+        # Step simulation then sync the viewer.
+        mujoco.mj_forward(self.debug_model, self.debug_data)
+        self.viewer.sync()
         
-        
-    # TODO - reset function to
-    # reset the robot to its home pose, then trigger input to
-    # send to init pose wiht small noise
-    # reset simulation
-    # wait and ask to start planning
+        # TODO - reset function to
+        # reset the robot to its home pose, then trigger input to
+        # send to init pose wiht small noise
+        # reset simulation
+        # wait and ask to start planning
     
     
     def _publish_static_robot_tf(self):
@@ -152,17 +181,18 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
+        
+        # TODO hardcoded for now, potentially automatically publish after calibration in the future
 
         # Translation (meters)
-        t.transform.translation.x = 1.79531
-        t.transform.translation.y = -1.91180
-        t.transform.translation.z = -0.22493
+        t.transform.translation.x = 2.59317
+        t.transform.translation.y = -1.02211
+        t.transform.translation.z = -0.05820
 
-        # Quaternion (x, y, z, w)
-        t.transform.rotation.x = 0.03747
-        t.transform.rotation.y = 0.02100
-        t.transform.rotation.z = 0.96082
-        t.transform.rotation.w = 0.27381
+        t.transform.rotation.x = 0.00573
+        t.transform.rotation.y = -0.00477
+        t.transform.rotation.z = 0.99974
+        t.transform.rotation.w = 0.02163
 
         # Broadcast once; static transforms are latched
         self.static_tf = t
@@ -171,34 +201,54 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
 
 
         
-    def _print(self):
-        self._print_joint_states()
+    def _update_T(self):
+        try:
+            world_T_objReal = self.tf_buffer.lookup_transform(
+                "fr3_link0", "objectPushT", rclpy.time.Time())
+        except (LookupException, ConnectivityException, ExtrapolationException) as e:
+            self.get_logger().warn(f'TF lookup failed: {e}')
+            
+        # optitrack gives center of markers, need to convert to simulation center
+        lin = world_T_objReal.transform.translation
+        quat = world_T_objReal.transform.rotation
+        # print(f"World transform (rotation): {quat}")
+        
+        # object model in the base frame
+        center_align = np.array([
+            [1, 0, 0, 0.025],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ])
+        world_T_objModel = [
+            [0, -1, 0, 0],
+            [1, 0, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ]
+        world_H_objReal = np.eye(4)
+        world_H_objReal[:3, 3] = [lin.x, lin.y, lin.z]
+        world_H_objReal[:3, :3] = R.from_quat([quat.x, quat.y, quat.z, quat.w], scalar_first=False).as_matrix()
+        # change_reference( obj in robot world @ relative offset)
+        mujoco_T_objModel = world_T_objModel @ world_H_objReal @ center_align @ np.linalg.inv(world_T_objModel)
+        
+        lin = mujoco_T_objModel[:3, 3]
+        quat = R.from_matrix(mujoco_T_objModel[:3, :3]).as_quat(scalar_first=False)
+        print(f"World transform (translation): {lin}")
+
+        return lin, quat
+
 
     def _update_state(self):
         
-        try:
-            # Use rclpy.time.Time() for "latest" available transform
-            opti_T_obj = self.tf_buffer.lookup_transform(
-                "optitrack", "objectPushT", rclpy.time.Time())
-            
-            world_T_obj = self.tf_buffer.lookup_transform(
-                "objectPushT", "fr3_link0", rclpy.time.Time())
-
-            # world_T_obj = self.tf_buffer.transform(
-            #     "objectPushT",
-            #     "fr3_link0",  # target frame
-            #     timeout=rclpy.duration.Duration(seconds=0.5)
-            # )
-        except (LookupException, ConnectivityException, ExtrapolationException) as e:
-            self.get_logger().warn(f'TF lookup failed: {e}')
+        lin_t, quat_t = self._update_T()
+        self.debug_data.qpos[0] = lin_t[0]
+        self.debug_data.qpos[1] = lin_t[1]
+        self.debug_data.qpos[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3])
+        self.debug_data.qpos[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
+        # TODO angle
         
-        # dq = np.squeeze(np.array([copy.deepcopy(self.mjx_data.qvel)]))
-        # q = np.squeeze(np.array([copy.deepcopy(self.mjx_data.qpos)]))
-
-        # print world_T_obj lin and quat
-        print(f"World transform (translation): {world_T_obj.transform.translation}")
-        print(f"World transform (rotation): {world_T_obj.transform.rotation}")
-
+        
         # with self._lock:
         #     dq[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
         #     q[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
@@ -263,7 +313,19 @@ if __name__ == '__main__':
     task = PushTFranka(
     )
 
-
+    import mujoco
+    import mujoco.viewer
+    
+ 
+    # Load the MuJoCo model
+    xml_path = "/home/franka/Lab/mtp-thesis/hydrax/models/pusht_franka_planar/scene_mjx.xml"
+    # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
+    xml_dir = os.path.dirname(xml_path)
+    print(os.path.basename(xml_path))
+    print(xml_path)
+    model = mujoco.MjModel.from_xml_path(xml_path)
+    data = mujoco.MjData(model)
+    
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description="Run an interactive simulation of the walker task."
@@ -305,22 +367,25 @@ if __name__ == '__main__':
                 seed=seed,
             )
     
-        
-    controller = FR3_PushT_SMPC_Controller(
-        ctrl=ctrl,
-        robot_ip="10.90.90.144",
-        seed=seed,
+    with mujoco.viewer.launch_passive(model, data) as v:
+        controller = FR3_PushT_SMPC_Controller(
+            ctrl=ctrl,
+            robot_ip="10.90.90.144",
+            seed=seed,
+            debug_model=model,
+            debug_data=data,
+            viewer=v,
         )
-    
-    # TODO - does multi-threaded executor give me any advantage ? -> Benchmark
-    executor = rclpy.executors.MultiThreadedExecutor()
-    executor.add_node(controller)
-    
-    try:
-        executor.spin()
-    except KeyboardInterrupt:
-        print("Shutting down controller...")
-    finally:
-        executor.shutdown()
-        controller.destroy_node()
-        rclpy.shutdown()
+
+        # TODO - does multi-threaded executor give me any advantage ? -> Benchmark
+        executor = rclpy.executors.MultiThreadedExecutor()
+        executor.add_node(controller)
+        
+        try:
+            executor.spin()
+        except KeyboardInterrupt:
+            print("Shutting down controller...")
+        finally:
+            executor.shutdown()
+            controller.destroy_node()
+            rclpy.shutdown()
