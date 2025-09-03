@@ -30,15 +30,12 @@ def yaw_from_quat(x, y, z, w):
 
 
 
-class FR3_PushT_SMPC_Controller(FrankaPandaServer):
+class FR3_PushT(FrankaPandaServer):
 
     def __init__(self, 
                  ctrl: SamplingBasedController,
                  robot_ip,
                  seed,
-                 debug_model: None,
-                 debug_data: None,
-                 viewer: None
                  ):
         
         super().__init__(robot_ip, 
@@ -127,16 +124,6 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
         # self.get_action = jax.jit(ctrl.get_action)
         # self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
         # print(f"Time to jit: {time.time() - st}")
-        
-        
-        ####################################
-        ##         Debug Simulator        ##    
-        ####################################
-        self.debug_model = debug_model
-        self.debug_data = debug_data
-        self.viewer = viewer
-
-        self.create_timer(1.0 / 10.0, self._step_debug_sim)
 
         ####################################
         ##         Set up Timers          ##    
@@ -158,22 +145,6 @@ class FR3_PushT_SMPC_Controller(FrankaPandaServer):
         
         # # TODO - regularly check for error threshold and send robot home if below threshold
 
-    def _step_debug_sim(self):
-        if not self.viewer.is_running():
-            self.get_logger().info("Viewer closed — shutting down.")
-            # Cancel timer first to avoid callbacks during shutdown.
-            rclpy.shutdown()
-            return
-
-        # Step simulation then sync the viewer.
-        mujoco.mj_forward(self.debug_model, self.debug_data)
-        self.viewer.sync()
-        
-        # TODO - reset function to
-        # reset the robot to its home pose, then trigger input to
-        # send to init pose wiht small noise
-        # reset simulation
-        # wait and ask to start planning
     
     
     def _publish_static_robot_tf(self):
@@ -312,19 +283,6 @@ if __name__ == '__main__':
 
     task = PushTFranka(
     )
-
-    import mujoco
-    import mujoco.viewer
-    
- 
-    # Load the MuJoCo model
-    xml_path = "/home/franka/Lab/mtp-thesis/hydrax/models/pusht_franka_planar/scene_mjx.xml"
-    # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
-    xml_dir = os.path.dirname(xml_path)
-    print(os.path.basename(xml_path))
-    print(xml_path)
-    model = mujoco.MjModel.from_xml_path(xml_path)
-    data = mujoco.MjData(model)
     
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
@@ -367,25 +325,21 @@ if __name__ == '__main__':
                 seed=seed,
             )
     
-    with mujoco.viewer.launch_passive(model, data) as v:
-        controller = FR3_PushT_SMPC_Controller(
-            ctrl=ctrl,
-            robot_ip="10.90.90.144",
-            seed=seed,
-            debug_model=model,
-            debug_data=data,
-            viewer=v,
-        )
+    controller = FR3_PushT(
+        ctrl=ctrl,
+        robot_ip="10.90.90.144",
+        seed=seed,
+    )
 
-        # TODO - does multi-threaded executor give me any advantage ? -> Benchmark
-        executor = rclpy.executors.MultiThreadedExecutor()
-        executor.add_node(controller)
-        
-        try:
-            executor.spin()
-        except KeyboardInterrupt:
-            print("Shutting down controller...")
-        finally:
-            executor.shutdown()
-            controller.destroy_node()
-            rclpy.shutdown()
+    # TODO - does multi-threaded executor give me any advantage ? -> Benchmark
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(controller)
+    
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        print("Shutting down controller...")
+    finally:
+        executor.shutdown()
+        controller.destroy_node()
+        rclpy.shutdown()

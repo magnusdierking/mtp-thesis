@@ -12,7 +12,7 @@ def mujoco_to_scipy_quat(q):
 
 
 # Load the MuJoCo model
-xml_path = "./../../hydrax/models/pusht_franka_planar/scene_mjx.xml"
+xml_path = "./../../hydrax/models/fr3_pushT_pos/scene_mjx.xml"
 # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
 xml_dir = os.path.dirname(xml_path)
 
@@ -21,7 +21,7 @@ os.chdir(xml_dir)
 model = mujoco.MjModel.from_xml_path(os.path.basename(xml_path))
 data = mujoco.MjData(model)
 
-model.opt.gravity[:] = 0.0
+# model.opt.gravity[:] = 0.0
 
 for i in range(model.njnt):
     name = model.joint(i).name
@@ -37,7 +37,7 @@ print(data.ctrl)
                          
                          # initial position of robot
 # Desired EE pose in world frame
-des_pos = np.array([0.0, 0.25, 0.035])
+des_pos = np.array([0.3, 0.0, 0.05])
 des_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
 
 # Body ID for end-effector
@@ -112,12 +112,12 @@ for i in range(max_iters):
 else:
     print("IK did not converge.")
 
-# Set solution back to model
-data.qpos[j_start:j_start+n_joints] = q
 
 # initial control
-data.ctrl[:] = np.zeros(model.nu)
-# data.ctrl[:] = np.zeros(model.nu)  # Initialize ctrl to zero
+data.qpos[0] = 0.1
+data.qpos[1] = -0.1
+data.qpos[j_start:j_start+n_joints] = q
+data.ctrl[:] = q
 mujoco.mj_forward(model, data) 
 
 pos_sensor = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos")
