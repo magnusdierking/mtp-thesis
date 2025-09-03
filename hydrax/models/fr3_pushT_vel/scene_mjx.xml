@@ -1,0 +1,95 @@
+<mujoco model="fr3 scene">
+
+  <!-- Push T setup -->
+  <worldbody>
+    <camera name='top_view' pos="-0.276 -0.512 0.817" xyaxes="0.864 -0.503 0.000 0.404 0.694 0.596"/>
+
+      <body name="goal" mocap="true" pos="0.5 0.0 0.009" quat="1 0 0 -1">
+        <geom class="goal" name="goal_bottom" type="box" size=".025 0.05 0.025"/>
+        <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
+      </body>
+
+      <body name="block" pos="0.5 0.0 0.026" quat="1 0 0 -1">
+        <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" />
+        <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" />
+        <joint name="T_z" axis="0 0 1"/>
+        <geom name="bottom" type="box" size=".025 0.05 0.025" />
+        <geom name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0" />
+      </body>
+  </worldbody>
+
+
+  <!-- Robot model (keep this here or joint order will change)-->
+  <include file="fr3_vel_mjx.xml"/>
+
+  <!-- MJX optimization -->
+  <option cone="pyramidal" timestep="0.001" iterations="1" ls_iterations="5" >
+    <flag eulerdamp="disable"/>
+  </option>
+  <custom>
+    <numeric data="12" name="max_contact_points"/>
+  </custom>
+
+  <!-- Set goal as ghost -->
+  <default>
+    <default class="goal">
+      <geom conaffinity="0" contype="0" rgba="0 1 0 0.2"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <!-- Plane for the robot ee to move on -->
+    <body name="plane" pos="0 0 0.05">
+      <geom type="plane" size="1 1 0.01" pos="0 0 0" mass="0.001" contype="0" conaffinity="0" rgba="0.9 0.9 0.9 0.05" />
+    </body>
+
+    <!-- <geom type="box" fromto="0 0 0 0.05 0 0" size="0.002" rgba="1 0 0 1"/>  -->
+    <!-- <geom type="box" fromto="0 0 0 0 0.05 0" size="0.002" rgba="0 1 0 1"/>          -->
+    <!-- <geom type="box" fromto="0 0 0 0 0 0.05" size="0.002" rgba="0 0 1 1"/>  -->
+
+    <!-- Slider site to attach ee to for constraint -->
+    <body name="plane_slider" pos="0.3 0.0 0.05">
+      <joint name="jx" type="slide" axis="1 0 0"/>
+      <joint name="jy" type="slide" axis="0 1 0"/>
+      <geom type="sphere" size="0.005" mass="0.001" contype="0" conaffinity="0" rgba="1 1 1 0.1"/>
+      <site name="slider_connect" pos="0 0 0" size="0.001" rgba="0 0 1 0.3"/>
+    </body>
+
+  </worldbody>
+
+  <!-- Equality constraint for end effector -->
+  <equality>
+    <connect site1="ee_site" site2="slider_connect"
+            solref="0.002 1" solimp="1 1 0.001"/>
+  </equality>
+
+  <sensor>
+    <framepos name="position" objtype="body" objname="block" reftype="body" refname="goal"/>
+    <framequat name="orientation" objtype="body" objname="block" reftype="body" refname="goal"/>
+    <framepos name="position_world" objtype="body" objname="block" reftype="body" refname="world"/>
+  </sensor>
+
+  <!-- Defines the spatial region to compute model statistics like mass, center of mass, etc. -->
+  <statistic center="0.2 0 0.4" extent=".8"/>
+
+
+
+  <!-- Default -->
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+  </worldbody>
+</mujoco>
