@@ -85,6 +85,58 @@ def ik_transpose(
 
     return dq
 
+def ik_transpose_no_spin(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    target_vel,               # (2,) array-like: desired [vx, vy]
+    cols: slice = slice(3, 10),
+    damp_rot: float = 1e-8,   # Tikhonov for the rotational projector
+    damp_primary: Optional[float] = None,  # if set, uses damped-least-squares for the xy task
+):
+    """
+    Inverse kinematics step with orientation constrained:
+      Enforces J_rot @ dq = 0, while moving along x,y only.
+
+    Args:
+      model, data: MuJoCo model/data
+      target_vel: (2,) desired EE linear velocity in world x,y
+      cols: which joint columns to use (defaults to joints 3..9 -> 7 DoF)
+      damp_rot: damping for nullspace projector stability
+      damp_primary: if not None, uses DLS on the primary xy task
+    Returns:
+      dq: (n_sel_joints,) joint velocity update for the selected columns
+    """
+    body_id = model.body("ee_frame").id
+
+    # Geometric Jacobians at EE position
+    jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
+    jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
+    point = data.xpos[body_id, :3].copy()
+    mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
+
+    # Select joint columns (your 7-DoF set, e.g., joints 3..9)
+    J_pos = jacp[0:2, cols]   # (2, n)
+    J_rot = jacr[:,  cols]    # (3, n)
+    n = J_pos.shape[1]
+
+    v_xy = np.asarray(target_vel, dtype=np.float64).reshape(2)
+
+    # --- Nullspace projector to kill rotation: N = I - Jw^T (Jw Jw^T + λI)^-1 Jw
+    I = np.eye(n)
+    JwJwT = J_rot @ J_rot.T                      # (3,3)
+    N = I - J_rot.T @ np.linalg.solve(JwJwT + damp_rot*np.eye(3), J_rot)
+
+    # --- Primary task in the nullspace of rotation
+    if damp_primary is None:
+        # Plain transpose step
+        dq = N @ (J_pos.T @ v_xy)                # (n,)
+    else:
+        # Damped least squares on constrained Jacobian: dq = N J^T (J N J^T + αI)^-1 v
+        Jc = J_pos @ N                           # (2, n)
+        H = Jc @ Jc.T + damp_primary * np.eye(2) # (2,2)
+        dq = N @ (J_pos.T @ np.linalg.solve(H, v_xy))
+
+    return dq
 
 
 def run_interactive(  # noqa: PLR0912, PLR0915
@@ -236,9 +288,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
         # --- init ---
         step = 0
-        alpha = 0.15          
-        kw = {"beta_min": 0.1, "beta_max": 0.6}
-        sched = RatioEMAScheduler(alpha=alpha, **kw).init(mj_data.qpos)
+        #alpha = 0.15          
+        #kw = {"beta_min": 0.1, "beta_max": 0.6}
+        #sched = RatioEMAScheduler(alpha=alpha, **kw).init(mj_data.qpos)
 
         while viewer.is_running():
             step += 1
@@ -320,7 +372,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                         #     mj_data,
                         #     u,  # Exclude base DOF
                         # )
-                        u = ik_transpose(
+                        u = ik_transpose_no_spin(
                             mj_model,
                             mj_data,
                             u,  # Exclude base DOF

@@ -10,7 +10,7 @@
         <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
       </body>
 
-      <body name="block" pos="0.0 0.0 0.025">
+      <body name="block" pos="0.0 0.3 0.025">
         <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" />
         <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" />
         <joint name="T_z" axis="0 0 1"/>
@@ -42,7 +42,7 @@
 
   <worldbody>
     <!-- Plane for the robot ee to move on -->
-    <body name="plane" pos="0 0.3 0.035">
+    <body name="plane" pos="0 0.3 0.05">
       <geom type="plane" size="1 1 0.01" pos="0 0 0" mass="0.001" contype="0" conaffinity="0" rgba="0.9 0.9 0.9 0.05" />
     </body>
 
@@ -51,7 +51,7 @@
     <!-- <geom type="box" fromto="0 0 0 0 0 0.05" size="0.002" rgba="0 0 1 1"/>  -->
 
     <!-- Slider site to attach ee to for constraint -->
-    <body name="plane_slider" pos="0 0.2 0.035">
+    <body name="plane_slider" pos="0 0.2 0.05">
       <joint name="jx" type="slide" axis="1 0 0"/>
       <joint name="jy" type="slide" axis="0 1 0"/>
       <geom type="sphere" size="0.005" mass="0.001" contype="0" conaffinity="0" rgba="1 1 1 0.1"/>

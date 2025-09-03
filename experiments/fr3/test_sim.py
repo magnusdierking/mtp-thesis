@@ -33,7 +33,7 @@ for i in range(model.nsite):
     name = model.site(i).name
     print(f"Site {i}: {name}")
     
-
+print(data.ctrl)
                          
                          # initial position of robot
 # Desired EE pose in world frame

@@ -19,9 +19,9 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 10, sim_steps_per_control_step: int = 5, 
+        self, planning_horizon: int = 12, sim_steps_per_control_step: int = 12, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-0.1, -0.1]), "u_max": jnp.array([0.1, 0.1])}
+        ctrl_limits = {"u_min": jnp.array([-0.75, -0.75]), "u_max": jnp.array([0.75, 0.75])}
     ):
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(
@@ -77,7 +77,7 @@ class PushTFranka(Task):
         mj_data.qpos[2] = angle
         
         # Joint index range (skip floating base joints if any)
-        des_pos = np.array([0.0, 0.25, 0.035])
+        des_pos = np.array([0.0, 0.25, 0.05])
         des_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
         
         j_start = 3  # Adjust based on your model (e.g., 3 if floating base)
@@ -270,46 +270,48 @@ class PushTFranka(Task):
     def make_control_mapper(self):
         j_start = 3
         n_joints = 7
-        idx = jnp.array([0, 1, 3, 4, 5])  # x, y, roll, pitch, yaw
 
         model = self.model
         body_id = self.body_id
         act_min = self.act_min
         act_max = self.act_max
 
-        # Reuse a template data; replace qpos each call (keeps purity for JAX)
         data0 = mjx.make_data(model)
 
-        # FK as a pure function of qpos
+        # FK -> [x, y, rotvec(3)]
         def fk_fn(qpos):
             d = data0.replace(qpos=qpos)
             d = mjx.forward(model, d)
-            pos = d.xpos[body_id]  # (3,)
-            # Use the private quat->axis/angle you prefer
+            pos = d.xpos[body_id]                    # (3,)
             axis, angle = mjx._src.math.quat_to_axis_angle(d.xquat[body_id])
-            rotvec = angle * axis  # (3,)
-            return jnp.concatenate([pos[:2], rotvec], axis=0)  # (5,) ignore z
+            rotvec = angle * axis                    # (3,)
+            return jnp.concatenate([pos[:2], rotvec], axis=0)  # (5,)
 
-        # Small output (6) => reverse-mode Jacobian is efficient
         fk_jac = jax.jit(jax.jacrev(fk_fn))
 
         @jax.jit
-        def ik_mapper_transpose(data: mjx.Data, control: jax.Array) -> jax.Array:
+        def ik_mapper_nullspace(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
+            """
+            control_xy: shape (2,) desired (vx, vy) in task space.
+            Enforces zero rotational motion: J_rot * dq = 0.
+            """
             qpos = data.qpos
-            
-            J = fk_jac(qpos)  # (6, nq)
-            # Select task rows and the joint columns we actuate
-            J_xy = J[idx, j_start : j_start + n_joints]  # (5, n_joints)
-            # Control only for x,y; pad the rest to match selected rows
-            adapted_control = jnp.concatenate(
-                [control[:2], jnp.zeros(3, dtype=control.dtype)], axis=0
-            )  # (5,)
+            J = fk_jac(qpos)                         # (5, nq)
+            J_pos = J[0:2, j_start:j_start+n_joints] # (2, n_joints) for x,y
+            J_rot = J[2:5, j_start:j_start+n_joints] # (3, n_joints) for rotvec
 
-            dq = J_xy.T @ adapted_control                 # (n_joints,)
-            dq = jnp.clip(dq, act_min, act_max)
+            # Nullspace projector that kills rotational motion: N = I - Jw^T (Jw Jw^T + λI)^-1 Jw
+            lam = 1e-6
+            JwJwT = J_rot @ J_rot.T                  # (3,3)
+            inv_term = jnp.linalg.inv(JwJwT + lam * jnp.eye(3))
+            N = jnp.eye(n_joints) - J_rot.T @ inv_term @ J_rot  # (n_joints, n_joints)
+
+            # Primary task: Jacobian-transpose step for (x,y), then project into nullspace of rotation
+            dq = N @ (J_pos.T @ control_xy)          # (n_joints,)
+            # dq = jnp.clip(dq, act_min, act_max)
             return dq
 
-        return ik_mapper_transpose
+        return ik_mapper_nullspace
     
     
     
