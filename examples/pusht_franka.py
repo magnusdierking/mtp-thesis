@@ -14,9 +14,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 # Define the task (cost and dynamics)
-task = PushTFranka(
-    planning_horizon=12,
-)
+task = PushTFranka()
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
@@ -97,7 +95,7 @@ run_interactive(
     frequency=50,
     show_traces=True,
     trace_width=0.75,
-    max_traces=25,
+    max_traces=10,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,

@@ -1,6 +1,9 @@
 from typing import Dict
-
+import os 
 import jax
+from jax import config
+config.update("jax_log_compiles", True)  
+
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
@@ -19,13 +22,13 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 12, sim_steps_per_control_step: int = 24, 
+        self, planning_horizon: int = 8, sim_steps_per_control_step: int = 10, 
         nu: int = 2, 
         ctrl_limits = {"u_min": jnp.array([-0.75, -0.75]), "u_max": jnp.array([0.75, 0.75])}
     ):
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(
-            (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx.xml").as_posix()
+            (get_root_path() / "models" / "fr3_pushT_pos" / "scene_mjx.xml").as_posix()
         )
 
         super().__init__(
@@ -68,7 +71,7 @@ class PushTFranka(Task):
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
         pos_x = np.random.uniform(low=-0.25, high=0.25)
-        pos_y = np.random.uniform(low=-0.15, high=0.25)
+        pos_y = np.random.uniform(low=-0.05, high=0.15)
         angle = np.random.uniform(-np.pi, np.pi)
 
         # Assuming the block's pose is at the beginning of qpos
@@ -151,7 +154,8 @@ class PushTFranka(Task):
         mj_data.qpos[j_start:j_start+n_joints] = q  # Set the robot's joint positions
 
         # initial control
-        mj_data.ctrl[:] = np.zeros(mj_model.nu)
+        # mj_data.ctrl[:] = np.zeros(mj_model.nu)
+        mj_data.ctrl[:] = q
         return mj_model, mj_data
 
     ##################################
@@ -293,8 +297,23 @@ class PushTFranka(Task):
 
         fk_jac = jax.jit(jax.jacrev(fk_fn))
 
+        # @jax.jit
+        # def ik_mapper_transpose(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
+        #     """
+        #     control_xy: shape (2,) desired (vx, vy) in task space.
+        #     Enforces zero z and rotational motion: J_rot * dq = 0.
+        #     """
+        #     qpos = data.qpos
+        #     J = fk_jac(qpos)                       
+        #     J = J[:, j_start:j_start+n_joints]     
+        #     twist = jnp.concatenate([control_xy, jnp.zeros(4)]) 
+
+        #     dq = J.T @ twist
+
+        #     return dq
+        
         @jax.jit
-        def ik_mapper_transpose(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
+        def ik_mapper_transpose_position(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
             """
             control_xy: shape (2,) desired (vx, vy) in task space.
             Enforces zero z and rotational motion: J_rot * dq = 0.
@@ -305,10 +324,11 @@ class PushTFranka(Task):
             twist = jnp.concatenate([control_xy, jnp.zeros(4)]) 
 
             dq = J.T @ twist
+            
+            new_q = qpos[j_start:j_start+n_joints] + self.mj_model.opt.timestep * dq
 
-            return dq
+            return new_q
 
-        return ik_mapper_transpose
-    
-    
-    
+        return ik_mapper_transpose_position
+
+
