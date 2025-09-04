@@ -25,7 +25,7 @@ from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 def yaw_from_quat(x, y, z, w):
     # standard ZYX Euler convention
-    yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z)) - 135
+    yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
     return yaw
 
 
@@ -185,14 +185,14 @@ class FR3_PushT(FrankaPandaServer):
         # TODO hardcoded for now, potentially automatically publish after calibration in the future
 
         # Translation (meters)
-        t.transform.translation.x = 2.59317
-        t.transform.translation.y = -1.02211
-        t.transform.translation.z = -0.05820
+        t.transform.translation.x = 2.59938
+        t.transform.translation.y = -0.99226
+        t.transform.translation.z = -0.05083
 
-        t.transform.rotation.x = 0.00573
-        t.transform.rotation.y = -0.00477
-        t.transform.rotation.z = 0.99974
-        t.transform.rotation.w = 0.02163
+        t.transform.rotation.x = 0.00583
+        t.transform.rotation.y = -0.00801
+        t.transform.rotation.z = 0.99976
+        t.transform.rotation.w = 0.01940
 
         # Broadcast once; static transforms are latched
         self.static_tf = t
@@ -210,42 +210,25 @@ class FR3_PushT(FrankaPandaServer):
             
         # optitrack gives center of markers, need to convert to simulation center
         lin = world_T_objReal.transform.translation
-        quat = world_T_objReal.transform.rotation
-        # print(f"World transform (rotation): {quat}")
-        
-        # object model in the base frame
-        center_align = np.array([
-            [1, 0, 0, 0.025],
-            [0, 1, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
-        ])
-        world_T_objModel = [
-            [0, -1, 0, 0],
-            [1, 0, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
-        ]
-        world_H_objReal = np.eye(4)
-        world_H_objReal[:3, 3] = [lin.x, lin.y, lin.z]
-        world_H_objReal[:3, :3] = R.from_quat([quat.x, quat.y, quat.z, quat.w], scalar_first=False).as_matrix()
-        # change_reference( obj in robot world @ relative offset)
-        mujoco_T_objModel = world_T_objModel @ world_H_objReal @ center_align @ np.linalg.inv(world_T_objModel)
-        
-        lin = mujoco_T_objModel[:3, 3]
-        quat = R.from_matrix(mujoco_T_objModel[:3, :3]).as_quat(scalar_first=False)
+        lin = np.array([lin.x, lin.y - 0.025, lin.z]) # offset due to optitrack vs mujoco center missmatch
+        quat = np.array([world_T_objReal.transform.rotation.x,
+                         world_T_objReal.transform.rotation.y,
+                         world_T_objReal.transform.rotation.z,
+                         world_T_objReal.transform.rotation.w])
         print(f"World transform (translation): {lin}")
-
+    
         return lin, quat
 
 
     def _update_state(self):
         
         lin_t, quat_t = self._update_T()
-        self.debug_data.qpos[0] = lin_t[0]
-        self.debug_data.qpos[1] = lin_t[1]
-        self.debug_data.qpos[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3])
+        self.debug_data.qpos[0] = -lin_t[1] # x in block, -y in robot
+        self.debug_data.qpos[1] = lin_t[0] -0.5 # y in block, x in robot, offset from spawn
+        self.debug_data.qpos[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) - np.pi 
+        print(f"Object yaw: {self.debug_data.qpos[2]*180.0/np.pi} deg")
         self.debug_data.qpos[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
+        self.debug_data.qvel[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
         # TODO angle
         
         
@@ -318,7 +301,7 @@ if __name__ == '__main__':
     
  
     # Load the MuJoCo model
-    xml_path = "/home/franka/Lab/mtp-thesis/hydrax/models/pusht_franka_planar/scene_mjx.xml"
+    xml_path = "/home/franka/Lab/mtp-thesis/hydrax/models/fr3_pushT_pos/scene_mjx.xml"
     # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
     xml_dir = os.path.dirname(xml_path)
     print(os.path.basename(xml_path))

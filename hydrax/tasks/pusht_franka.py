@@ -1,8 +1,8 @@
 from typing import Dict
 import os 
 import jax
-from jax import config
-config.update("jax_log_compiles", True)  
+# from jax import config
+# config.update("jax_log_compiles", True)  
 
 import jax.numpy as jnp
 import mujoco
