@@ -225,7 +225,6 @@ class MTP(SamplingBasedController):
 
         return params.replace(spline=spline)
     
-
     def get_action(self, params: MTPParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""
         idx_float = t / self.task.dt  # zero order hold
