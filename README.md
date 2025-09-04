@@ -30,7 +30,6 @@ Available methods:
 
 Set up a conda env with cuda support:
 
-```bash
 # Conda environment setup
 conda update -n base conda -y
 conda create -n mtp python=3.12
