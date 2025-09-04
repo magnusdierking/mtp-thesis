@@ -21,42 +21,6 @@ Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
 """    
     
-def ik_2d(
-    model: mujoco.MjModel,
-    data: mujoco.MjData,
-    target_vel: jax.Array,
-) -> jax.Array:
-    """Perform inverse kinematics for a 2D task."""
-    body_id = model.body("ee_frame").id
-    dq_curr = data.qvel 
-            
-    jacp = np.zeros((3, model.nv), dtype=np.float64)
-    jacr = np.zeros((3, model.nv), dtype=np.float64)
-    point = data.xpos[body_id, :3].copy()
-    mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
-
-    # get ee z pos and vel
-    z_pos = data.xpos[body_id, 2]
-    z_vel = jacp[2, 3:] @ dq_curr[3:]  # Exclude base DOF
-    
-    Kp_z = 5.0
-    Kd_z = 1.0
-    error = (z_pos - 0.08)
-    jax.lax.cond(error > 0, lambda x: x / 3, lambda x: x, operand=Kp_z)
-    z_vel_feedback = - Kp_z * error - Kd_z * z_vel
-    
-    goal_lin = np.array([target_vel[0], target_vel[1], z_vel_feedback], dtype=np.float64) # this is for 2d case
-    goal_ori = np.zeros(3, dtype=np.float64)
-
-    J_full = np.vstack((jacp[:, 3:], jacr[:, 3:]))   # shape (6, n)
-    goal_full = np.concatenate((goal_lin, goal_ori)) # shape (6,)
-
-    lam = 1e-3
-    J_full_damped_pinv = J_full.T @ jnp.linalg.inv(J_full @ J_full.T + lam * jnp.eye(J_full.shape[0]))
-
-    dq = J_full_damped_pinv @ goal_full
-    dq = jnp.clip(dq, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
-    return dq
 
 def ik_transpose(
     model: mujoco.MjModel,
@@ -115,28 +79,17 @@ def ik_transpose_no_spin(
     mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
 
     # Select joint columns (your 7-DoF set, e.g., joints 3..9)
-    J_pos = jacp[0:2, cols]   # (2, n)
+    J_pos = jacp[0:3, cols]   # (3, n)
     J_rot = jacr[:,  cols]    # (3, n)
-    n = J_pos.shape[1]
+    J = np.vstack((J_pos, J_rot))  # (6, n)
+    twist = np.zeros(6, dtype=np.float64)
+    twist[0:2] = target_vel[0:2]  # desired linear
 
-    v_xy = np.asarray(target_vel, dtype=np.float64).reshape(2)
+    dq = J.T @ twist
 
-    # --- Nullspace projector to kill rotation: N = I - Jw^T (Jw Jw^T + λI)^-1 Jw
-    I = np.eye(n)
-    JwJwT = J_rot @ J_rot.T                      # (3,3)
-    N = I - J_rot.T @ np.linalg.solve(JwJwT + damp_rot*np.eye(3), J_rot)
+    new_q = data.qpos[cols] + model.opt.timestep * dq
 
-    # --- Primary task in the nullspace of rotation
-    if damp_primary is None:
-        # Plain transpose step
-        dq = N @ (J_pos.T @ v_xy)                # (n,)
-    else:
-        # Damped least squares on constrained Jacobian: dq = N J^T (J N J^T + αI)^-1 v
-        Jc = J_pos @ N                           # (2, n)
-        H = Jc @ Jc.T + damp_primary * np.eye(2) # (2,2)
-        dq = N @ (J_pos.T @ np.linalg.solve(H, v_xy))
-
-    return dq
+    return new_q
 
 
 def run_interactive(  # noqa: PLR0912, PLR0915
@@ -372,12 +325,13 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                         #     mj_data,
                         #     u,  # Exclude base DOF
                         # )
+                        print(f"Original control action: {u}")
                         u = ik_transpose_no_spin(
                             mj_model,
                             mj_data,
                             u,  # Exclude base DOF
                         )
-                        # print(f"Remapped control action: {u}")
+                        print(f"Remapped control action: {u}")
                     # Apply the control to the simulation
                     mj_data.ctrl[:] = np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
