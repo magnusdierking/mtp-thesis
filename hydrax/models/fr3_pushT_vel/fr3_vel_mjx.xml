@@ -12,7 +12,7 @@
         <geom type="mesh" group="2" contype="0" conaffinity="0"/>
       </default>
       <default class="fr3_vel">
-        <velocity ctrllimited="true" ctrlrange="-2.0 2.0" kv="50"/>
+        <velocity ctrllimited="true" kv="50"/>
       </default>
       <default class="collision">
         <geom type="mesh" group="3" mass="0" density="0"/>
@@ -168,15 +168,17 @@
     </body>
   </worldbody>
 
+  <!-- Limits taken from Franka Robot Description repo -->
   <actuator>
-    <velocity class="fr3_vel" name="vel_joint1_half" joint="fr3_joint1" ctrlrange="-1.31 1.31" forcerange="-43.5 43.5"/>
-    <velocity class="fr3_vel" name="vel_joint2_half" joint="fr3_joint2" ctrlrange="-1.31 1.31" forcerange="-43.5 43.5"/>
-    <velocity class="fr3_vel" name="vel_joint3_half" joint="fr3_joint3" ctrlrange="-1.31 1.31" forcerange="-43.5 43.5"/>
-    <velocity class="fr3_vel" name="vel_joint4_half" joint="fr3_joint4" ctrlrange="-1.31 1.31" forcerange="-43.5 43.5"/>
-    <velocity class="fr3_vel" name="vel_joint5_half" joint="fr3_joint5" ctrlrange="-2.63 2.63" forcerange="-6.0 6.0"/>
-    <velocity class="fr3_vel" name="vel_joint6_half" joint="fr3_joint6" ctrlrange="-2.09 2.09" forcerange="-6.0 6.0"/>
-    <velocity class="fr3_vel" name="vel_joint7_half" joint="fr3_joint7" ctrlrange="-2.63 2.63" forcerange="-6.0 6.0"/>
+    <velocity class="fr3_vel" name="vel_joint1" joint="fr3_joint1" ctrlrange="-2.62  2.62"/>
+    <velocity class="fr3_vel" name="vel_joint2" joint="fr3_joint2" ctrlrange="-2.62  2.62"/>
+    <velocity class="fr3_vel" name="vel_joint3" joint="fr3_joint3" ctrlrange="-2.62  2.62"/>
+    <velocity class="fr3_vel" name="vel_joint4" joint="fr3_joint4" ctrlrange="-2.62  2.62"/>
+    <velocity class="fr3_vel" name="vel_joint5" joint="fr3_joint5" ctrlrange="-5.26  5.26"/>
+    <velocity class="fr3_vel" name="vel_joint6" joint="fr3_joint6" ctrlrange="-4.18  4.18"/>
+    <velocity class="fr3_vel" name="vel_joint7" joint="fr3_joint7" ctrlrange="-5.26  5.26"/>
   </actuator>
+
 
   <contact>
     <exclude body1="fr3_link0" body2="fr3_link1"/>
