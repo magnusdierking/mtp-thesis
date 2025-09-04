@@ -62,7 +62,7 @@ class MPPI(SamplingBasedController):
     def init_params(self, seed: int = 0) -> MPPIParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
-        mean = jnp.zeros((self.task.planning_horizon, self.task.model.nu))
+        mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
         return MPPIParams(mean=mean, rng=rng)
 
     def sample_controls(
@@ -75,7 +75,7 @@ class MPPI(SamplingBasedController):
             (
                 self.num_samples,
                 self.task.planning_horizon,
-                self.task.model.nu,
+                self.task.nu,
             ),
         )
         controls = params.mean + self.noise_level * noise

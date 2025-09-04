@@ -55,7 +55,6 @@ class MTP(SamplingBasedController):
         sample_weighting: str = 'cem-softmax',
         risk_strategy: RiskStrategy = None,
         seed: int = 0,
-        # control_mapper: Optional[Callable[[mjx.Model, mjx.Data, jax.Array], jax.Array]] = None,
     ):
         """Initialize the controller.
 
