@@ -14,7 +14,8 @@ classifiers = [
     "Programming Language :: Python",
 ]
 dependencies = [
-    "jax[cuda12]",
+    "jax; platform_system == 'Darwin'",
+    "jax[cuda12]; platform_system != 'Darwin'",
     "flax",
     "pytest",
     "ruff",

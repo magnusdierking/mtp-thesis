@@ -31,7 +31,7 @@ Available methods:
 Set up a conda env with cuda support (first time only):
 
 ```bash
-conda env create -f environment.yml
+conda env create -f environment.yaml
 ```
 
 Enter the conda env:
