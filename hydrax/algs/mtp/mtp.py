@@ -159,7 +159,7 @@ class MTP(SamplingBasedController):
                 mtp_controls = jnp.concatenate([mtp_controls, remain_controls], axis=1)
             elif self.interpolation == 'bspline':
                 # TODO this has to incorporate the last taken control as a first point + interpolate
-                mtp_controls = jnp.einsum("bmd,hm->bhd", control_points, self.bmat)
+                mtp_controls = jnp.einsum("...md,hm->...hd", control_points, self.bmat)
             elif self.interpolation == 'linear':
                 num_interp = self.task.planning_horizon // (self.M - 1)
                 remain = self.task.planning_horizon - num_interp * (self.M - 1)

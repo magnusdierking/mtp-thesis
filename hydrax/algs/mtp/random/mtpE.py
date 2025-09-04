@@ -6,10 +6,10 @@ import jax.numpy as jnp
 from flax.struct import dataclass
 from functools import partial
 from hydrax.alg_base import SamplingBasedController, Trajectory
+from hydrax.algs.mtp.splines.akima import poly_akima, poly_interpolation
+from hydrax.algs.mtp.splines.bsplines import compute_b_spline_matrix
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
-from mtp.splines.akima import poly_akima, poly_interpolation
-from mtp.splines.bsplines import compute_b_spline_matrix
 
 
 @dataclass
@@ -170,8 +170,8 @@ class MTPE(SamplingBasedController):
                 remain_controls = jnp.repeat(control_points[:, -1, None], remain, axis=1)
                 mtp_controls = jnp.concatenate([mtp_controls, remain_controls], axis=1)
             elif self.interpolation == 'bspline':
-                mtp_controls = jnp.einsum("bmd,hm->bhd", control_points, self.bmat) 
-            
+                mtp_controls = jnp.einsum("...md,hm->...hd", control_points, self.bmat)
+
             elif self.interpolation == 'linear':
                 num_interp = self.task.planning_horizon // (self.M - 1)
                 remain = self.task.planning_horizon - num_interp * (self.M - 1)

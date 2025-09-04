@@ -4,9 +4,9 @@ from evosax.algorithms import (
     Open_ES,
 )
 
-from mtp.mtp import MTP
-from mtp.random.mtpE import MTPE as MTPE
 from hydrax.algs import CEM, PredictiveSampling, MPPI, Evosax
+from hydrax.algs.mtp.mtp import MTP
+from hydrax.algs.mtp.random.mtpE import MTPE
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.tasks.pusht import PushT
 
@@ -120,5 +120,5 @@ run_interactive(
     show_ui=True,
     record_video=True,
     seed=seed,
-    max_step=10,
+    max_step=1000,
 )
