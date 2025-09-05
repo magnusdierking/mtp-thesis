@@ -22,9 +22,9 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 8, sim_steps_per_control_step: int = 10, 
+        self, planning_horizon: int = 10, sim_steps_per_control_step: int = 12, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-0.75, -0.75]), "u_max": jnp.array([0.75, 0.75])}
+        ctrl_limits = {"u_min": jnp.array([-0.15, -0.15]), "u_max": jnp.array([0.15, 0.15])}
     ):
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(

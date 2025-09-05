@@ -88,7 +88,8 @@ def ik_transpose_no_spin(
     dq = J.T @ twist
 
     new_q = data.qpos[cols] + model.opt.timestep * dq
-
+    new_q = jnp.clip(new_q, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
+    
     return new_q
 
 

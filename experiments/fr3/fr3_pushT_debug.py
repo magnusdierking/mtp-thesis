@@ -46,14 +46,6 @@ class FR3_PushT(FrankaPandaServer):
         
         print("Initializing SMPC Controller...")
         
-        # TODO init subscriber for optitrack data
-        self._T_mocap = None
-        # self._ee_pose_subscriber = self.create_subscription(
-        #     PoseStamped,
-        #     "/franka_robot_state_broadcaster/current_pose",
-        #     self._ee_pose_callback,
-        #     10
-        # )
         
         import jax
         from mujoco import mjx
@@ -68,6 +60,7 @@ class FR3_PushT(FrankaPandaServer):
             position=np.array([0.0, 0.0, -0.05]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
+        # TODO add walls around action space
         
         ####################################
         ##       Move to initial pose     ##    
@@ -89,14 +82,15 @@ class FR3_PushT(FrankaPandaServer):
         self.plan_and_move_to_pose(pose)
         
         time.sleep(2.0)
-
-        self.br = StaticTransformBroadcaster(self)
-        self._publish_static_robot_tf()
-        time.sleep(1.0)
         
         ####################################
         ##            T Object            ##    
         ####################################
+        
+        self.br = StaticTransformBroadcaster(self)
+        self._publish_static_robot_tf()
+        time.sleep(1.0)
+        
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 

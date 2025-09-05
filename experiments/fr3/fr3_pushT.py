@@ -25,7 +25,7 @@ from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 def yaw_from_quat(x, y, z, w):
     # standard ZYX Euler convention
-    yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z)) - 135
+    yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
     return yaw
 
 
@@ -43,14 +43,6 @@ class FR3_PushT(FrankaPandaServer):
         
         print("Initializing SMPC Controller...")
         
-        # TODO init subscriber for optitrack data
-        self._T_mocap = None
-        # self._ee_pose_subscriber = self.create_subscription(
-        #     PoseStamped,
-        #     "/franka_robot_state_broadcaster/current_pose",
-        #     self._ee_pose_callback,
-        #     10
-        # )
         
         import jax
         from mujoco import mjx
@@ -65,6 +57,7 @@ class FR3_PushT(FrankaPandaServer):
             position=np.array([0.0, 0.0, -0.05]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
+        # TODO add walls around action space
         
         ####################################
         ##       Move to initial pose     ##    
@@ -86,14 +79,15 @@ class FR3_PushT(FrankaPandaServer):
         self.plan_and_move_to_pose(pose)
         
         time.sleep(2.0)
-
-        self.br = StaticTransformBroadcaster(self)
-        self._publish_static_robot_tf()
-        time.sleep(1.0)
         
         ####################################
         ##            T Object            ##    
         ####################################
+        
+        self.br = StaticTransformBroadcaster(self)
+        self._publish_static_robot_tf()
+        time.sleep(1.0)
+        
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -101,47 +95,48 @@ class FR3_PushT(FrankaPandaServer):
         ####################################
         ##         JIT Controller         ##    
         ####################################
+        
         # Wait until all states are received
-        # while not self._states_received():
-        #     rclpy.spin_once(self, timeout_sec=0.1)
+        while not self._states_received():
+            rclpy.spin_once(self, timeout_sec=0.1)
 
-        # print("All states received, initializing controller...")
+        print("All states received, initializing controller...")
 
-        # self.ctrl = ctrl
-        # self.mjx_data = mjx.make_data(self.ctrl.task.model)
-        # self.policy_params = self.ctrl.init_params(seed)
-        # print(
-        #     f"Planning with {self.ctrl.task.planning_horizon} steps "
-        #     f"over a {self.ctrl.task.planning_horizon * self.ctrl.task.dt} second horizon."
-        # )
-        # print("Jitting controller...")
-        # print("This may take a while, please be patient.")
-        # st = time.time()
-        # self.mjx_data = mjx.forward(ctrl.task.model, self.mjx_data)
-        # self.jit_optimize = jax.jit(
-        #     lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,)
-        # )
-        # self.get_action = jax.jit(ctrl.get_action)
-        # self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
-        # print(f"Time to jit: {time.time() - st}")
+        self.ctrl = ctrl
+        self.mjx_data = mjx.make_data(self.ctrl.task.model)
+        self.policy_params = self.ctrl.init_params(seed)
+        print(
+            f"Planning with {self.ctrl.task.planning_horizon} steps "
+            f"over a {self.ctrl.task.planning_horizon * self.ctrl.task.dt} second horizon."
+        )
+        print("Jitting controller...")
+        print("This may take a while, please be patient.")
+        st = time.time()
+        self.mjx_data = mjx.forward(ctrl.task.model, self.mjx_data)
+        self.jit_optimize = jax.jit(
+            lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,)
+        )
+        self.get_action = jax.jit(ctrl.get_action)
+        self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
+        print(f"Time to jit: {time.time() - st}")
+        
+        self._current_u = None  # most recent action
 
         ####################################
         ##         Set up Timers          ##    
         ####################################
 
-        self.create_timer(1.0 / 20.0, self._update_state)
-
         # # SMPC update 
-        # self.mpc_freq = 20  # Hz
-        # self.create_timer(1.0 / self.mpc_freq, self._run_controller)
+        self.mpc_freq = 20  # Hz
+        self.create_timer(1.0 / self.mpc_freq, self._run_controller)
 
         # # # Command publisher
         # # self.action_timer = time.time()
-        # self.get_logger().info("Starting servo...")
-        # self.servo.enable_servo()
-        # self.servo.use_twist()  # switch to twist commands
-        # self.servo_freq = 35  # Hz
-        # self.create_timer(1.0 / self.servo_freq, self._send_command)
+        self.get_logger().info("Starting servo...")
+        self.servo.enable_servo()
+        self.servo.use_twist()  # switch to twist commands
+        #self.servo_freq = 35  # Hz
+        #self.create_timer(1.0 / self.servo_freq, self._send_command)
         
         # # TODO - regularly check for error threshold and send robot home if below threshold
 
@@ -156,20 +151,19 @@ class FR3_PushT(FrankaPandaServer):
         # TODO hardcoded for now, potentially automatically publish after calibration in the future
 
         # Translation (meters)
-        t.transform.translation.x = 2.59317
-        t.transform.translation.y = -1.02211
-        t.transform.translation.z = -0.05820
+        t.transform.translation.x = 2.59938
+        t.transform.translation.y = -0.99226
+        t.transform.translation.z = -0.05083
 
-        t.transform.rotation.x = 0.00573
-        t.transform.rotation.y = -0.00477
-        t.transform.rotation.z = 0.99974
-        t.transform.rotation.w = 0.02163
+        t.transform.rotation.x = 0.00583
+        t.transform.rotation.y = -0.00801
+        t.transform.rotation.z = 0.99976
+        t.transform.rotation.w = 0.01940
 
         # Broadcast once; static transforms are latched
         self.static_tf = t
         self.br.sendTransform(t)
         self.get_logger().info('Published static TF fr3_link0 -> optitrack')
-
 
         
     def _update_T(self):
@@ -181,82 +175,71 @@ class FR3_PushT(FrankaPandaServer):
             
         # optitrack gives center of markers, need to convert to simulation center
         lin = world_T_objReal.transform.translation
-        quat = world_T_objReal.transform.rotation
-        # print(f"World transform (rotation): {quat}")
-        
-        # object model in the base frame
-        center_align = np.array([
-            [1, 0, 0, 0.025],
-            [0, 1, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
-        ])
-        world_T_objModel = [
-            [0, -1, 0, 0],
-            [1, 0, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
-        ]
-        world_H_objReal = np.eye(4)
-        world_H_objReal[:3, 3] = [lin.x, lin.y, lin.z]
-        world_H_objReal[:3, :3] = R.from_quat([quat.x, quat.y, quat.z, quat.w], scalar_first=False).as_matrix()
-        # change_reference( obj in robot world @ relative offset)
-        mujoco_T_objModel = world_T_objModel @ world_H_objReal @ center_align @ np.linalg.inv(world_T_objModel)
-        
-        lin = mujoco_T_objModel[:3, 3]
-        quat = R.from_matrix(mujoco_T_objModel[:3, :3]).as_quat(scalar_first=False)
-        print(f"World transform (translation): {lin}")
-
+        lin = np.array([lin.x, lin.y - 0.025, lin.z]) # offset due to optitrack vs mujoco center missmatch
+        quat = np.array([world_T_objReal.transform.rotation.x,
+                         world_T_objReal.transform.rotation.y,
+                         world_T_objReal.transform.rotation.z,
+                         world_T_objReal.transform.rotation.w])
+        # print(f"World transform (translation): {lin}")
+    
         return lin, quat
 
 
     def _update_state(self):
         
+        new_q = np.zeros_like(self.mjx_data.qpos)
+        new_dq = np.zeros_like(self.mjx_data.qvel)
+        
+        # Update T position and orientation 
         lin_t, quat_t = self._update_T()
-        self.debug_data.qpos[0] = lin_t[0]
-        self.debug_data.qpos[1] = lin_t[1]
-        self.debug_data.qpos[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3])
-        self.debug_data.qpos[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
-        # TODO angle
+        new_q[0] = - lin_t[1]     # x in block, -y in robot
+        new_q[1] = lin_t[0] - 0.5 # y in block, x in robot, offset from spawn
+        new_q[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) - np.pi 
         
+        # TODO - estimate velocity of T
         
-        # with self._lock:
-        #     dq[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
-        #     q[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
+        # Update robot state
+        with self._lock:
+            if self._current_joint_state is not None:
+                new_dq[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
+                new_q[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
+            else:
+                print("Warning: Current joint state is None, skipping update.")
+                return
         
-        # TODO update T 
-        # ...
+        self.mjx_data = self.mjx_data.replace(
+            qpos=new_q,
+            qvel=new_dq,
+        )
         
-        # self.mjx_data = self.mjx_data.replace(
-        #     qpos=q,
-        #     qvel=dq,
-        # )
         
     def _send_command(self):
-        
-        # t = time.time() - self.action_timer
-        # action = self.get_action(self.policy_params, t)
-        # linear = (action[0], action[1], 0.0)
-        # angular = (0.0, 0.0, 0.0)
-        # self.servo(linear=linear, angular=angular)
-        now_sec = self.get_clock().now().nanoseconds * 1e-9
-        self.servo(linear=(sin(now_sec), cos(now_sec), 0.0), angular=(0.0, 0.0, 0.0))
-        
+        action = self._current_u
+        if action is not None:
+            print(f"Sending action: {action}")
+            # TODO - scale action 
+            linear = (float(action[0]), float(action[1]), 0.0)
+            angular = (0.0, 0.0, 0.0)
+            self.servo(linear=linear, angular=angular)
+        else:
+            self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
 
     def _run_controller(self):
         st = time.time()
-        # TODO update state
+        # Update state
         self._update_state()
         
-        # TODO compute action from controller
+        # Compute action from controller
         self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
-        u = self.ctrl.get_action(self.policy_params, 0.0)
+        self._current_u = self.ctrl.get_action(self.policy_params, 0.0)
         
         # TODO send action to robot
-        print(f"Action: {u}")
+        print(f"Action: {self._current_u}")
         freq = 1 / (time.time() - st)
         print(f"Controller running at {freq:.3f} Hz")
         self.action_timer = time.time()
+        
+        self._send_command()
         
     
     def _states_received(self):
