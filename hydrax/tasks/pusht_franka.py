@@ -1,3 +1,4 @@
+import time
 from typing import Dict
 import os 
 import jax
@@ -15,8 +16,6 @@ from hydrax.task_base import Task
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
-def mujoco_to_scipy_quat(q):
-    return np.array([q[1], q[2], q[3], q[0]])
 
 class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
@@ -24,12 +23,21 @@ class PushTFranka(Task):
     def __init__(
         self, planning_horizon: int = 8, sim_steps_per_control_step: int = 10, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-0.75, -0.75]), "u_max": jnp.array([0.75, 0.75])}
+        ctrl_limits = {"u_min": jnp.array([-0.75, -0.75]), "u_max": jnp.array([0.75, 0.75])},
+        actuation_type: str = 'velocity'
     ):
         """Load the MuJoCo model and set task parameters."""
-        mj_model = mujoco.MjModel.from_xml_path(
-            (get_root_path() / "models" / "fr3_pushT_pos" / "scene_mjx.xml").as_posix()
-        )
+        self.actuation_type = actuation_type
+        if actuation_type == 'position':
+            mj_model = mujoco.MjModel.from_xml_path(
+                (get_root_path() / "models" / "fr3_pushT_pos" / "scene_mjx.xml").as_posix()
+            )
+        elif actuation_type == 'velocity':
+            mj_model = mujoco.MjModel.from_xml_path(
+                (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx.xml").as_posix()
+            )
+        else:
+            raise ValueError("actuation_type must be 'position' or 'velocity'")
 
         super().__init__(
             mj_model,
@@ -57,61 +65,67 @@ class PushTFranka(Task):
             mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "position_world"
         )
         
+        # Get block joint indices
+        self.block_joint_names = ['T_x', 'T_y', 'T_z']
+        self.block_joint_idxs = [mj_model.joint(name).id for name in self.block_joint_names]
+        
+        # Get actuator joint indices
+        self.actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
+        self.actuator_joint_idxs = [mj_model.joint(name).id for name in self.actuator_joint_names]
+        
+        self.joint_limits = self.mj_model.jnt_range[self.actuator_joint_idxs]
+        
         # special to this task
-        self.body_id = self.mj_model.body("ee_frame").id
+        self.ee_body_id = self.mj_model.body("ee_frame").id
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
         # Set the random seed for reproducibility
         np.random.seed(seed)
         mj_model = self.mj_model
-        mj_model.opt.timestep = 0.002
+        mj_model.opt.timestep = 1/500.0  # 500 Hz control 
         mj_model.opt.iterations = 1 # TODO Optimize
         mj_model.opt.ls_iterations = 5 # TODO Optimize
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
-        pos_x = np.random.uniform(low=-0.25, high=0.25)
-        pos_y = np.random.uniform(low=-0.05, high=0.15)
+        pos_x = np.random.uniform(low=-0.25, high=0.00)
+        pos_y = np.random.uniform(low=-0.15, high=0.15)
         angle = np.random.uniform(-np.pi, np.pi)
 
         # Assuming the block's pose is at the beginning of qpos
-        mj_data.qpos[0] = pos_x
-        mj_data.qpos[1] = pos_y
-        mj_data.qpos[2] = angle
-        
+        mj_data.qpos[self.block_joint_idxs[0]] = pos_x
+        mj_data.qpos[self.block_joint_idxs[1]] = pos_y
+        mj_data.qpos[self.block_joint_idxs[2]] = angle
+
         # Joint index range (skip floating base joints if any)
         des_pos = np.array([0.3, 0.0, 0.05])
         des_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-        
-        j_start = 3  # Adjust based on your model (e.g., 3 if floating base)
-        n_joints = 7
-
-        # Joint limits
-        joint_limits = np.array([self.model.jnt_range[i] for i in range(j_start, j_start + n_joints)])
-
-        # # Initial guess
+    
+        # Initial guess
         q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
 
         # IK loop parameters
-        max_iters = 100
-        tolerance = 1e-4
+        max_iters = 1_000
+        tolerance = 1e-6
         damping = 100e-3
+        step_size = 1.2
 
+        ik_start_time = time.time()
         for i in range(max_iters):
             # Set current joint state
-            mj_data.qpos[j_start:j_start+n_joints] = q
+            mj_data.qpos[self.actuator_joint_idxs] = q
             mujoco.mj_forward(self.mj_model, mj_data)
 
             # Current EE pose
-            current_pos = mj_data.xpos[self.body_id]
-            current_quat = mj_data.xquat[self.body_id]
+            current_pos = mj_data.xpos[self.ee_body_id]
+            current_quat = mj_data.xquat[self.ee_body_id]
 
             # Position error
             pos_err = des_pos - current_pos  # shape (3,)
 
             # Orientation error (quaternion distance -> angular velocity vector)
-            r_current = R.from_quat(mujoco_to_scipy_quat(current_quat))
-            r_desired = R.from_quat(mujoco_to_scipy_quat(des_quat))
+            r_current = R.from_quat(current_quat, scalar_first=True)
+            r_desired = R.from_quat(des_quat, scalar_first=True)
 
             # Rotation needed to go from current to desired
             r_error = r_desired * r_current.inv()
@@ -123,39 +137,44 @@ class PushTFranka(Task):
             err = np.concatenate([pos_err, orn_err])  # shape (6,)
 
             if np.linalg.norm(err) < tolerance:
-                print(f"Converged in {i} iterations.")
+                print(f"Converged in {i} iterations. Took {time.time() - ik_start_time:.4f} s")
                 break
 
             # Compute Jacobian of the EE
             J_pos = np.zeros((3, self.mj_model.nv))
             J_rot = np.zeros((3, self.mj_model.nv))
-            mujoco.mj_jacBody(self.mj_model, mj_data, J_pos, J_rot, self.body_id)
+            mujoco.mj_jacBody(self.mj_model, mj_data, J_pos, J_rot, self.ee_body_id)
 
             # Slice columns corresponding to actuated joints
-            J = np.vstack([J_pos[:, j_start:j_start+n_joints], J_rot[:, j_start:j_start+n_joints]])  # shape (6, n_joints)
+            J = np.vstack([J_pos[:, self.actuator_joint_idxs], J_rot[:, self.actuator_joint_idxs]])  # shape (6, n_joints)
 
             # Solve damped least squares: dq = (JᵀJ + λ²I)⁻¹ Jᵀ e
             JTJ = J.T @ J
-            H = JTJ + damping * np.eye(n_joints)
+            H = JTJ + damping * np.eye(len(self.actuator_joint_idxs))
             g = J.T @ err
             dq = np.linalg.solve(H, g)
 
             # Update joint configuration
-            q += dq
+            q += step_size * dq
 
             # Clamp to joint limits
-            for j in range(n_joints):
-                low, high = joint_limits[j]
+            for j in range(len(self.actuator_joint_idxs)):
+                low, high = self.joint_limits[j]
                 q[j] = np.clip(q[j], low, high)
 
         else:
-            print("IK did not converge.")
+            raise RuntimeError("IK did not converge.")
 
-        mj_data.qpos[j_start:j_start+n_joints] = q  # Set the robot's joint positions
+        mj_data.qpos[self.actuator_joint_idxs] = q  # Set the robot's joint positions
 
-        # initial control
-        # mj_data.ctrl[:] = np.zeros(mj_model.nu)
-        mj_data.ctrl[:] = q
+        # Initial control signal
+        if self.actuation_type == 'position':
+            mj_data.ctrl[:] = q
+        elif self.actuation_type == 'velocity':
+            mj_data.ctrl[:] = np.zeros_like(q)
+        else:
+            raise ValueError("actuation_type must be 'position' or 'velocity'")
+        
         return mj_model, mj_data
 
     ##################################
@@ -282,7 +301,7 @@ class PushTFranka(Task):
         n_joints = 7
 
         model = self.model
-        body_id = self.body_id
+        body_id = self.ee_body_id
 
         data0 = mjx.make_data(model)
 
