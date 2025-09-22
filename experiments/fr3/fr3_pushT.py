@@ -22,6 +22,7 @@ from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityExce
 from tf2_geometry_msgs import do_transform_pose
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
+import math
 
 def yaw_from_quat(x, y, z, w):
     # standard ZYX Euler convention
@@ -45,6 +46,8 @@ class FR3_PushT(FrankaPandaServer):
         
         
         import jax
+        print("Backend:", jax.default_backend())
+
         from mujoco import mjx
         
         ####################################
@@ -114,11 +117,31 @@ class FR3_PushT(FrankaPandaServer):
         st = time.time()
         self.mjx_data = mjx.forward(ctrl.task.model, self.mjx_data)
         self.jit_optimize = jax.jit(
-            lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,)
+            lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(0,1)
         )
         self.get_action = jax.jit(ctrl.get_action)
         self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
         print(f"Time to jit: {time.time() - st}")
+
+
+        ####################################
+        ##         Create Buffers         ##    
+        ####################################
+
+        nq = self.mjx_data.qpos.shape[0]
+        nv = self.mjx_data.qvel.shape[0]
+        self._q_buf  = np.empty(nq, dtype=self.mjx_data.qpos.dtype)
+        self._dq_buf = np.empty(nv, dtype=self.mjx_data.qvel.dtype)
+        self._tmp_lin  = np.empty(3, dtype=np.float64)
+        self._tmp_quat = np.empty(4, dtype=np.float64)
+
+        # cache constants / indices
+        self._idx_robot_start = 3
+        self._idx_robot_end   = -2
+
+        # Optional: set a flag to silence loop logs
+        self._log_every = 20
+        self._tick = 0
         
         self._current_u = None  # most recent action
 
@@ -166,51 +189,52 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().info('Published static TF fr3_link0 -> optitrack')
 
         
-    def _update_T(self):
-        try:
-            world_T_objReal = self.tf_buffer.lookup_transform(
-                "fr3_link0", "objectPushT", rclpy.time.Time())
-        except (LookupException, ConnectivityException, ExtrapolationException) as e:
-            self.get_logger().warn(f'TF lookup failed: {e}')
-            
-        # optitrack gives center of markers, need to convert to simulation center
-        lin = world_T_objReal.transform.translation
-        lin = np.array([lin.x, lin.y - 0.025, lin.z]) # offset due to optitrack vs mujoco center missmatch
-        quat = np.array([world_T_objReal.transform.rotation.x,
-                         world_T_objReal.transform.rotation.y,
-                         world_T_objReal.transform.rotation.z,
-                         world_T_objReal.transform.rotation.w])
-        # print(f"World transform (translation): {lin}")
-    
-        return lin, quat
+    def _get_T_pose(self):
+        if not self.tf_buffer.can_transform("fr3_link0", "objectPushT", rclpy.time.Time(), rclpy.duration.Duration(seconds=0.01)):
+            return None  # signal "no update"
+        t = self.tf_buffer.lookup_transform("fr3_link0", "objectPushT", rclpy.time.Time())
+        tr = t.transform.translation
+        rq = t.transform.rotation
+        # optitrack vs mujoco center offset
+        self._tmp_lin[0] = tr.x
+        self._tmp_lin[1] = tr.y - 0.025
+        self._tmp_lin[2] = tr.z
+        self._tmp_quat[0] = rq.x
+        self._tmp_quat[1] = rq.y
+        self._tmp_quat[2] = rq.z
+        self._tmp_quat[3] = rq.w
+        return self._tmp_lin, self._tmp_quat
 
 
     def _update_state(self):
-        
-        new_q = np.zeros_like(self.mjx_data.qpos)
-        new_dq = np.zeros_like(self.mjx_data.qvel)
-        
-        # Update T position and orientation 
-        lin_t, quat_t = self._update_T()
-        new_q[0] = - lin_t[1]     # x in block, -y in robot
-        new_q[1] = lin_t[0] - 0.5 # y in block, x in robot, offset from spawn
-        new_q[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) - np.pi 
-        
-        # TODO - estimate velocity of T
-        
-        # Update robot state
+        # Fill buffers in place (no new arrays)
+        # 1) Object T
+        tvals = self._get_T_pose()
+        if tvals is None:
+            return False
+        lin_t, quat_t = tvals
+        self._q_buf[:] = self.mjx_data.qpos
+        self._dq_buf[:] = self.mjx_data.qvel
+
+        # map to model
+        self._q_buf[0] = -lin_t[1]
+        self._q_buf[1] =  lin_t[0] - 0.5
+        self._q_buf[2] = math.atan2(2*(quat_t[3]*quat_t[2] + quat_t[0]*quat_t[1]),
+                                    1 - 2*(quat_t[1]*quat_t[1] + quat_t[2]*quat_t[2])) - math.pi
+
+        # 2) Robot joints
         with self._lock:
-            if self._current_joint_state is not None:
-                new_dq[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
-                new_q[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
-            else:
-                print("Warning: Current joint state is None, skipping update.")
-                return
-        
-        self.mjx_data = self.mjx_data.replace(
-            qpos=new_q,
-            qvel=new_dq,
-        )
+            js = self._current_joint_state
+            if js is None:
+                return False
+            # js.position, js.velocity are sequences
+            s, e = self._idx_robot_start, self._idx_robot_end
+            self._q_buf[s:e]  = js.position
+            self._dq_buf[s:e] = js.velocity
+
+        # 3) Replace mjx data once (no new shapes)
+        self.mjx_data = self.mjx_data.replace(qpos=self._q_buf, qvel=self._dq_buf)
+        return True
         
         
     def _send_command(self):
@@ -226,19 +250,19 @@ class FR3_PushT(FrankaPandaServer):
 
     def _run_controller(self):
         st = time.time()
-        # Update state
-        self._update_state()
-        
-        # Compute action from controller
+
+        if not self._update_state():
+            return
+
+        # JITed path
         self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
-        self._current_u = self.ctrl.get_action(self.policy_params, 0.0)
-        
-        # TODO send action to robot
-        print(f"Action: {self._current_u}")
-        freq = 1 / (time.time() - st)
-        print(f"Controller running at {freq:.3f} Hz")
-        self.action_timer = time.time()
-        
+        self._current_u = self.get_action(self.policy_params, 0.0)
+
+        self._tick += 1
+        if (self._tick % self._log_every) == 0:
+            dt = time.time() - st
+            self.get_logger().info(f"SMPC loop: {1.0/dt:.1f} Hz, dt={dt*1e3:.2f} ms")
+    
         self._send_command()
         
     
