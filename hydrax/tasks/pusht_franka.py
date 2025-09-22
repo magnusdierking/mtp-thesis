@@ -22,14 +22,23 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 10, sim_steps_per_control_step: int = 12, 
+        self, planning_horizon: int = 8, sim_steps_per_control_step: int = 10, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-0.15, -0.15]), "u_max": jnp.array([0.15, 0.15])}
+        ctrl_limits = {"u_min": jnp.array([-0.75, -0.75]), "u_max": jnp.array([0.75, 0.75])},
+        actuation_type: str = 'velocity'
     ):
         """Load the MuJoCo model and set task parameters."""
-        mj_model = mujoco.MjModel.from_xml_path(
-            (get_root_path() / "models" / "fr3_pushT_pos" / "scene_mjx.xml").as_posix()
-        )
+        self.actuation_type = actuation_type
+        if actuation_type == 'position':
+            mj_model = mujoco.MjModel.from_xml_path(
+                (get_root_path() / "models" / "fr3_pushT_pos" / "scene_mjx.xml").as_posix()
+            )
+        elif actuation_type == 'velocity':
+            mj_model = mujoco.MjModel.from_xml_path(
+                (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx.xml").as_posix()
+            )
+        else:
+            raise ValueError("actuation_type must be 'position' or 'velocity'")
 
         super().__init__(
             mj_model,
@@ -57,8 +66,18 @@ class PushTFranka(Task):
             mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "position_world"
         )
         
+        # Get block joint indices
+        self.block_joint_names = ['T_x', 'T_y', 'T_z']
+        self.block_joint_idxs = [mj_model.joint(name).id for name in self.block_joint_names]
+        
+        # Get actuator joint indices
+        self.actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
+        self.actuator_joint_idxs = [mj_model.joint(name).id for name in self.actuator_joint_names]
+        
+        self.joint_limits = self.mj_model.jnt_range[self.actuator_joint_idxs]
+        
         # special to this task
-        self.body_id = self.mj_model.body("ee_frame").id
+        self.ee_body_id = self.mj_model.body("ee_frame").id
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
