@@ -89,7 +89,7 @@ class PushTFranka(Task):
         mj_model.opt.ls_iterations = 5 # TODO Optimize
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
-        pos_x = np.random.uniform(low=-0.25, high=0.25)
+        pos_x = 0.0#np.random.uniform(low=-0.25, high=0.25)
         pos_y = np.random.uniform(low=-0.05, high=0.15)
         angle = np.random.uniform(-np.pi, np.pi)
 
@@ -99,14 +99,11 @@ class PushTFranka(Task):
         mj_data.qpos[2] = angle
         
         # Joint index range (skip floating base joints if any)
-        des_pos = np.array([0.3, 0.0, 0.05])
+        des_pos = np.array([0.45, 0.0, 0.05]) #np.array([0.3, 0.0, 0.05])
         des_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
         
         j_start = 3  # Adjust based on your model (e.g., 3 if floating base)
         n_joints = 7
-
-        # Joint limits
-        joint_limits = np.array([self.model.jnt_range[i] for i in range(j_start, j_start + n_joints)])
 
         # # Initial guess
         q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
@@ -118,12 +115,12 @@ class PushTFranka(Task):
 
         for i in range(max_iters):
             # Set current joint state
-            mj_data.qpos[j_start:j_start+n_joints] = q
+            mj_data.qpos[self.actuator_joint_idxs] = q
             mujoco.mj_forward(self.mj_model, mj_data)
 
             # Current EE pose
-            current_pos = mj_data.xpos[self.body_id]
-            current_quat = mj_data.xquat[self.body_id]
+            current_pos = mj_data.xpos[self.ee_body_id]
+            current_quat = mj_data.xquat[self.ee_body_id]
 
             # Position error
             pos_err = des_pos - current_pos  # shape (3,)
@@ -148,10 +145,10 @@ class PushTFranka(Task):
             # Compute Jacobian of the EE
             J_pos = np.zeros((3, self.mj_model.nv))
             J_rot = np.zeros((3, self.mj_model.nv))
-            mujoco.mj_jacBody(self.mj_model, mj_data, J_pos, J_rot, self.body_id)
+            mujoco.mj_jacBody(self.mj_model, mj_data, J_pos, J_rot, self.ee_body_id)
 
             # Slice columns corresponding to actuated joints
-            J = np.vstack([J_pos[:, j_start:j_start+n_joints], J_rot[:, j_start:j_start+n_joints]])  # shape (6, n_joints)
+            J = np.vstack([J_pos[:, self.actuator_joint_idxs], J_rot[:, self.actuator_joint_idxs]])  # shape (6, n_joints)
 
             # Solve damped least squares: dq = (JᵀJ + λ²I)⁻¹ Jᵀ e
             JTJ = J.T @ J
@@ -164,13 +161,13 @@ class PushTFranka(Task):
 
             # Clamp to joint limits
             for j in range(n_joints):
-                low, high = joint_limits[j]
+                low, high = self.joint_limits[j]
                 q[j] = np.clip(q[j], low, high)
 
         else:
             print("IK did not converge.")
 
-        mj_data.qpos[j_start:j_start+n_joints] = q  # Set the robot's joint positions
+        mj_data.qpos[self.actuator_joint_idxs] = q  # Set the robot's joint positions
 
         # initial control
         # mj_data.ctrl[:] = np.zeros(mj_model.nu)
