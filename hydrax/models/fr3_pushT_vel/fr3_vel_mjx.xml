@@ -5,21 +5,28 @@
 
   <default>
     <default class="fr3">
-      <!-- Overwritten in joints 5, 6, and 7. -->
       <joint damping="0.21" armature="0.195" frictionloss="1.137"/>
       <position inheritrange="1"/>
+
+      <!-- purely visual meshes: never collide -->
       <default class="visual">
         <geom type="mesh" group="2" contype="0" conaffinity="0"/>
       </default>
+
+      <!-- robot collision geoms: collide with (objects | world) only -->
+      <default class="collision">
+        <geom group="3" contype="1" conaffinity="6"  
+              mass="0" density="0"/>
+      </default>
+
       <default class="fr3_vel">
         <velocity ctrllimited="true" kv="50"/>
       </default>
-      <default class="collision">
-        <geom type="mesh" group="3" mass="0" density="0"/>
-      </default>
+
       <site size="0.001" rgba="0.5 0.5 0.5 0.3" group="4"/>
     </default>
   </default>
+
 
   <asset>
     <material name="black" rgba=".2 .2 .2 1"/>
@@ -152,7 +159,11 @@
                         <geom type="box" size="0.01 0.01 0.0625" pos="0 0 0.0625" rgba="0.0 0.0 0.0 1" class="visual"/>
                         <!-- Sphere at the tip of the box to act as end effector -->
                         <body name="ee_frame" pos="0 0 0.125">
-                          <geom type="sphere" size="0.015" pos="0 0 0" rgba="0.0 0.0 0.0 1"/>
+                          <geom type="sphere"
+                                size="0.015"
+                                pos="0 0 0"
+                                rgba="0 0 0 1"
+                                solref="0.002 1" solimp="0.95 0.99 0.001"/>  
                           <site name="ee_site" pos="0 0 0.0" size="0.015" rgba="0 0 0 1"/>
                         </body>
                       </body>
