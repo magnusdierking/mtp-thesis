@@ -35,25 +35,34 @@ def differential_IK(
     return dq
 
 
+# def gravity_comp_torque(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
+#     # Backup velocities
+#     qvel_backup = data.qvel.copy()
+
+#     # Zero velocities so qfrc_bias reduces to pure gravity
+#     data.qvel[:] = 0.0
+#     mujoco.mj_forward(model, data)
+#     tau_g = data.qfrc_bias.copy()  # generalized coordinates (size nv)
+
+#     # Restore velocities and recompute
+#     data.qvel[:] = qvel_backup
+#     mujoco.mj_forward(model, data)
+
+#     return tau_g
+
 def gravity_comp_torque(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
-    # Backup velocities
-    qvel_backup = data.qvel.copy()
-
-    # Zero velocities so qfrc_bias reduces to pure gravity
-    data.qvel[:] = 0.0
+    qvel_bak, qacc_bak = data.qvel.copy(), data.qacc.copy()
+    data.qvel[:] = 0.0; data.qacc[:] = 0.0
+    tau = np.zeros(model.nv)
+    mujoco.mj_rne(model, data, 0, tau)  # tau = g(q) via inverse dynamics solver
+    data.qvel[:] = qvel_bak; data.qacc[:] = qacc_bak
     mujoco.mj_forward(model, data)
-    tau_g = data.qfrc_bias.copy()  # generalized coordinates (size nv)
-
-    # Restore velocities and recompute
-    data.qvel[:] = qvel_backup
-    mujoco.mj_forward(model, data)
-
-    return tau_g
+    return tau
 
 
 if __name__ == "__main__":
     
-    seed = 0
+    seed = 10
 
     task = PushTFranka(actuation_type='velocity')
 
@@ -98,7 +107,7 @@ if __name__ == "__main__":
                 t = i * mj_model.opt.timestep
 
                 # Tangential EE velocity
-                radius = 0.35
+                radius = 0.5
                 omega = 0.05 * 2 * np.pi  # rad/s
                 if motion_type == 'x':
                     dx = radius * omega * np.sin(omega * (time.time() - simulation_start_time))  # vx
