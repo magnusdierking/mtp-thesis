@@ -22,10 +22,11 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 8, sim_steps_per_control_step: int = 10, 
+        self, planning_horizon: int = 25, sim_steps_per_control_step: int = 25, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-0.75, -0.75]), "u_max": jnp.array([0.75, 0.75])},
-        actuation_type: str = 'velocity'
+        ctrl_limits = {"u_min": jnp.array([-0.5, -0.5]), "u_max": jnp.array([0.5, 0.5])},
+        actuation_type: str = 'velocity',
+        ik_type: str = 'pinv',
     ):
         """Load the MuJoCo model and set task parameters."""
         self.actuation_type = actuation_type
@@ -39,6 +40,11 @@ class PushTFranka(Task):
             )
         else:
             raise ValueError("actuation_type must be 'position' or 'velocity'")
+        
+        self.ik_type = ik_type
+        if ik_type not in ['transpose', 'pinv']:
+            raise ValueError("ik_type must be 'transpose' or 'pinv'")
+
 
         super().__init__(
             mj_model,
@@ -85,13 +91,13 @@ class PushTFranka(Task):
         np.random.seed(seed)
         mj_model = self.mj_model
         mj_model.opt.timestep = 0.002
-        mj_model.opt.iterations = 1 # TODO Optimize
-        mj_model.opt.ls_iterations = 5 # TODO Optimize
+        mj_model.opt.iterations = 20 # TODO Optimize
+        mj_model.opt.ls_iterations = 20 # TODO Optimize
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
-        pos_x = 0.0#np.random.uniform(low=-0.25, high=0.25)
+        pos_x = np.random.uniform(low=-0.15, high=0.15)
         pos_y = np.random.uniform(low=-0.05, high=0.15)
-        angle = np.random.uniform(-np.pi, np.pi)
+        angle = np.random.uniform(-np.pi/2, np.pi/2)
 
         # Assuming the block's pose is at the beginning of qpos
         mj_data.qpos[0] = pos_x
@@ -99,7 +105,7 @@ class PushTFranka(Task):
         mj_data.qpos[2] = angle
         
         # Joint index range (skip floating base joints if any)
-        des_pos = np.array([0.45, 0.0, 0.05]) #np.array([0.3, 0.0, 0.05])
+        des_pos = np.array([0.3, 0.0, 0.05]) #np.array([0.3, 0.0, 0.05])
         des_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
         
         j_start = 3  # Adjust based on your model (e.g., 3 if floating base)
@@ -251,21 +257,16 @@ class PushTFranka(Task):
         position_cost = jnp.sum(jnp.square(position_err))
         orientation_cost = jnp.sum(jnp.square(orientation_err))
         
-        total_goal_err = 10 * position_cost + 2 * orientation_cost
-        
-        
-        # This seems to lead to a behavior where the ee doesnt watn tto be in contact, as this increases error
-        ee_orientation_err = self._get_ee_orientation_err(state)
-        # ee_orientation_cost = jnp.sum(jnp.square(ee_orientation_err))
+        total_goal_err = position_cost + orientation_cost
+
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
         ee_block_distance_cost = jnp.square(ee_block_distance)
         
         # TODO for velocity a control error makes sense
-        control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
-
-        error = 0.5 * ee_block_distance_cost + total_goal_err + 0.75 * control_cost
+        #control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
+        error = 0.2 * ee_block_distance_cost + total_goal_err #+ 0.75 * control_cost
         
         return error 
                                                                               
@@ -289,18 +290,37 @@ class PushTFranka(Task):
     ##################################
     
     
+    def make_gravity_compensator(self):
+        """
+        Gravity compensation torque function for the robot only, 
+        JIT friendly to be used inside optimize
+        """
+
+        model = self.model
+        actuator_joint_idxs = self.actuator_joint_idxs
+        data0 = mjx.make_data(model)
+
+        @jax.jit
+        def gravity_comp_torque(data: mjx.Data) -> jax.Array:
+            d = data0.replace(qpos=data.qpos)
+            d = mjx.forward(model, d)
+            # Compute gravity torques
+            tau_g = mjx.inverse(model, d).qfrc_bias
+            return tau_g[jnp.array(actuator_joint_idxs)]
+
+        return gravity_comp_torque
+    
+    
     def make_control_mapper(self):
         """
         Control mapping function from task to joint space, 
         JIT friendly to be used inside optimize
         """
-        j_start = 3
-        n_joints = 7
 
         model = self.model
-        body_id = self.body_id
+        body_id = self.ee_body_id
 
-        data0 = mjx.make_data(model)
+        data0 = jax.device_put(mjx.make_data(model))
 
         # FK -> [x, y, rotvec(3)]
         def fk_fn(qpos):
@@ -312,39 +332,48 @@ class PushTFranka(Task):
             return jnp.concatenate([pos[:3], rotvec], axis=0)  # (6,)
 
         fk_jac = jax.jit(jax.jacrev(fk_fn))
-
-        # @jax.jit
-        # def ik_mapper_transpose(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
-        #     """
-        #     control_xy: shape (2,) desired (vx, vy) in task space.
-        #     Enforces zero z and rotational motion: J_rot * dq = 0.
-        #     """
-        #     qpos = data.qpos
-        #     J = fk_jac(qpos)                       
-        #     J = J[:, j_start:j_start+n_joints]     
-        #     twist = jnp.concatenate([control_xy, jnp.zeros(4)]) 
-
-        #     dq = J.T @ twist
-
-        #     return dq
         
         @jax.jit
-        def ik_mapper_transpose_position(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
+        def ik_mapper_transpose(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
             """
             control_xy: shape (2,) desired (vx, vy) in task space.
             Enforces zero z and rotational motion: J_rot * dq = 0.
             """
             qpos = data.qpos
             J = fk_jac(qpos)                       
-            J = J[:, j_start:j_start+n_joints]     
+            J = J[:, self.actuator_joint_idxs]     
             twist = jnp.concatenate([control_xy, jnp.zeros(4)]) 
 
             dq = J.T @ twist
             
-            new_q = qpos[j_start:j_start+n_joints] + self.mj_model.opt.timestep * dq
+            if self.actuation_type == 'position':
+                return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
+            elif self.actuation_type == 'velocity':
+                return dq
+        
+        @jax.jit
+        def ik_mapper_pinv(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
+            """
+            control: shape (6,) desired (vx, vy, vz, wx, wy, wz) in task space.
+            """
+            qpos = data.qpos
+            J = fk_jac(qpos)                       
+            J = J[:, self.actuator_joint_idxs]     
+            # Compute dq with damped pseudo-inverse
+            twist = jnp.concatenate([control_xy, jnp.zeros(4)]) 
+            # Apparently compiles better than inv
+            lam = 1e-3
+            JJt = J @ J.T
+            dq = J.T @ jnp.linalg.solve(JJt + (lam**2) * jnp.eye(JJt.shape[0], dtype=J.dtype), twist)
+            
+            if self.actuation_type == 'position':
+                return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
+            elif self.actuation_type == 'velocity':
+                return dq
 
-            return new_q
-
-        return ik_mapper_transpose_position
+        if self.ik_type == 'transpose':
+            return ik_mapper_transpose
+        elif self.ik_type == 'pinv':
+            return ik_mapper_pinv
 
 

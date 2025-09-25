@@ -21,76 +21,41 @@ Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
 """    
     
-
-def ik_transpose(
+def differential_IK(
     model: mujoco.MjModel,
     data: mujoco.MjData,
-    target_vel: jax.Array,
-) -> jax.Array:
-    """Perform inverse kinematics using transpose Jacobian."""
-    body_id = model.body("ee_frame").id
+    body_id: str = "ee_frame",
+    world_site_vel_desired: np.ndarray = np.zeros(2),
+) -> np.ndarray:
+    """
+    Differential IK for all dofs in the model.
+    """
+    # Geometric Jacobians at body_id
+    jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
+    jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
 
-    jacp = np.zeros((3, model.nv), dtype=np.float64)
-    jacr = np.zeros((3, model.nv), dtype=np.float64)
-    point = data.xpos[body_id, :3].copy()
-    mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
+    mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
 
-    J_full = np.vstack((jacp[:2, 3:10], jacr[:, 3:10]))   # shape (6, n)
-    
-    goal_full = np.concatenate((target_vel[:2], np.zeros(3)), axis=0) # shape (6,)
-    
-    J_full_transpose = J_full.T
-    dq = J_full_transpose @ goal_full
-    print(f"Jacobian shape: {J_full.shape}, dq shape: {dq.shape}")
-    print(f"Control action before clipping: {dq}")
-    # print control action range
-    print(f"Control action range: {model.actuator_ctrlrange.shape}")
-    dq = jnp.clip(dq, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
+    # Build jacobian
+    J = np.vstack((jacp, jacr))  # (6, n)
+
+    # Compute dq with damped pseudo-inverse
+    J_pseudo_inv = J.T @ np.linalg.inv(J @ J.T + 1e-6 * np.eye(6))
+    twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
+    dq = J_pseudo_inv @ twist
 
     return dq
 
-def ik_transpose_no_spin(
-    model: mujoco.MjModel,
-    data: mujoco.MjData,
-    target_vel,               # (2,) array-like: desired [vx, vy]
-    cols: slice = slice(3, 10),
-    damp_rot: float = 1e-8,   # Tikhonov for the rotational projector
-    damp_primary: Optional[float] = None,  # if set, uses damped-least-squares for the xy task
-):
-    """
-    Inverse kinematics step with orientation constrained:
-      Enforces J_rot @ dq = 0, while moving along x,y only.
 
-    Args:
-      model, data: MuJoCo model/data
-      target_vel: (2,) desired EE linear velocity in world x,y
-      cols: which joint columns to use (defaults to joints 3..9 -> 7 DoF)
-      damp_rot: damping for nullspace projector stability
-      damp_primary: if not None, uses DLS on the primary xy task
-    Returns:
-      dq: (n_sel_joints,) joint velocity update for the selected columns
-    """
-    body_id = model.body("ee_frame").id
+def gravity_comp_torque(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
+    qvel_bak, qacc_bak = data.qvel.copy(), data.qacc.copy()
+    data.qvel[:] = 0.0; data.qacc[:] = 0.0
+    tau = np.zeros(model.nv)
+    mujoco.mj_rne(model, data, 0, tau)  # tau = g(q) via inverse dynamics solver
+    data.qvel[:] = qvel_bak; data.qacc[:] = qacc_bak
+    mujoco.mj_forward(model, data)
+    return tau
 
-    # Geometric Jacobians at EE position
-    jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
-    jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
-    point = data.xpos[body_id, :3].copy()
-    mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
-
-    # Select joint columns (your 7-DoF set, e.g., joints 3..9)
-    J_pos = jacp[0:3, cols]   # (3, n)
-    J_rot = jacr[:,  cols]    # (3, n)
-    J = np.vstack((J_pos, J_rot))  # (6, n)
-    twist = np.zeros(6, dtype=np.float64)
-    twist[0:2] = target_vel[0:2]  # desired linear
-
-    dq = J.T @ twist
-
-    new_q = data.qpos[cols] + model.opt.timestep * dq
-    new_q = jnp.clip(new_q, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
-    
-    return new_q
 
 
 def run_interactive(  # noqa: PLR0912, PLR0915
@@ -320,21 +285,23 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 else:
                     # remap controls if a control mapper is provided
                     if controller.control_mapper is not None:
-                        # use ik functiojn to remap controls
-                        # u = inverse_kinematics(
-                        #     mj_model,
-                        #     mj_data,
-                        #     u,  # Exclude base DOF
-                        # )
                         print(f"Original control action: {u}")
-                        u = ik_transpose_no_spin(
+                        u = differential_IK(
                             mj_model,
                             mj_data,
+                            controller.task.ee_body_id,
                             u,  # Exclude base DOF
                         )
                         print(f"Remapped control action: {u}")
+                        
+                    # Gravity compensation for the robot only
+                    tau_g = gravity_comp_torque(mj_model, mj_data)
+                    # Clear and apply external torques (generalized forces)
+                    mj_data.qfrc_applied[:] = 0.0        # clears all user generalized forces
+                    mj_data.xfrc_applied[:] = 0.0        # clears any body-space external wrenches
+                    mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
                     # Apply the control to the simulation
-                    mj_data.ctrl[:] = np.array(u)
+                    mj_data.ctrl[:] = np.array(u[controller.task.actuator_joint_idxs])
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
             
@@ -352,7 +319,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # Print some timing information
             rtr = step_dt / (time.time() - start_time)
             print(
-                f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
+                f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s", 
                 end="\r",
             )
             # Check for task success

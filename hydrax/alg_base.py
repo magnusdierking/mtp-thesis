@@ -62,6 +62,7 @@ class SamplingBasedController(ABC):
         
         # Control mapper for applying controls to the model
         self.control_mapper = task.make_control_mapper()
+        self.gravity_compensator = task.make_gravity_compensator()
 
         # Set the random seed for domain randomization
         self.set_seed(seed)
@@ -182,14 +183,28 @@ class SamplingBasedController(ABC):
             sites = self.task.get_trace_sites(x)
             # jax.debug.print("After running cost and trace sites")
 
-            # def _step_debug(_, x):
-            #     return mjx.step(model, x)
+            def _step_debug(_, x):
+                if self.gravity_compensator:
+                    tau_g = self.gravity_compensator(x)
+                 
+                    x = x.replace(
+                        qfrc_applied=x.qfrc_applied.at[:].set(0.0)
+                    )
+                    x = x.replace(
+                        xfrc_applied=x.xfrc_applied.at[:].set(0.0)
+                    )
+                    x = x.replace(
+                        qfrc_applied=x.qfrc_applied.at[jnp.array(self.task.actuator_joint_idxs)].set(
+                            tau_g[jnp.array(self.task.actuator_joint_idxs)]
+                        )
+                    )
+                return mjx.step(model, x)
             
             # Advance the state for several steps, zero-order hold on control
             x = jax.lax.fori_loop(
                 0,
                 self.task.sim_steps_per_control_step,
-                lambda _, x: mjx.step(model, x),
+                lambda _, x: _step_debug(_, x),
                 x.replace(ctrl=u_mapped),
             )
             # jax.debug.print("After mjx.step")

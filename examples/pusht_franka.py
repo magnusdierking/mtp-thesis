@@ -31,7 +31,7 @@ subparsers.add_parser("oes", help="OpenES")
 subparsers.add_parser("de", help="Diffusion Evolution")
 args = parser.parse_args()
 
-seed = 48
+seed = 4
 
 # Set the controller based on command-line arguments
 if args.algorithm is None: 
@@ -65,7 +65,7 @@ elif args.algorithm == "mtp":
             task,
             num_samples=128,
             M=2, # horizon via control points
-            N=128, # samples 
+            N=64, # samples 
             sigma_min=0.1,
             sigma_start=0.2,
             num_elites=10,
