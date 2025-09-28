@@ -1,12 +1,14 @@
 from typing import Tuple, Optional, Callable
 
+from numpy import cov
+
 import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
 from mujoco import mjx
 
 from functools import partial
-from hydrax.alg_base import SamplingBasedController, Trajectory
+from hydrax.alg_base_opt import SamplingBasedController, Trajectory
 # from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
 
 from hydrax.risk import RiskStrategy
@@ -91,6 +93,10 @@ class MTP(SamplingBasedController):
         self.sample_weighting = sample_weighting
         self.control_mapper = task.make_control_mapper()
         
+        self.nbr_mtp_samples = int(self.num_samples * self.beta)
+        self.nbr_mppi_samples = self.num_samples - self.nbr_mtp_samples - 1
+        
+        
     def start_clamped_knot_vector(self, num_ctrl_points, degree):
         # First p+1 knots are the same
         n_knots = num_ctrl_points + degree + 1
@@ -113,16 +119,25 @@ class MTP(SamplingBasedController):
                          mean=mean, 
                          cov=cov)
 
+    
     def sample_controls(
         self, params: MTPParams
     ) -> Tuple[jax.Array, MTPParams]:
+        
         """Sample a control sequence."""
+        T = self.task.planning_horizon
+        U = self.task.nu
+
         rng = params.rng
-        mtp_samples = int(self.num_samples * self.beta)
+        # pre-allocate for memory efficiency
+        out = jnp.empty((self.num_samples, T, U), dtype=jnp.float32)
+        
         # The previous spline is included as a sample
         # TODO - can we incorporate elites here?
-        controls = params.spline[None, ...]
-        if mtp_samples > 1:
+        # controls = params.spline[None, ...]
+        out = out.at[0].set(params.spline)
+        
+        if self.nbr_mtp_samples > 1:
             # Sample the control points for the MTP
             rng, sample_rng = jax.random.split(rng)
             control_points = jax.random.uniform(
@@ -137,14 +152,14 @@ class MTP(SamplingBasedController):
             )
             # sample points from the graph
             rng, sample_rng = jax.random.split(rng)
-            layer_indices = jax.random.randint(rng, (mtp_samples, self.M), 0, self.N - 1)
+            layer_indices = jax.random.randint(sample_rng, (self.nbr_mtp_samples, self.M), 0, self.N - 1)
             def get_path(path_id: jax.Array) -> jax.Array:
                 return control_points[jnp.arange(self.M), path_id]
             control_points = jax.vmap(get_path)(layer_indices)
           
             # add last_a_index of spline as first control point
             # !! Double Check
-            init_sample = jnp.repeat(params.spline[params.last_a_idx][None, None, :], mtp_samples, axis=0)
+            init_sample = jnp.repeat(params.spline[params.last_a_idx][None, None, :], self.nbr_mtp_samples, axis=0)
             control_points = jnp.concatenate(
                 [init_sample, control_points], axis=1
             )
@@ -168,25 +183,27 @@ class MTP(SamplingBasedController):
                 mtp_controls = jnp.concatenate([mtp_controls, remain_controls], axis=1)
             else:
                 raise ValueError(f"Invalid sampling strategy: {self.interpolation}")
-            controls = jnp.concatenate([controls, mtp_controls], axis=0)
+            # controls = jnp.concatenate([controls, mtp_controls], axis=0)
+            out = out.at[1:1+self.nbr_mtp_samples].set(mtp_controls)
 
-        mppi_samples = self.num_samples - mtp_samples - 1
-        if mppi_samples > 0:
+        if self.nbr_mppi_samples > 0:
             # Sample mppi_samples control sequences
             rng, sample_rng = jax.random.split(rng)
             noise = jax.random.normal(
                 sample_rng,
                 (
-                    mppi_samples,
+                    self.nbr_mppi_samples,
                     self.task.planning_horizon,
                     self.task.nu,
                 ),
             )
             mppi_controls = params.mean + params.cov * noise
-            controls = jnp.concatenate([controls, mppi_controls], axis=0)
+            out = out.at[1+self.nbr_mtp_samples:1+self.nbr_mtp_samples+self.nbr_mppi_samples].set(mppi_controls)
+            # controls = jnp.concatenate([controls, mppi_controls], axis=0)
 
-        return controls, params.replace(rng=rng)
-
+        return out, params.replace(rng=rng)
+    
+   
     def update_params(
         self, params: MTPParams, rollouts: Trajectory
     ) -> MTPParams:
@@ -195,7 +212,9 @@ class MTP(SamplingBasedController):
         
         if self.sample_weighting == 'cem-softmax':
             # CEM update with softmax weighting for the elites
-            elite_indices = jnp.argsort(costs)[:self.num_elites]
+            vals, elite_indices = jax.lax.top_k(-costs, self.num_elites)
+            elite_indices = elite_indices  # indices of smallest costs
+            # elite_indices = jnp.argsort(costs)[:self.num_elites]
             controls = rollouts.controls[elite_indices]
             weights = jnp.nan_to_num(jax.nn.softmax(-costs[elite_indices] / self.temperature, axis=0))
             # The new proposal distribution is a Gaussian fit to the elites.
@@ -203,7 +222,9 @@ class MTP(SamplingBasedController):
             next_idx = elite_indices[0]  # use the best elite as control
         elif self.sample_weighting == 'cem':
             # CEM update with equal weighting for the elites
-            elite_indices = jnp.argsort(costs)[:self.num_elites]
+            vals, elite_indices = jax.lax.top_k(-costs, self.num_elites)
+            elite_indices = elite_indices  # indices of smallest costs
+            # elite_indices = jnp.argsort(costs)[:self.num_elites]
             controls = rollouts.controls[elite_indices]
             weighted_controls = controls / self.num_elites
             next_idx = elite_indices[0]
@@ -216,15 +237,15 @@ class MTP(SamplingBasedController):
         
         mean = jnp.sum(weighted_controls, axis=0)
         # TODO - can we change this ?
-        cov = jnp.sqrt(jnp.sum(weights[:, None, None] * (controls - mean) ** 2, axis=0))
-        cov = jnp.clip(cov, self.sigma_min, self.sigma_max)
+        #cov = jnp.sqrt(jnp.sum(weights[:, None, None] * (controls - mean) ** 2, axis=0))
+        #cov = jnp.clip(cov, self.sigma_min, self.sigma_max)
         mean = mean + self.alpha * (params.mean - mean)
-        cov = cov + self.alpha * (params.cov - cov)
+        #cov = cov + self.alpha * (params.cov - cov)
         spline = rollouts.controls[next_idx]  # use the best elite as control
-        params = params.replace(mean=mean, cov=cov)
 
-        return params.replace(spline=spline)
-    
+        # return params.replace(mean=mean, cov=cov, spline=spline)
+        return params.replace(mean=mean, spline=spline)
+
 
     def get_action(self, params: MTPParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""

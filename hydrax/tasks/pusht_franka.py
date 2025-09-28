@@ -22,9 +22,10 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 25, sim_steps_per_control_step: int = 25, 
+        self, planning_horizon: int = 20, sim_steps_per_control_step: int = 25, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-0.5, -0.5]), "u_max": jnp.array([0.5, 0.5])},
+        ctrl_limits = {"u_min": jnp.array([-0.35, -0.35]), "u_max": jnp.array([0.35, 0.35])},
+        trace_sites=["ee_site"],
         actuation_type: str = 'velocity',
         ik_type: str = 'pinv',
     ):
@@ -50,7 +51,7 @@ class PushTFranka(Task):
             mj_model,
             planning_horizon=planning_horizon,
             sim_steps_per_control_step=sim_steps_per_control_step,
-            trace_sites=["ee_site"],
+            trace_sites=trace_sites,
             nu=nu,
             ctrl_limits=ctrl_limits,
         )
@@ -84,6 +85,10 @@ class PushTFranka(Task):
         
         # special to this task
         self.ee_body_id = self.mj_model.body("ee_frame").id
+        self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, 0.0])  # [w, x, y, z]
+        # initial end effector
+        self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
+        self.goal_pos_ee = jnp.array([0.3, 0.0, 0.05]) #np.array([0.3, 0.0, 0.05])
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
@@ -95,18 +100,14 @@ class PushTFranka(Task):
         mj_model.opt.ls_iterations = 20 # TODO Optimize
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
-        pos_x = np.random.uniform(low=-0.15, high=0.15)
-        pos_y = np.random.uniform(low=-0.05, high=0.15)
+        pos_x = np.random.uniform(low=-0.2, high=0.2)
+        pos_y = np.random.uniform(low=-0.25, high=0.1)
         angle = np.random.uniform(-np.pi/2, np.pi/2)
 
         # Assuming the block's pose is at the beginning of qpos
         mj_data.qpos[0] = pos_x
         mj_data.qpos[1] = pos_y
         mj_data.qpos[2] = angle
-        
-        # Joint index range (skip floating base joints if any)
-        des_pos = np.array([0.3, 0.0, 0.05]) #np.array([0.3, 0.0, 0.05])
-        des_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
         
         j_start = 3  # Adjust based on your model (e.g., 3 if floating base)
         n_joints = 7
@@ -129,11 +130,11 @@ class PushTFranka(Task):
             current_quat = mj_data.xquat[self.ee_body_id]
 
             # Position error
-            pos_err = des_pos - current_pos  # shape (3,)
+            pos_err = self.goal_pos_ee - current_pos  # shape (3,)
 
             # Orientation error (quaternion distance -> angular velocity vector)
             r_current = R.from_quat(mujoco_to_scipy_quat(current_quat))
-            r_desired = R.from_quat(mujoco_to_scipy_quat(des_quat))
+            r_desired = R.from_quat(mujoco_to_scipy_quat(self.goal_quat_ee))
 
             # Rotation needed to go from current to desired
             r_error = r_desired * r_current.inv()
@@ -172,6 +173,7 @@ class PushTFranka(Task):
 
         else:
             print("IK did not converge.")
+            
 
         mj_data.qpos[self.actuator_joint_idxs] = q  # Set the robot's joint positions
 
@@ -193,34 +195,7 @@ class PushTFranka(Task):
         """ Get the orientation error of the block relative to a goal orientation."""
         sensor_adr = self.model.sensor_adr[self.block_orientation_sensor]
         block_quat = state.sensordata[sensor_adr : sensor_adr + 4]
-        goal_quat = jnp.array([1.0, 0.0, 0.0, 0.0])
-        return mjx._src.math.quat_sub(block_quat, goal_quat)
-    
-    ##################################
-    ##  Safety Penalties / Rewards  ##
-    ##################################
-    
-    def _get_table_collision_err(self, state: mjx.Data) -> jax.Array:
-        """Check if robot end effector is colliding with the table."""
-        sensor_adr = self.model.sensor_adr[self.ee_position_sensor]
-        # Get the end effector position
-        # Assuming the end effector position is given by a 3D vector in the sensor data
-        ee_pos_z = state.sensordata[sensor_adr + 2]  
-        # if below table get error, else 0
-        table_height = 0.002  # Assuming the table is at z=0
-        table_collision = jnp.where(ee_pos_z < table_height, 1.0, 0.0)
-        return table_collision  # Return 1 if colliding with table, else 0
-        
-    def _get_safezone_reward(self, state: mjx.Data) -> jax.Array:
-        """Reward for being in a safe zone."""
-        sensor_adr = self.model.sensor_adr[self.ee_position_sensor]
-        # Get the end effector position
-        ee_pos = state.sensordata[sensor_adr : sensor_adr + 3]
-        # if z in [-0.001, 0.01]
-        safe_zone = jnp.logical_and(ee_pos[2] >= 0.01, ee_pos[2] <= 0.4)
-        return jnp.where(safe_zone, -1.0, 0.0)  # Reward of 1 if in safe zone, else 0
-         
-    
+        return mjx._src.math.quat_sub(block_quat, self.goal_quat_block)
     
     
     ################################## 
@@ -257,16 +232,15 @@ class PushTFranka(Task):
         position_cost = jnp.sum(jnp.square(position_err))
         orientation_cost = jnp.sum(jnp.square(orientation_err))
         
-        total_goal_err = position_cost + orientation_cost
-
+        total_goal_err = 5 * position_cost + orientation_cost
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
         ee_block_distance_cost = jnp.square(ee_block_distance)
         
         # TODO for velocity a control error makes sense
-        #control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
-        error = 0.2 * ee_block_distance_cost + total_goal_err #+ 0.75 * control_cost
+        control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
+        error = total_goal_err + 0.5 * control_cost + 0.1 * ee_block_distance_cost
         
         return error 
                                                                               
@@ -364,7 +338,10 @@ class PushTFranka(Task):
             # Apparently compiles better than inv
             lam = 1e-3
             JJt = J @ J.T
-            dq = J.T @ jnp.linalg.solve(JJt + (lam**2) * jnp.eye(JJt.shape[0], dtype=J.dtype), twist)
+            L = jnp.linalg.cholesky(JJt + (lam*lam) * jnp.eye(6, dtype=J.dtype))
+            y = jax.scipy.linalg.solve_triangular(L, twist, lower=True)
+            z = jax.scipy.linalg.solve_triangular(L.T, y, lower=False)
+            dq = J.T @ z
             
             if self.actuation_type == 'position':
                 return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq

@@ -135,14 +135,18 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     )
     policy_params = controller.init_params(seed)
     jit_optimize = jax.jit(controller.optimize, donate_argnums=(1,))
+    # jit_optimize = jax.jit(controller.optimize, donate_argnums=(0,1))
     #jit_optimize = controller.optimize
 
     # Warm-up the controller
+    # controller.compile_optimize()
     print("Jitting the controller...")
     st = time.time()
+    jit_optimize = jit_optimize.lower(mjx_data, policy_params).compile()
+    print(f"Time to jit: {time.time() - st:.3f} seconds") 
+    
     policy_params, rollouts = jit_optimize(mjx_data, policy_params)
-    policy_params, rollouts = jit_optimize(mjx_data, policy_params)
-    print(f"Time to jit: {time.time() - st:.3f} seconds")
+    
     num_traces = min(rollouts.controls.shape[1], max_traces)
 
     # Ghost reference setup
@@ -234,6 +238,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # Do a replanning step
             plan_start = time.time()
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+            # policy_params, rollouts = controller.opt_step(mjx_data, policy_params)
             plan_time = time.time() - plan_start
             
 

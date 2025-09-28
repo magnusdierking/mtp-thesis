@@ -139,14 +139,17 @@ class SamplingBasedController(ABC):
 
         # Apply the control sequences, parallelized over both rollouts and
         # domain randomizations.
-        _, rollouts = jax.vmap(
+        # _, rollouts = jax.vmap(
+        #     self.eval_rollouts, in_axes=(self.randomized_axes, 0, None)
+        # )(self.model, states, controls)
+        rollouts = jax.vmap(
             self.eval_rollouts, in_axes=(self.randomized_axes, 0, None)
         )(self.model, states, controls)
-
+        
         # Combine the costs from different domain randomizations using the
         # specified risk strategy.
         costs = self.risk_strategy.combine_costs(rollouts.costs)
-        controls = rollouts.controls[0]  # identical over randomizations
+        #controls = rollouts.controls[0]  # identical over randomizations
         trace_sites = rollouts.trace_sites[0]  # visualization only, take 1st
         return rollouts.replace(
             costs=costs, controls=controls, trace_sites=trace_sites
@@ -183,21 +186,24 @@ class SamplingBasedController(ABC):
             sites = self.task.get_trace_sites(x)
             # jax.debug.print("After running cost and trace sites")
 
-            def _step_debug(_, x):
+            def _step_debug(_: int, x: mjx.Data):
                 if self.gravity_compensator:
                     tau_g = self.gravity_compensator(x)
+                    qfrc = jnp.zeros_like(x.qfrc_applied).at[jnp.array(self.task.actuator_joint_idxs)].set(tau_g[jnp.array(self.task.actuator_joint_idxs)])
+                    xfrc = jnp.zeros_like(x.xfrc_applied)
+                    x = x.replace(qfrc_applied=qfrc, xfrc_applied=xfrc) 
                  
-                    x = x.replace(
-                        qfrc_applied=x.qfrc_applied.at[:].set(0.0)
-                    )
-                    x = x.replace(
-                        xfrc_applied=x.xfrc_applied.at[:].set(0.0)
-                    )
-                    x = x.replace(
-                        qfrc_applied=x.qfrc_applied.at[jnp.array(self.task.actuator_joint_idxs)].set(
-                            tau_g[jnp.array(self.task.actuator_joint_idxs)]
-                        )
-                    )
+                    # x = x.replace(
+                    #     qfrc_applied=x.qfrc_applied.at[:].set(0.0)
+                    # )
+                    # x = x.replace(
+                    #     xfrc_applied=x.xfrc_applied.at[:].set(0.0)
+                    # )
+                    # x = x.replace(
+                    #     qfrc_applied=x.qfrc_applied.at[jnp.array(self.task.actuator_joint_idxs)].set(
+                    #         tau_g[jnp.array(self.task.actuator_joint_idxs)]
+                    #     )
+                    # )
                 return mjx.step(model, x)
             
             # Advance the state for several steps, zero-order hold on control
@@ -208,7 +214,7 @@ class SamplingBasedController(ABC):
                 x.replace(ctrl=u_mapped),
             )
             # jax.debug.print("After mjx.step")
-            return x, (x, cost, sites)
+            return x, (cost, sites)
         
         # jax.debug.print("NaN check — any NaNs in controls: {}", jnp.isnan(controls).any())
         # jax.debug.print("Inf check — any Infs in controls: {}", jnp.isinf(controls).any())
@@ -216,17 +222,32 @@ class SamplingBasedController(ABC):
         # jax.debug.print("qvel shape: {}, dtype: {}, norm: {}", state.qvel.shape, state.qvel.dtype, jnp.linalg.norm(state.qvel))
 
         # jax.debug.print("Starting rollout with controls: {}", controls)
-        final_state, (states, costs, trace_sites) = jax.lax.scan(
+        
+        # Old 
+        # final_state, (states, costs, trace_sites) = jax.lax.scan(
+        #     _scan_fn, state, controls
+        # )
+        final_state, (costs, trace_sites) = jax.lax.scan(
             _scan_fn, state, controls
         )
         final_cost = self.task.terminal_cost(final_state)
         final_trace_sites = self.task.get_trace_sites(final_state)
 
-        costs = jnp.append(costs, final_cost)
-        trace_sites = jnp.append(trace_sites, final_trace_sites[None], axis=0)
+        # Old
+        # costs = jnp.append(costs, final_cost)
+        # trace_sites = jnp.append(trace_sites, final_trace_sites[None], axis=0)
+        
+        costs = jnp.concatenate([costs, final_cost[None]], axis=0)
+        trace_sites = jnp.concatenate([trace_sites, final_trace_sites[None]], axis=0)
 
-        return states, Trajectory(
-            controls=controls,
+        # Old
+        # return states, Trajectory(
+        #     controls=controls,
+        #     costs=costs,
+        #     trace_sites=trace_sites,
+        # )
+        return Trajectory(
+            controls=None, # not needed, only creates duplication
             costs=costs,
             trace_sites=trace_sites,
         )

@@ -7,6 +7,7 @@ from evosax.algorithms import (
 
 from hydrax.algs import CEM, PredictiveSampling, MPPI, Evosax, MTP
 from hydrax.simulation.deterministic import run_interactive
+from hydrax.simulation.deterministic_headless import run_headless_simulation
 from hydrax.tasks.pusht_franka import PushTFranka
 
 """
@@ -31,7 +32,7 @@ subparsers.add_parser("oes", help="OpenES")
 subparsers.add_parser("de", help="Diffusion Evolution")
 args = parser.parse_args()
 
-seed = 4
+seed = 420
 
 # Set the controller based on command-line arguments
 if args.algorithm is None: 
@@ -64,7 +65,7 @@ elif args.algorithm == "mtp":
     ctrl = MTP(
             task,
             num_samples=128,
-            M=2, # horizon via control points
+            M=3, # horizon via control points
             N=64, # samples 
             sigma_min=0.1,
             sigma_start=0.2,
@@ -101,3 +102,13 @@ run_interactive(
     record_video=False,
     seed=seed,
     )
+
+# run_headless_simulation(
+#     task,
+#     ctrl,
+#     frequency=50,
+#     seeds=[seed],
+#     max_step=1000,
+#     log_file_prefix="pusht_franka_" + args.algorithm,
+#     save_path="./results"
+#     )
