@@ -32,7 +32,7 @@
   <include file="fr3_vel_mjx.xml"/>
 
   <!-- MJX optimization -->
-  <option cone="pyramidal" timestep="0.002" iterations="20" ls_iterations="20" >
+  <option cone="pyramidal" timestep="0.002" iterations="1" ls_iterations="5" >
     <flag eulerdamp="disable"/>
   </option>
   <custom>

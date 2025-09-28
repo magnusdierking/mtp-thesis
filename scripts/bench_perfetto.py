@@ -16,7 +16,7 @@ def main():
     
     controller = MTP(
         task,
-        num_samples=128,
+        num_samples=1024,
         M=3, # horizon via control points
         N=64, # samples 
         sigma_min=0.1,

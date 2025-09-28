@@ -9,12 +9,14 @@ from hydrax.algs import MTP
 
 def main():
     # --- setup task & controller ---
-    task = PushTFranka(trace_sites=[])
+    task = PushTFranka(planning_horizon = 15, 
+                       sim_steps_per_control_step = 10,
+                       trace_sites=[])
     seed = 420
     controller = MTP(
-        task, num_samples=128, M=3, N=64, sigma_min=0.1, sigma_start=0.2,
+        task, num_samples=1024, M=3, N=64, sigma_min=0.1, sigma_start=0.2,
         num_elites=10, beta=0.25, alpha=0.1, interpolation='bspline',
-        num_randomizations=2, seed=seed,
+        num_randomizations=5, seed=seed,
     )
     mj_model, mj_data = task.reset(seed=seed)
     mjx_data = mjx.put_data(mj_model, mj_data).replace(
@@ -23,7 +25,7 @@ def main():
     policy_params = controller.init_params(seed)
 
     # --- jit & compile once ---
-    jit_optimize = jax.jit(controller.optimize, donate_argnums=(1,))
+    jit_optimize = jax.jit(controller.optimize, donate_argnums=(1))
     print("Compiling…")
     t0 = time.time()
     executable = jit_optimize.lower(mjx_data, policy_params).compile()
