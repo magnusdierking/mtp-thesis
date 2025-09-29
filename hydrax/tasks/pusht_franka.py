@@ -22,9 +22,9 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 20, sim_steps_per_control_step: int = 25, 
+        self, planning_horizon: int = 15, sim_steps_per_control_step: int = 15, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-0.35, -0.35]), "u_max": jnp.array([0.35, 0.35])},
+        ctrl_limits = {"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
         trace_sites=["ee_site"],
         actuation_type: str = 'velocity',
         ik_type: str = 'pinv',
@@ -100,7 +100,7 @@ class PushTFranka(Task):
         mj_model.opt.ls_iterations = 20 # TODO Optimize
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
-        pos_x = np.random.uniform(low=-0.2, high=0.2)
+        pos_x = np.random.uniform(low=-0.3, high=0.3)
         pos_y = np.random.uniform(low=-0.25, high=0.1)
         angle = np.random.uniform(-np.pi/2, np.pi/2)
 
@@ -238,9 +238,9 @@ class PushTFranka(Task):
         ee_block_distance = self._get_ee_block_distance(state)
         ee_block_distance_cost = jnp.square(ee_block_distance)
         
-        # TODO for velocity a control error makes sense
+        # TODO velocity error for the T ?
         control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
-        error = total_goal_err + 0.5 * control_cost + 0.1 * ee_block_distance_cost
+        error = total_goal_err+ 0.25 * ee_block_distance_cost # + 0.05 * control_cost 
         
         return error 
                                                                               
@@ -250,7 +250,7 @@ class PushTFranka(Task):
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         n_geoms = self.model.geom_friction.shape[0]
-        multiplier = jax.random.uniform(rng, (n_geoms,), minval=0.1, maxval=2.0)
+        multiplier = jax.random.uniform(rng, (n_geoms,), minval=0.9, maxval=1.1)
         new_frictions = self.model.geom_friction.at[:, 0].set(
             self.model.geom_friction[:, 0] * multiplier
         )

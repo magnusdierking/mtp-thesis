@@ -15,7 +15,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 # Define the task (cost and dynamics)
-task = PushTFranka()
+task = PushTFranka(ik_type = 'pinv')
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
@@ -32,7 +32,7 @@ subparsers.add_parser("oes", help="OpenES")
 subparsers.add_parser("de", help="Diffusion Evolution")
 args = parser.parse_args()
 
-seed = 420
+seed = 25
 
 # Set the controller based on command-line arguments
 if args.algorithm is None: 
@@ -64,16 +64,16 @@ elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
             task,
-            num_samples=128,
+            num_samples=64,
             M=3, # horizon via control points
-            N=64, # samples 
+            N=16, # samples 
             sigma_min=0.1,
             sigma_start=0.2,
             num_elites=10,
             beta=0.25,
             alpha=0.1,
             interpolation='bspline',
-            num_randomizations=2,
+            num_randomizations=5,
             seed=seed,
         )
 elif args.algorithm == "oes":

@@ -77,6 +77,7 @@ class SamplingBasedController(ABC):
         self.set_seed(seed)
         
         # invariants
+        self._T      = self.task.planning_horizon
         self._act_idx   = jnp.array(self.task.actuator_joint_idxs)
         self._dt        = jnp.asarray(self.task.dt, jnp.float32)
         self._qfrc0 = jnp.zeros((self.model.nv,), dtype=jnp.float32) # maybe not needed
@@ -192,7 +193,139 @@ class SamplingBasedController(ABC):
         return costs_R, sites_R
 
 
-    # @jax.named_call
+    
+    def eval_rollout(self, model: mjx.Model, state: mjx.Data, controls: jax.Array):
+        """Execute one rollout for a fixed model and initial state.
+
+        Args:
+            model: mjx.Model describing the dynamics.
+            state: mjx.Data state used as starting point.
+            controls: Array (T, U) of control inputs for the horizon.
+
+        Returns:
+            (costs, trace_sites) with shapes (T + 1,) and (T + 1, S, 3).
+        """
+        # ---------- Hoisted constants & bound callables ----------
+        dt = self.task.dt
+        sim_steps = int(self.task.sim_steps_per_control_step)
+        use_gc = self.gravity_compensator is not None
+        act_idx = getattr(self, "_act_idx", None)
+
+        running_cost = self.task.running_cost
+        terminal_cost = self.task.terminal_cost
+        get_sites = self.task.get_trace_sites
+        control_mapper = self.control_mapper
+
+        # ---------- One "macro" step: measure -> cost -> integrate ----------
+        @jax.named_call
+        def _macro_step(x: mjx.Data, u: jax.Array):
+            # 1) Bring sensors/derived fields up-to-date for cost/obs.
+            x_for_cost = mjx.forward(model, x)
+
+            # 2) Map control if needed (keep this outside the micro loop).
+            u_mapped = control_mapper(x_for_cost, u) if control_mapper is not None else u
+
+            # 3) Running cost & trace sites at the *start* of this control interval.
+            #    (matches your original semantics)
+            cost_t = dt * running_cost(x_for_cost, u_mapped)
+            sites_t   = jax.lax.stop_gradient(get_sites(x_for_cost))
+            # sites_t = get_sites(x_for_cost)
+
+            # 4) Integrate sim_steps with constant control (u_mapped).
+            if use_gc:
+                tau_g = self.gravity_compensator(x_for_cost)
+                qfrc_t = self._qfrc0.at[act_idx].set(tau_g[act_idx])
+                xfrc_t = self._xfrc0
+                def _micro_step(i, x_cur):
+                    x_pre = x_cur.replace(qfrc_applied=qfrc_t, xfrc_applied=xfrc_t)
+                    return mjx.step(model, x_pre)
+            else:
+                def _micro_step(i, x_cur):
+                    x_pre = x_cur.replace(qfrc_applied=self._qfrc0, xfrc_applied=self._xfrc0)
+                    return mjx.step(model, x_pre)
+            # def _micro_step(i, x_cur: mjx.Data):
+            #     # Optionally add gravity compensation (device-side, no Python branch)
+            #     def _with_gc(x_in):
+            #         tau_g = self.gravity_compensator(x_in)
+            #         qfrc = qfrc0.at[act_idx].set(tau_g[act_idx])
+            #         return x_in.replace(qfrc_applied=qfrc, xfrc_applied=xfrc0)
+
+            #     def _no_gc(x_in):
+            #         return x_in.replace(qfrc_applied=qfrc0, xfrc_applied=xfrc0)
+
+            #     x_pre = jax.lax.cond(use_gc, _with_gc, _no_gc, x_cur)
+            #     # Step once with fixed control for this sub-step.
+            #     return mjx.step(model, x_pre)
+
+            x_next = jax.lax.fori_loop(0, sim_steps, _micro_step, x_for_cost.replace(ctrl=u_mapped))
+            return x_next, (cost_t, sites_t)
+
+        # ---------- Scan over control horizon ----------
+        x_final, (costs, sites) = jax.lax.scan(_macro_step, state, controls)
+
+        # ---------- Terminal terms ----------
+        term_cost = terminal_cost(x_final)#[None]
+        term_sites= jax.lax.stop_gradient(get_sites(x_final))#[None]
+        # term_sites = get_sites(x_final)[None]
+
+        costs = jnp.empty((self._T+1,), costs.dtype).at[:-1].set(costs).at[-1].set(term_cost)
+        trace_sites = jnp.empty((self._T+1,)+sites.shape[1:], sites.dtype) \
+                    .at[:-1].set(sites).at[-1].set(term_sites)
+
+        # costs = jnp.concatenate([costs, term_cost], axis=0)       # [T+1]
+        # trace_sites = jnp.concatenate([sites, term_sites], axis=0)  # [T+1, ...]
+        return costs, trace_sites
+
+    @abstractmethod
+    def init_params(self, seed: int = 0) -> Any:
+        """Initialize the policy parameters, U = [u₀, u₁, ... ] ~ π(params).
+
+        Returns:
+            The initial policy parameters.
+        """
+        pass
+
+    @abstractmethod
+    def sample_controls(self, params: Any) -> Tuple[jax.Array, Any]:
+        """Sample a set of control sequences U ~ π(params).
+
+        Args:
+            params: Parameters of the policy distribution (e.g., mean, std).
+
+        Returns:
+            A control sequences U, size (num rollouts, horizon - 1).
+            Updated parameters (e.g., with a new PRNG key).
+        """
+        pass
+
+    @abstractmethod
+    def update_params(self, params: Any, rollouts: Trajectory) -> Any:
+        """Update the policy parameters π(params) using the rollouts.
+
+        Args:
+            params: The current policy parameters.
+            rollouts: The rollouts obtained from the current policy.
+
+        Returns:
+            The updated policy parameters.
+        """
+        pass
+
+    @abstractmethod
+    def get_action(self, params: Any, t: float) -> jax.Array:
+        """Get the control action at a given point along the trajectory.
+
+        Args:
+            params: The policy parameters, U ~ π(params).
+            t: The time (in seconds) from the start of the trajectory.
+
+        Returns:
+            The control action u(t).
+        """
+        pass
+
+
+  # @jax.named_call
     # def eval_rollout(self, model: mjx.Model, state: mjx.Data, controls: jax.Array):
     #     """Execute one rollout for a fixed model and initial state.
 
@@ -282,120 +415,3 @@ class SamplingBasedController(ABC):
     #     trace_T1 = jnp.empty((T+1,)+trace_sites.shape[1:], trace_sites.dtype).at[:-1].set(trace_sites).at[-1].set(final_sites)
 
     #     return costs_T1, trace_T1
-    
-    def eval_rollout(self, model: mjx.Model, state: mjx.Data, controls: jax.Array):
-        """Execute one rollout for a fixed model and initial state.
-
-        Args:
-            model: mjx.Model describing the dynamics.
-            state: mjx.Data state used as starting point.
-            controls: Array (T, U) of control inputs for the horizon.
-
-        Returns:
-            (costs, trace_sites) with shapes (T + 1,) and (T + 1, S, 3).
-        """
-        # ---------- Hoisted constants & bound callables ----------
-        dt = self.task.dt
-        sim_steps = int(self.task.sim_steps_per_control_step)
-        use_gc = self.gravity_compensator is not None
-        act_idx = getattr(self, "_act_idx", None)
-
-        running_cost = self.task.running_cost
-        terminal_cost = self.task.terminal_cost
-        get_sites = self.task.get_trace_sites
-        control_mapper = self.control_mapper
-
-        # Small templates to avoid re-alloc in the micro-loop
-        zero_qfrc = jnp.zeros_like(state.qfrc_applied)
-        zero_xfrc = jnp.zeros_like(state.xfrc_applied)
-
-        # ---------- One "macro" step: measure -> cost -> integrate ----------
-        @jax.named_call
-        def _macro_step(x: mjx.Data, u: jax.Array):
-            # 1) Bring sensors/derived fields up-to-date for cost/obs.
-            x_for_cost = mjx.forward(model, x)
-
-            # 2) Map control if needed (keep this outside the micro loop).
-            u_mapped = control_mapper(x_for_cost, u) if control_mapper is not None else u
-
-            # 3) Running cost & trace sites at the *start* of this control interval.
-            #    (matches your original semantics)
-            cost_t = dt * running_cost(x_for_cost, u_mapped)
-            sites_t = get_sites(x_for_cost)
-
-            # 4) Integrate sim_steps with constant control (u_mapped).
-            def _micro_step(i, x_cur: mjx.Data):
-                # Optionally add gravity compensation (device-side, no Python branch)
-                def _with_gc(x_in: mjx.Data):
-                    tau_g = self.gravity_compensator(x_in)
-                    qfrc = zero_qfrc.at[act_idx].set(tau_g[act_idx]) if act_idx is not None else zero_qfrc
-                    return x_in.replace(qfrc_applied=qfrc, xfrc_applied=zero_xfrc)
-
-                def _no_gc(x_in: mjx.Data):
-                    return x_in.replace(qfrc_applied=zero_qfrc, xfrc_applied=zero_xfrc)
-
-                x_pre = jax.lax.cond(use_gc, _with_gc, _no_gc, x_cur)
-                # Step once with fixed control for this sub-step.
-                return mjx.step(model, x_pre)
-
-            x_next = jax.lax.fori_loop(0, sim_steps, _micro_step, x_for_cost.replace(ctrl=u_mapped))
-            return x_next, (cost_t, sites_t)
-
-        # ---------- Scan over control horizon ----------
-        x_final, (costs, sites) = jax.lax.scan(_macro_step, state, controls)
-
-        # ---------- Terminal terms ----------
-        term_cost = terminal_cost(x_final)[None]
-        term_sites = get_sites(x_final)[None]
-
-        costs = jnp.concatenate([costs, term_cost], axis=0)       # [T+1]
-        trace_sites = jnp.concatenate([sites, term_sites], axis=0)  # [T+1, ...]
-        return costs, trace_sites
-
-    @abstractmethod
-    def init_params(self, seed: int = 0) -> Any:
-        """Initialize the policy parameters, U = [u₀, u₁, ... ] ~ π(params).
-
-        Returns:
-            The initial policy parameters.
-        """
-        pass
-
-    @abstractmethod
-    def sample_controls(self, params: Any) -> Tuple[jax.Array, Any]:
-        """Sample a set of control sequences U ~ π(params).
-
-        Args:
-            params: Parameters of the policy distribution (e.g., mean, std).
-
-        Returns:
-            A control sequences U, size (num rollouts, horizon - 1).
-            Updated parameters (e.g., with a new PRNG key).
-        """
-        pass
-
-    @abstractmethod
-    def update_params(self, params: Any, rollouts: Trajectory) -> Any:
-        """Update the policy parameters π(params) using the rollouts.
-
-        Args:
-            params: The current policy parameters.
-            rollouts: The rollouts obtained from the current policy.
-
-        Returns:
-            The updated policy parameters.
-        """
-        pass
-
-    @abstractmethod
-    def get_action(self, params: Any, t: float) -> jax.Array:
-        """Get the control action at a given point along the trajectory.
-
-        Args:
-            params: The policy parameters, U ~ π(params).
-            t: The time (in seconds) from the start of the trajectory.
-
-        Returns:
-            The control action u(t).
-        """
-        pass
