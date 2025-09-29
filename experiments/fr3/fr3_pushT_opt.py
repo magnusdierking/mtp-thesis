@@ -70,9 +70,14 @@ class FR3_PushT(FrankaPandaServer):
         )
 
         # Precompile optimize -> returns new params (donate only params)
+        self.get_logger().info("Jitting controller (optimize + get_action)... this may take a while.")
+        t0 = time.time()
         self._jit_optimize = jax.jit(lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,))
         self._executable = self._jit_optimize.lower(self.mjx_data, self.policy_params).compile()
         self._get_action = jax.jit(ctrl.get_action)
+        t1 = time.time()
+        self.get_logger().info(f"JIT compile finished in {t1 - t0:.2f} s")
+
 
         # Buffers (numpy, reused)
         nq, nv = self.mjx_data.qpos.shape[0], self.mjx_data.qvel.shape[0]
@@ -85,11 +90,18 @@ class FR3_PushT(FrankaPandaServer):
         # Command state
         self._current_u = np.zeros((2,), dtype=np.float32)
         self._tick = 0
-        self._log_every = 20
+
+        # Logging
+        self._servo_tick = 0
+        self._planner_tick = 0
+        self._log_every = 10   # log every N iterations
+        self._last_servo_time = time.time()
+        self._last_plan_time = time.time()
+    
 
         # --- Timers & threading ---
         self.mpc_freq = 10.0     # Hz (planner)
-        self.servo_freq = 30.0  # Hz (publisher)
+        self.servo_freq = 50.0  # Hz (publisher)
 
         self.servo_group   = ReentrantCallbackGroup()
         self.planner_group = MutuallyExclusiveCallbackGroup()
@@ -182,9 +194,13 @@ class FR3_PushT(FrankaPandaServer):
         try:
             self.policy_params, action_np = fut.result()
             self._current_u = action_np
-            self._tick += 1
-            if (self._tick % self._log_every) == 0:
-                self.get_logger().info("Planner updated.")
+            self._planner_tick += 1
+            if self._planner_tick % self._log_every == 0:
+                now = time.time()
+                dt = now - self._last_plan_time
+                freq = self._log_every / dt
+                self.get_logger().info(f"[Planner] {freq:.1f} Hz (avg over {self._log_every} iters)")
+                self._last_plan_time = now
         except Exception as e:
             self.get_logger().error(f"Planner error: {e}")
         finally:
@@ -195,9 +211,17 @@ class FR3_PushT(FrankaPandaServer):
         u = self._current_u
         if u is None:
             self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
-            return
-        # scale/limit here if needed
-        self.servo(linear=(float(u[0]), float(u[1]), 0.0), angular=(0.0, 0.0, 0.0))
+        else:
+            self.servo(linear=(float(u[0]), float(u[1]), 0.0), angular=(0.0, 0.0, 0.0))
+
+        # --- Logging ---
+        self._servo_tick += 1
+        if self._servo_tick % self._log_every == 0:
+            now = time.time()
+            dt = now - self._last_servo_time
+            freq = self._log_every / dt
+            self.get_logger().info(f"[Servo]   {freq:.1f} Hz (avg over {self._log_every} iters)")
+            self._last_servo_time = now
 
     # ---------- Boot helpers ----------
     def _states_received(self):
@@ -229,7 +253,7 @@ if __name__ == '__main__':
                     num_randomizations=4, seed=seed)
     else:
         ctrl = MTP(task, num_samples=64, M=2, N=16, num_elites=12,
-                   beta=0.05, alpha=0.01, interpolation='bspline',
+                   beta=0.25, alpha=0.01, interpolation='bspline',
                    num_randomizations=5, seed=seed)
 
     node = FR3_PushT(ctrl=ctrl, robot_ip="10.90.90.144", seed=seed)
