@@ -16,9 +16,9 @@ def main():
     
     controller = MTP(
         task,
-        num_samples=1024,
+        num_samples=64,
         M=3, # horizon via control points
-        N=64, # samples 
+        N=16, # samples 
         sigma_min=0.1,
         sigma_start=0.2,
         num_elites=10,
@@ -51,15 +51,15 @@ def main():
     # The file will contain a clickable link if create_perfetto_link=True
     trace_path = "/tmp/jax-trace"
     with jax.profiler.trace(trace_path, create_perfetto_link=True):
-        time.sleep(1)  # give the profiler a moment to start
+        # time.sleep(1)  # give the profiler a moment to start
         # run multiple iterations to get a more stable trace
         for _ in range(5):
-            t0 = time.time()
+            # t0 = time.time()
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
             # jax.block_until_ready(rollouts)  # ensure all device work is finished
-            t1 = time.time()
+            # t1 = time.time()
 
-    print(f"Runtime (steady-state): {t1 - t0:.4f} s")
+    # print(f"Runtime (steady-state): {t1 - t0:.4f} s")
     print(f"Perfetto trace written to: {trace_path}.json")
     print("Open it at https://ui.perfetto.dev (or click the printed link above).")
 

@@ -12,7 +12,7 @@ def mujoco_to_scipy_quat(q):
 
 
 # Load the MuJoCo model
-xml_path = "./../../hydrax/models/fr3_pushT_pos/scene_mjx.xml"
+xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx_large.xml"
 # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
 xml_dir = os.path.dirname(xml_path)
 
@@ -118,7 +118,7 @@ data.qpos[0] = 0.1
 data.qpos[1] = -0.1
 data.qpos[j_start:j_start+n_joints] = q
 data.qvel[:] = 0.0
-data.ctrl[:] = q
+data.ctrl[:] = 0 #q
 mujoco.mj_forward(model, data) 
 body_id = model.body("ee_frame").id
 cols = slice(3, 10)
