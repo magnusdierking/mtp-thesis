@@ -72,7 +72,12 @@ class FR3_PushT(FrankaPandaServer):
         # Precompile optimize -> returns new params (donate only params)
         self.get_logger().info("Jitting controller (optimize + get_action)... this may take a while.")
         t0 = time.time()
-        self._jit_optimize = jax.jit(lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,))
+        # self._jit_optimize = jax.jit(lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,))
+        # self._executable = self._jit_optimize.lower(self.mjx_data, self.policy_params).compile()
+        self._jit_optimize = jax.jit(
+                                lambda d, p: ctrl.optimize(d, p)[0],
+                                donate_argnums=(0, 1), # doante both
+                            )
         self._executable = self._jit_optimize.lower(self.mjx_data, self.policy_params).compile()
         self._get_action = jax.jit(ctrl.get_action)
         t1 = time.time()

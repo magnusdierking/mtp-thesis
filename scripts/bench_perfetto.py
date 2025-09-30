@@ -42,9 +42,10 @@ def main():
     print("Jitting the controller...")
     st = time.time()
     jit_optimize = jit_optimize.lower(mjx_data, policy_params).compile()
-    print(f"Time to jit: {time.time() - st:.3f} seconds") 
-    
-    policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+    print(f"Time to jit: {time.time() - st:.3f} seconds")
+
+    with jax.profiler.StepTraceAnnotation("Warmup"):
+        policy_params, rollouts = jit_optimize(mjx_data, policy_params)
     jax.block_until_ready(rollouts) # ensure all device work is finished
 
     # ---------- perfetto trace of one run ----------
@@ -53,9 +54,11 @@ def main():
     with jax.profiler.trace(trace_path, create_perfetto_link=True):
         # time.sleep(1)  # give the profiler a moment to start
         # run multiple iterations to get a more stable trace
+        
         for _ in range(5):
             # t0 = time.time()
-            policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+            with jax.profiler.StepTraceAnnotation("MTP step"):
+                policy_params, rollouts = jit_optimize(mjx_data, policy_params)
             # jax.block_until_ready(rollouts)  # ensure all device work is finished
             # t1 = time.time()
 

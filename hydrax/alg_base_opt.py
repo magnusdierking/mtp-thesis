@@ -172,6 +172,61 @@ class SamplingBasedController(ABC):
 
         
         
+    def rollout_with_randomizations2(self, state: mjx.Data, controls: jax.Array, rng: jax.Array):
+        """
+        controls: [R, T, U]
+        returns:  Trajectory with costs [R, T+1] and trace_sites [R, T+1, ...]
+        """
+        # --- make [NR, ...] states ---
+        def tile_state(s, n): return jax.tree.map(lambda a: jnp.broadcast_to(a, (n,) + a.shape), s)
+        states_NR = tile_state(state, self.num_randomizations)
+
+        # optional per-domain state randomization (you already do this)
+        if self.num_randomizations > 1:
+            keys = jax.random.split(rng, self.num_randomizations)
+            rand = jax.vmap(self.task.domain_randomize_data)(states_NR, keys)
+            states_NR = states_NR.tree_replace(rand)
+
+        NR, R = self.num_randomizations, controls.shape[0]
+
+        # --- flatten to one big batch B = NR*R ---
+        # states: repeat each domain state R times  -> [B, ...]
+        states_flat = jax.tree.map(lambda a: jnp.repeat(a, R, axis=0), states_NR)
+
+        # controls: tile the R-block NR times       -> [B, T, U]
+        controls_flat = jnp.tile(controls[None, ...], (NR, 1, 1, 1)).reshape(NR * R, *controls.shape[1:])
+
+        # model: if randomized_axes is not None, those leaves are [NR, *] — repeat along 0 by R
+        model_in = self.model
+        in_axes_model = None
+        if self.randomized_axes is not None:
+            model_in = jax.tree.map(
+                lambda leaf, ax: (jnp.repeat(leaf, R, axis=0) if ax == 0 else leaf),
+                self.model, self.randomized_axes
+            )
+            # after repeating, model_in’s randomized leaves are [B, ...]
+            in_axes_model = jax.tree.map(lambda ax: 0 if ax == 0 else None, self.randomized_axes)
+
+        # --- one vmap over B ---
+        costs_B, sites_B = jax.vmap(
+            self.eval_rollout,
+            in_axes=(in_axes_model, 0, 0) if in_axes_model is not None else (None, 0, 0)
+        )(model_in, states_flat, controls_flat)   # costs_B: [B, T+1], sites_B: [B, T+1, ...]
+
+        # fold back to [NR, R, ...]
+        costs_NR_R = costs_B.reshape(NR, R, -1)
+        sites_NR_R = jax.tree.map(lambda x: x.reshape(NR, R, *x.shape[1:]), sites_B)
+
+        # combine risk across domains per rollout (your logic)
+        costs_R_T1 = jax.vmap(self.risk_strategy.combine_costs, in_axes=1)(costs_NR_R)  # [R, T+1]
+
+        # choose which trace to keep (or aggregate) — unchanged
+        trace_sites_R_T1 = jax.tree.map(lambda x: x[0], sites_NR_R)  # pick domain 0
+
+        return Trajectory(controls=controls, costs=costs_R_T1, trace_sites=trace_sites_R_T1)
+
+        
+        
     @jax.named_call
     def run_one_randomization(self, model_r: mjx.Model, state_r: mjx.Data, controls_all: jax.Array):
         """Roll out all sampled trajectories for a single domain realisation.
@@ -215,25 +270,21 @@ class SamplingBasedController(ABC):
         terminal_cost = self.task.terminal_cost
         get_sites = self.task.get_trace_sites
         control_mapper = self.control_mapper
+        
+        x0 = mjx.forward(model, state)  
 
         # ---------- One "macro" step: measure -> cost -> integrate ----------
         @jax.named_call
         def _macro_step(x: mjx.Data, u: jax.Array):
-            # 1) Bring sensors/derived fields up-to-date for cost/obs.
-            x_for_cost = mjx.forward(model, x)
 
-            # 2) Map control if needed (keep this outside the micro loop).
-            u_mapped = control_mapper(x_for_cost, u) if control_mapper is not None else u
-
-            # 3) Running cost & trace sites at the *start* of this control interval.
-            #    (matches your original semantics)
-            cost_t = dt * running_cost(x_for_cost, u_mapped)
-            sites_t   = jax.lax.stop_gradient(get_sites(x_for_cost))
+            u_mapped = control_mapper(x, u) if control_mapper is not None else u
+            cost_t = dt * running_cost(x, u_mapped)
+            sites_t   = jax.lax.stop_gradient(get_sites(x))
             # sites_t = get_sites(x_for_cost)
 
             # 4) Integrate sim_steps with constant control (u_mapped).
             if use_gc:
-                tau_g = self.gravity_compensator(x_for_cost)
+                tau_g = self.gravity_compensator(x)
                 qfrc_t = self._qfrc0.at[act_idx].set(tau_g[act_idx])
                 xfrc_t = self._xfrc0
                 def _micro_step(i, x_cur):
@@ -243,37 +294,21 @@ class SamplingBasedController(ABC):
                 def _micro_step(i, x_cur):
                     x_pre = x_cur.replace(qfrc_applied=self._qfrc0, xfrc_applied=self._xfrc0)
                     return mjx.step(model, x_pre)
-            # def _micro_step(i, x_cur: mjx.Data):
-            #     # Optionally add gravity compensation (device-side, no Python branch)
-            #     def _with_gc(x_in):
-            #         tau_g = self.gravity_compensator(x_in)
-            #         qfrc = qfrc0.at[act_idx].set(tau_g[act_idx])
-            #         return x_in.replace(qfrc_applied=qfrc, xfrc_applied=xfrc0)
 
-            #     def _no_gc(x_in):
-            #         return x_in.replace(qfrc_applied=qfrc0, xfrc_applied=xfrc0)
-
-            #     x_pre = jax.lax.cond(use_gc, _with_gc, _no_gc, x_cur)
-            #     # Step once with fixed control for this sub-step.
-            #     return mjx.step(model, x_pre)
-
-            x_next = jax.lax.fori_loop(0, sim_steps, _micro_step, x_for_cost.replace(ctrl=u_mapped))
+            x_next = jax.lax.fori_loop(0, sim_steps, _micro_step, x.replace(ctrl=u_mapped))
             return x_next, (cost_t, sites_t)
 
         # ---------- Scan over control horizon ----------
-        x_final, (costs, sites) = jax.lax.scan(_macro_step, state, controls)
+        x_final, (costs, sites) = jax.lax.scan(_macro_step, x0, controls)
 
         # ---------- Terminal terms ----------
-        term_cost = terminal_cost(x_final)#[None]
-        term_sites= jax.lax.stop_gradient(get_sites(x_final))#[None]
-        # term_sites = get_sites(x_final)[None]
+        term_cost = terminal_cost(x_final)
+        term_sites= jax.lax.stop_gradient(get_sites(x_final))
+
 
         costs = jnp.empty((self._T+1,), costs.dtype).at[:-1].set(costs).at[-1].set(term_cost)
         trace_sites = jnp.empty((self._T+1,)+sites.shape[1:], sites.dtype) \
                     .at[:-1].set(sites).at[-1].set(term_sites)
-
-        # costs = jnp.concatenate([costs, term_cost], axis=0)       # [T+1]
-        # trace_sites = jnp.concatenate([sites, term_sites], axis=0)  # [T+1, ...]
         return costs, trace_sites
 
     @abstractmethod
@@ -325,93 +360,3 @@ class SamplingBasedController(ABC):
         pass
 
 
-  # @jax.named_call
-    # def eval_rollout(self, model: mjx.Model, state: mjx.Data, controls: jax.Array):
-    #     """Execute one rollout for a fixed model and initial state.
-
-    #     Args:
-    #         model: ``mjx.Model`` describing the dynamics.
-    #         state: ``mjx.Data`` state used as starting point.
-    #         controls: Array ``(T, U)`` of control inputs for the horizon.
-
-    #     Returns:
-    #         Tuple ``(costs, trace_sites)`` with shapes ``(T + 1,)`` and
-    #         ``(T + 1, S, 3)`` respectively.
-    #     """
-    #     def step_fn(x, u):
-    #         # x = mjx.forward(model, x)
-    #         u_mapped = self.control_mapper(x, u) if self.control_mapper else u
-    #         cost = self.task.dt * self.task.running_cost(x, u_mapped)
-    #         sites = self.task.get_trace_sites(x)
-
-    #         def _micro(_, x):
-    #             if self.gravity_compensator:
-    #                 tau_g = self.gravity_compensator(x)
-    #                 # qfrc = jnp.zeros_like(x.qfrc_applied).at[self._act_idx].set(
-    #                 #     tau_g[self._act_idx]
-    #                 # )
-    #                 qfrc = self._qfrc0.at[self._act_idx].set(tau_g)
-    #                 xfrc = self._xfrc0
-    #                 x = x.replace(qfrc_applied=qfrc, 
-    #                               xfrc_applied=xfrc)
-    #             return mjx.step(model, x)
-
-    #         x = jax.lax.fori_loop(0, self.task.sim_steps_per_control_step,
-    #                             _micro, x.replace(ctrl=u_mapped))
-    #         return x, (cost, sites)
-
-    #     final_state, (costs, trace_sites) = jax.lax.scan(step_fn, state, controls)
-    #     # terminal pieces
-    #     final_cost = self.task.terminal_cost(final_state)[None]
-    #     final_sites = self.task.get_trace_sites(final_state)[None]
-    #     costs = jnp.concatenate([costs, final_cost], axis=0)          # [T]
-    #     trace_sites = jnp.concatenate([trace_sites, final_sites], 0)  # [T, ...]
-    #     return costs, trace_sites
-
-    # @jax.named_call
-    # def eval_rollout(self, model: mjx.Model, state: mjx.Data, controls: jax.Array):
-    #     """Execute one rollout for a fixed model and initial state.
-
-    #     Args:
-    #         model: ``mjx.Model`` describing the dynamics.
-    #         state: ``mjx.Data`` state used as starting point.
-    #         controls: Array ``(T, U)`` of control inputs for the horizon.
-
-    #     Returns:
-    #         Tuple ``(costs, trace_sites)`` with shapes ``(T + 1,)`` and
-    #         ``(T + 1, S, 3)`` respectively.
-    #     """
-    #     def step_fn(x, u):
-    #         x = mjx.forward(model, x)
-    #         u_mapped = self.control_mapper(x, u) if self.control_mapper else u
-
-    #         # compute once per control step
-    #         if self.gravity_compensator:
-    #             tau_g = self.gravity_compensator(x)
-    #             qfrc_t = self._qfrc0.at[self._act_idx].set(tau_g[self._act_idx])
-    #             xfrc_t = self._xfrc0
-
-    #             def _micro(_, x1):
-    #                 x1 = x1.replace(qfrc_applied=qfrc_t, xfrc_applied=xfrc_t)
-    #                 return mjx.step(model, x1)
-    #         else:
-    #             def _micro(_, x1):
-    #                 return mjx.step(model, x1)
-
-    #         # cost + sites (compute once for this u)
-    #         cost = self._dt * self.task.running_cost(x, u_mapped)
-    #         sites = jax.lax.stop_gradient(self.task.get_trace_sites(x))
-
-    #         x = jax.lax.fori_loop(0, self.task.sim_steps_per_control_step,
-    #                             _micro, x.replace(ctrl=u_mapped))
-    #         return x, (cost, sites)
-
-    #     final_state, (costs, trace_sites) = jax.lax.scan(step_fn, state, controls)
-    #     final_cost  = self.task.terminal_cost(final_state)
-    #     final_sites = self.task.get_trace_sites(final_state)
-
-    #     T = controls.shape[0]
-    #     costs_T1 = jnp.empty((T+1,), costs.dtype).at[:-1].set(costs).at[-1].set(final_cost)
-    #     trace_T1 = jnp.empty((T+1,)+trace_sites.shape[1:], trace_sites.dtype).at[:-1].set(trace_sites).at[-1].set(final_sites)
-
-    #     return costs_T1, trace_T1

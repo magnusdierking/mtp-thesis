@@ -241,6 +241,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # policy_params, rollouts = controller.opt_step(mjx_data, policy_params)
             plan_time = time.time() - plan_start
             
+            controller.beta = float(policy_params.beta) # TODO
+            
 
             # Visualize the rollouts
             if show_traces:
@@ -290,14 +292,14 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 else:
                     # remap controls if a control mapper is provided
                     if controller.control_mapper is not None:
-                        print(f"Original control action: {u}")
+                        # print(f"Original control action: {u}")
                         u = differential_IK(
                             mj_model,
                             mj_data,
                             controller.task.ee_body_id,
                             u,  # Exclude base DOF
                         )
-                        print(f"Remapped control action: {u}")
+                        # print(f"Remapped control action: {u}")
                         
                     # Gravity compensation for the robot only
                     tau_g = gravity_comp_torque(mj_model, mj_data)
@@ -324,7 +326,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # Print some timing information
             rtr = step_dt / (time.time() - start_time)
             print(
-                f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s", 
+                f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, beta: {controller.beta:.3f}", 
                 end="\r",
             )
             # Check for task success

@@ -5,8 +5,8 @@ from jax import vmap
 
 import matplotlib
 import matplotlib.pyplot as plt
-from mtp.splines.akima import poly_akima, poly_interpolation
-from mtp.splines.bsplines import compute_b_spline_matrix
+from hydrax.algs.mtp.splines.akima import poly_akima, poly_interpolation
+from hydrax.algs.mtp.splines.bsplines import compute_b_spline_matrix
 
 # Enable LaTeX-style fonts
 matplotlib.rcParams.update({
@@ -42,21 +42,21 @@ def get_path(path_id):
 C = vmap(get_path)(pairwise_idx)
 
 # Akima interpolation
-A = vmap(poly_akima, in_axes=(None, 0))(x, C) # (B, M - 1, 4, 2)
-Aspline = poly_interpolation(A, num_points=num_points)
+# A = vmap(poly_akima, in_axes=(None, 0))(x, C) # (B, M - 1, 4, 2)
+# Aspline = poly_interpolation(A, num_points=num_points)
 
 # B-spline interpolation d = 2
 p = 2
-knots = jnp.arange(1, M + p + 2)
+knots = jnp.arange(1, M + p + 2, dtype=jnp.float32)
 T = num_points * (M - 1)
-B = compute_b_spline_matrix(knots, p, T)
+B = compute_b_spline_matrix(knots, p, T, dtype=jnp.float32)
 Bspline2 = jnp.einsum("bmd,hm->bhd", C, B)
 
 # B-spline interpolation d = 3
 p = 3
-knots = jnp.arange(1, M + p + 2)
+knots = jnp.arange(1, M + p + 2, dtype=jnp.float32)
 T = num_points * (M - 1)
-B = compute_b_spline_matrix(knots, p, T)
+B = compute_b_spline_matrix(knots, p, T, dtype=jnp.float32)
 Bspline3 = jnp.einsum("bmd,hm->bhd", C, B)
 
 # Linear interpolation
@@ -65,7 +65,7 @@ linear_path = vmap(interpolate_path, in_axes=(0, None))(C, num_points)
 # 3d plot
 fig = plt.figure(figsize=(18, 4))
 ax = fig.add_subplot(1, 4, 1, projection="3d")
-xs = jnp.linspace(1, M, num=(num_points * (M - 1)))
+xs = jnp.linspace(1, M, num=(num_points * (M - 1)), dtype=jnp.float32)
 
 for i in range(M):
     x_i = np.ones_like(G[i, :, 0]) * (i + 1)
@@ -106,19 +106,19 @@ ax.set_axis_off()
 ax.grid(False)
 ax.set_title(r"B-spline p=3")
 
-ax = fig.add_subplot(1, 4, 4, projection="3d")
-for i in range(M):
-    x_i = np.ones_like(G[i, :, 0]) * (i + 1)
-    ax.plot(x_i, G[i, :, 0], G[i, :, 1], "o", c='black', ms=5)
+# ax = fig.add_subplot(1, 4, 4, projection="3d")
+# for i in range(M):
+#     x_i = np.ones_like(G[i, :, 0]) * (i + 1)
+#     ax.plot(x_i, G[i, :, 0], G[i, :, 1], "o", c='black', ms=5)
 
 
-for i in range(Aspline.shape[0]):
-    ax.plot(xs, Aspline[i, :, 0], Aspline[i, :, 1], c='#029e73', linewidth=1, alpha=0.3, label="Akima-spline")
+# for i in range(Aspline.shape[0]):
+#     ax.plot(xs, Aspline[i, :, 0], Aspline[i, :, 1], c='#029e73', linewidth=1, alpha=0.3, label="Akima-spline")
 
-ax.set_aspect('equal')
-ax.set_axis_off()
-ax.grid(False)
-ax.set_title(r"Akima-spline")
+# ax.set_aspect('equal')
+# ax.set_axis_off()
+# ax.grid(False)
+# ax.set_title(r"Akima-spline")
 
 fig.tight_layout(pad=0.1)
 plt.show()

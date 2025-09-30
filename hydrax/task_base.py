@@ -68,12 +68,12 @@ class Task(ABC):
         
         if nu is None:
             # Set actuator limits
-            self.u_min = self.act_min
-            self.u_max = self.act_max
+            self.u_min = self.act_min.astype(jnp.float32)
+            self.u_max = self.act_max.astype(jnp.float32)
         else:
             assert ctrl_limits is not None, "Control limits must be provided if nu is specified."
-            self.u_min = ctrl_limits.get("u_min", jnp.full(nu, -np.inf))
-            self.u_max = ctrl_limits.get("u_max", jnp.full(nu, np.inf))
+            self.u_min = ctrl_limits.get("u_min", jnp.full(nu, -np.inf, dtype=jnp.float32)).astype(jnp.float32)
+            self.u_max = ctrl_limits.get("u_max", jnp.full(nu, np.inf, dtype=jnp.float32)).astype(jnp.float32)
             
         # Timestep for each control step
         self.dt = mj_model.opt.timestep * sim_steps_per_control_step

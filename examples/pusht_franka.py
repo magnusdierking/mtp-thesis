@@ -6,6 +6,7 @@ from evosax.algorithms import (
 
 
 from hydrax.algs import CEM, PredictiveSampling, MPPI, Evosax, MTP
+from hydrax.algs.mtp.an_mtp_opt import AnMTP
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
 from hydrax.tasks.pusht_franka import PushTFranka
@@ -24,12 +25,9 @@ parser = argparse.ArgumentParser(
 subparsers = parser.add_subparsers(
     dest="algorithm", help="Sampling algorithm (choose one)"
 )
-subparsers.add_parser("ps", help="Predictive Sampling")
 subparsers.add_parser("mppi", help="Model Predictive Path Integral Control")
-subparsers.add_parser("cem", help="Cross-Entropy Method")
 subparsers.add_parser("mtp", help="MTP")
-subparsers.add_parser("oes", help="OpenES")
-subparsers.add_parser("de", help="Diffusion Evolution")
+subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
 seed = 25
@@ -37,9 +35,6 @@ seed = 25
 # Set the controller based on command-line arguments
 if args.algorithm is None: 
     args.algorithm = "mtp"  # Default to MTP
-if args.algorithm == "ps":
-    print("Running predictive sampling")
-    ctrl = PredictiveSampling(task, num_samples=128, noise_level=0.3, num_randomizations=4, seed=seed)
 elif args.algorithm == "mppi":
     print("Running MPPI")
     ctrl = MPPI(
@@ -50,21 +45,11 @@ elif args.algorithm == "mppi":
         num_randomizations=4,
         seed=seed,
     )
-# elif args.algorithm == "cem":
-#     print("Running CEM")
-#     ctrl = CEM(
-#         task,
-#         num_samples=128,
-#         num_elites=20,
-#         sigma_min=0.3,
-#         sigma_start=1.0,
-#         seed=seed,
-#     )
 elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
             task,
-            num_samples=64,
+            num_samples=128,
             M=3, # horizon via control points
             N=16, # samples 
             sigma_min=0.1,
@@ -76,14 +61,25 @@ elif args.algorithm == "mtp":
             num_randomizations=5,
             seed=seed,
         )
-elif args.algorithm == "oes":
-    print("Running OpenES")
-    ctrl = Evosax(task, Open_ES, num_samples=128, seed=seed, num_randomizations=4)
-
-elif args.algorithm == "de":
-    print("Running Diffusion Evolution (DE)")
-    ctrl = Evosax(task, DiffusionEvolution, num_samples=128, seed=seed, num_randomizations=4)
-    
+elif args.algorithm == "anmtp":
+    print("Running AnMTP")
+    ctrl = AnMTP(
+            task,
+            num_samples=64,
+            M=3, # horizon via control points
+            N=16, # samples 
+            sigma_min=0.1,
+            sigma_start=0.2,
+            num_elites=10,
+            beta = 0.4,
+            beta_lr = 0.2,        # adaptation step size
+            beta_min = 0.2,
+            beta_max = 0.6,
+            alpha=0.1,
+            interpolation='bspline',
+            num_randomizations=5,
+            seed=seed,
+        )
 # Define the model used for simulation
 mj_model, mj_data = task.reset(seed=seed)
 

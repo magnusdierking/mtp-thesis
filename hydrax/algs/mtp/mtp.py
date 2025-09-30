@@ -81,11 +81,17 @@ class MTP(SamplingBasedController):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.sigma_start = sigma_start
-        self.aknots = jnp.linspace(1, self.M, self.M)
+        control_dtype = jnp.float32#getattr(self.task.u_min, "dtype", jnp.float32)
+        self.aknots = jnp.linspace(1, self.M, self.M, dtype=control_dtype)
         # self.bknots = jnp.arange(self.M + self.degree + 1)
         # B spline matrix including the current spline as control point
-        self.bknots = self.start_clamped_knot_vector((self.M + 1), self.degree)
-        self.bmat = compute_b_spline_matrix(self.bknots, self.degree, self.task.planning_horizon)
+        self.bknots = self.start_clamped_knot_vector((self.M + 1), self.degree, dtype=control_dtype)
+        self.bmat = jnp.asarray(
+            compute_b_spline_matrix(
+                self.bknots, self.degree, self.task.planning_horizon, dtype=control_dtype
+            ),
+            dtype=control_dtype,
+        )
         self.temperature = temperature
         self.interpolation = interpolation
         self.alpha = alpha
@@ -97,14 +103,15 @@ class MTP(SamplingBasedController):
         self.nbr_mppi_samples = self.num_samples - self.nbr_mtp_samples - 1
         
         
-    def start_clamped_knot_vector(self, num_ctrl_points, degree):
+    def start_clamped_knot_vector(self, num_ctrl_points, degree, dtype=jnp.float32):
         # First p+1 knots are the same
         n_knots = num_ctrl_points + degree + 1
-        start = jnp.zeros(degree + 1, dtype=float)
-        end = jnp.ones(degree + 1, dtype=float) 
+        start = jnp.zeros(degree + 1, dtype=dtype)
+        end = jnp.ones(degree + 1, dtype=dtype)
+ 
         # The rest increase uniformly
         nbr_rest = n_knots - 2 * (degree + 1) + 1
-        rest = (jnp.arange(1,nbr_rest, dtype=float)) * (1.0 / (nbr_rest))  # Normalize to [0, 1]
+        rest = (jnp.arange(1, nbr_rest, dtype=dtype)) * (1.0 / jnp.array(nbr_rest, dtype=dtype)) 
         return jnp.concatenate([start, rest, end])
 
     def init_params(self, seed: int = 0) -> MTPParams:
