@@ -85,9 +85,15 @@ class AnMTP(SamplingBasedController):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.sigma_start = sigma_start
-        self.aknots = jnp.linspace(1, self.M, self.M)
-        self.bknots = self.start_clamped_knot_vector((self.M + 1), self.degree) # + current point as sample
-        self.bmat = compute_b_spline_matrix(self.bknots, self.degree, self.task.planning_horizon)
+        control_dtype = getattr(self.task.u_min, "dtype", jnp.float32)
+        self.aknots = jnp.linspace(1, self.M, self.M, dtype=control_dtype)
+        self.bknots = self.start_clamped_knot_vector((self.M + 1), self.degree, dtype=control_dtype) # + current point as sample
+        self.bmat = jnp.asarray(
+            compute_b_spline_matrix(
+                self.bknots, self.degree, self.task.planning_horizon, dtype=control_dtype
+            ),
+            dtype=control_dtype,
+        )
         self.temperature = temperature
         self.interpolation = interpolation
         self.alpha = alpha
@@ -100,14 +106,14 @@ class AnMTP(SamplingBasedController):
         self.noise_alpha = 8.0  # higher is smoother
         
         
-    def start_clamped_knot_vector(self, num_ctrl_points, degree):
+    def start_clamped_knot_vector(self, num_ctrl_points, degree, *, dtype):
         # First p+1 knots are the same
         n_knots = num_ctrl_points + degree + 1
-        start = jnp.zeros(degree + 1, dtype=float)
-        end = jnp.ones(degree + 1, dtype=float) 
+        start = jnp.zeros(degree + 1, dtype=dtype)
+        end = jnp.ones(degree + 1, dtype=dtype)
         # The rest increase uniformly
         nbr_rest = n_knots - 2 * (degree + 1) + 1
-        rest = (jnp.arange(1,nbr_rest, dtype=float)) * (1.0 / (nbr_rest))  # Normalize to [0, 1]
+        rest = (jnp.arange(1, nbr_rest, dtype=dtype)) * (1.0 / jnp.array(nbr_rest, dtype=dtype))  # Normalize to [0, 1]
         return jnp.concatenate([start, rest, end])
         
     def init_params(self, seed: int = 0) -> AnMTPParams:
