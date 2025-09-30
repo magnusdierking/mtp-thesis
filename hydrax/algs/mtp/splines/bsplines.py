@@ -5,7 +5,9 @@ from jax import jit
 
 
 @partial(jit, static_argnums=(1, 2))
-def compute_b_spline_matrix(x: jax.Array, degree: int, num_points: int) -> jax.Array:
+def compute_b_spline_matrix(
+    x: jax.Array, degree: int, num_points: int, *, dtype
+) -> jax.Array:
     """
     Compute the B-spline basis matrix for a given degree and knot vector.
     !! Skips the first and last knot values in the parameter domain. !!
@@ -18,15 +20,19 @@ def compute_b_spline_matrix(x: jax.Array, degree: int, num_points: int) -> jax.A
     Returns:
         jax.Array: A matrix where each row represents a parameter value and each column corresponds to a basis function.
     """
-    t_values = jnp.linspace(x[1], x[-2], num_points + 4)[2:-2]  # Exclude the first and last knot values
+    x = jnp.asarray(x, dtype=dtype)
+    t_values = jnp.linspace(x[1], x[-2], num_points + 4, dtype=dtype)[2:-2]  # Exclude the first and last knot values
     # -----------------------------------------------------------------
     # Step 1: Initialize with degree-0 (piecewise constant) basis funcs:
     # N_{i,0}(t) = 1 if x_i <= t < x_{i+1}, else 0.
     # This gives a matrix of shape (M, num_basis_0).
     # -----------------------------------------------------------------
+    one = jnp.array(1.0, dtype=dtype)
+    zero = jnp.array(0.0, dtype=dtype)
     b = jnp.where(
         (x[:-1] <= t_values[:, None]) & (t_values[:, None] <= x[1:]),
-        1.0, 0.0
+        one,
+        zero,
     )
     
     # -----------------------------------------------------------------
@@ -43,10 +49,18 @@ def compute_b_spline_matrix(x: jax.Array, degree: int, num_points: int) -> jax.A
     for d in range(1, degree + 1):
         # Left term:  ((t - x_i)/(x_{i+d} - x_i)) * N_{i,d-1}(t)
         left_d1, left_d2 = x[d:-1], x[:-d - 1]  # t_{i+d} - t_i
-        b_left = jnp.where(left_d1 > left_d2, ((t_values[:, None] - left_d2) / (left_d1 - left_d2)) * b[:, :-1], 0.0)
+        b_left = jnp.where(
+            left_d1 > left_d2,
+            ((t_values[:, None] - left_d2) / (left_d1 - left_d2)) * b[:, :-1],
+            zero,
+        )
         # Right term: ((x_{i+d+1} - t)/(x_{i+d+1} - x_{i+1})) * N_{i+1,d-1}(t)
         right_d1, right_d2 = x[d + 1:], x[1:-d]  # t_{i+d+1} - t_{i+1}
-        b_right = jnp.where(right_d1 > right_d2, ((right_d1 - t_values[:, None]) / (right_d1 - right_d2)) * b[:, 1:], 0.0)
+        b_right = jnp.where(
+            right_d1 > right_d2,
+            ((right_d1 - t_values[:, None]) / (right_d1 - right_d2)) * b[:, 1:],
+            zero,
+        )
         b = b_left + b_right
 
     # -----------------------------------------------------------------

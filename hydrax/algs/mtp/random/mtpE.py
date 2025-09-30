@@ -78,9 +78,15 @@ class MTPE(SamplingBasedController):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.sigma_start = sigma_start
-        self.aknots = jnp.linspace(1, self.M, self.M)
-        self.bknots = jnp.arange(self.M + self.degree + 1)
-        self.bmat = compute_b_spline_matrix(self.bknots, self.degree, self.task.planning_horizon)
+        control_dtype = getattr(self.task.u_min, "dtype", jnp.float32)
+        self.aknots = jnp.linspace(1, self.M, self.M, dtype=control_dtype)
+        self.bknots = jnp.arange(self.M + self.degree + 1, dtype=control_dtype)
+        self.bmat = jnp.asarray(
+            compute_b_spline_matrix(
+                self.bknots, self.degree, self.task.planning_horizon, dtype=control_dtype
+            ),
+            dtype=control_dtype,
+        )
         self.temperature = temperature
         self.interpolation = interpolation
         self.alpha = alpha

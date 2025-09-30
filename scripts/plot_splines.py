@@ -47,16 +47,16 @@ Aspline = poly_interpolation(A, num_points=num_points)
 
 # B-spline interpolation d = 2
 p = 2
-knots = jnp.arange(1, M + p + 2)
+knots = jnp.arange(1, M + p + 2, dtype=C.dtype)
 T = num_points * (M - 1)
-B = compute_b_spline_matrix(knots, p, T)
+B = compute_b_spline_matrix(knots, p, T, dtype=C.dtype)
 Bspline2 = jnp.einsum("bmd,hm->bhd", C, B)
 
 # B-spline interpolation d = 3
 p = 3
-knots = jnp.arange(1, M + p + 2)
+knots = jnp.arange(1, M + p + 2, dtype=C.dtype)
 T = num_points * (M - 1)
-B = compute_b_spline_matrix(knots, p, T)
+B = compute_b_spline_matrix(knots, p, T, dtype=C.dtype)
 Bspline3 = jnp.einsum("bmd,hm->bhd", C, B)
 
 # Linear interpolation
@@ -65,7 +65,7 @@ linear_path = vmap(interpolate_path, in_axes=(0, None))(C, num_points)
 # 3d plot
 fig = plt.figure(figsize=(18, 4))
 ax = fig.add_subplot(1, 4, 1, projection="3d")
-xs = jnp.linspace(1, M, num=(num_points * (M - 1)))
+xs = jnp.linspace(1, M, num=(num_points * (M - 1)), dtype=C.dtype)
 
 for i in range(M):
     x_i = np.ones_like(G[i, :, 0]) * (i + 1)
