@@ -33,12 +33,27 @@
   <include file="fr3_vel_mjx.xml"/>
 
   <!-- MJX optimization -->
-  <option cone="pyramidal" timestep="0.002" iterations="1" ls_iterations="5" >
-    <flag eulerdamp="disable"/>
+
+  <option solver="Newton"
+        jacobian="dense"
+        cone="pyramidal"
+        timestep="0.002"
+        iterations="1"
+        ls_iterations="2">
+  <!-- Keep your original flag; warmstart helps Newton -->
+  <flag eulerdamp="disable" warmstart="enable"/>
   </option>
+
+  <!-- Limit contact work so shapes stay small & compilations fast -->
   <custom>
-    <numeric data="12" name="max_contact_points"/>
+    <!-- Broadphase cap: how many geom pairs to even consider per step -->
+    <numeric name="max_geom_pairs"    data="2048"/>
+    <!-- Narrowphase cap: total resolved contact points per step -->
+    <numeric name="max_contact_points" data="12"/>
   </custom>
+
+  <!-- (Optional) Keep runtime buffers from exploding on pathological frames -->
+  <size nconmax="512"/>
 
   <!-- Set goal as ghost -->
   <default>
