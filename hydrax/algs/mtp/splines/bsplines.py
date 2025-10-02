@@ -67,7 +67,6 @@ from jax import jit
 def compute_b_spline_matrix(x: jax.Array, degree: int, num_points: int, dtype = jnp.float32) -> jax.Array:
     """
      Compute the B-spline basis matrix for a given degree and knot vector.
-     !! Skips the first and last knot values in the parameter domain. !!
  
      Parameters:
          x (list or jax.Array): The knot vector.
@@ -78,7 +77,8 @@ def compute_b_spline_matrix(x: jax.Array, degree: int, num_points: int, dtype = 
          jax.Array: A matrix where each row represents a parameter value and each column corresponds to a basis function.
     """
     x = jnp.asarray(x, dtype=dtype)
-    t_values = jnp.linspace(x[1], x[-2], num_points + 4, dtype=dtype)[2:-2]  # Exclude the first and last knot values
+    # t_values = jnp.linspace(x[0], x[-1], num_points + 4, dtype=dtype)
+    t_values = jnp.linspace(x[degree], x[-1-degree], num_points + 1, dtype=dtype)[1:]
      # -----------------------------------------------------------------
      # Step 1: Initialize with degree-0 (piecewise constant) basis funcs:
      # N_{i,0}(t) = 1 if x_i <= t < x_{i+1}, else 0.
@@ -87,7 +87,7 @@ def compute_b_spline_matrix(x: jax.Array, degree: int, num_points: int, dtype = 
     one = jnp.array(1.0, dtype=dtype)
     zero = jnp.array(0.0, dtype=dtype)
     b = jnp.where(
-         (x[:-1] <= t_values[:, None]) & (t_values[:, None] <= x[1:]),
+         (x[:-1] <= t_values[:, None]) & (t_values[:, None] < x[1:]),
         one,
         zero,
     )
@@ -119,6 +119,11 @@ def compute_b_spline_matrix(x: jax.Array, degree: int, num_points: int, dtype = 
             zero,
         )
         b = b_left + b_right
+        
+    last = b.shape[0] - 1
+    last_basis = b.at[last, :].set(0.0).at[last, -1].set(1.0)
+
+    b = b.at[last, :].set(last_basis[last, :])
  
      # -----------------------------------------------------------------
      # After the loop:

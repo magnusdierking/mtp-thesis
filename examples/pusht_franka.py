@@ -1,11 +1,6 @@
 import argparse
-from evosax.algorithms import (
-    DiffusionEvolution,
-    Open_ES,
-)
 
-
-from hydrax.algs import CEM, PredictiveSampling, MPPI, Evosax, MTP
+from hydrax.algs import MPPI, MTP
 from hydrax.algs.mtp.an_mtp_opt import AnMTP
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
@@ -50,7 +45,7 @@ elif args.algorithm == "mtp":
     ctrl = MTP(
             task,
             num_samples=128,
-            M=3, # horizon via control points
+            M=2, # horizon via control points
             N=16, # samples 
             sigma_min=0.1,
             sigma_start=0.2,
@@ -66,16 +61,17 @@ elif args.algorithm == "anmtp":
     ctrl = AnMTP(
             task,
             num_samples=64,
-            M=3, # horizon via control points
+            M=2, # horizon via control points
             N=16, # samples 
-            sigma_min=0.1,
-            sigma_start=0.2,
+            sigma_min=0.05,
+            sigma_start=0.1,
             num_elites=10,
+            keep_elites=5,   # !experimental
             beta = 0.4,
             beta_lr = 0.2,        # adaptation step size
-            beta_min = 0.2,
-            beta_max = 0.6,
-            alpha=0.1,
+            beta_min = 0.1,
+            beta_max = 0.5,
+            alpha=0.05,
             interpolation='bspline',
             num_randomizations=5,
             seed=seed,

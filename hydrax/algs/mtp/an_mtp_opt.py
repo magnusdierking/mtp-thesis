@@ -9,6 +9,7 @@ from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
 from .splines.akima import poly_akima, poly_interpolation
 from .splines.bsplines import compute_b_spline_matrix
+from .splines.linear import interpolate_linear
 
 
 @dataclass
@@ -17,19 +18,9 @@ class AnMTPParams:
     mean: jax.Array = None     # (T, U)
     cov: jax.Array = None      # (T, U)
     spline: jax.Array = None   # (T, U)
+    elites: jax.Array = None   # (num_elites, T, U), optional
     beta: jax.Array = None     # scalar jax array, updated inside jit
     last_a_idx: int = 0
-
-
-@jax.jit
-def _interpolate_linear(path: jax.Array, num_points: int) -> jax.Array:
-    """Vectorized piecewise-linear interpolation along the first axis.
-    path: (M+1, U)
-    returns: (num_points*(M), U)  [caller handles tail fill]
-    """
-    start, goal = path[:-1], path[1:]
-    linspace = lambda x, y, n: jnp.linspace(x, y, n + 1)[:-1]
-    return jax.vmap(linspace, in_axes=(0, 0, None))(start, goal, num_points).reshape(-1, path.shape[-1])
 
 
 class AnMTP(SamplingBasedController):
@@ -48,6 +39,7 @@ class AnMTP(SamplingBasedController):
         N: int = 50,
         degree: int = 2,
         num_elites: int = 5,
+        keep_elites: int = 1,  
         sigma_start: float = 0.5,
         sigma_min: float = 0.1,
         sigma_max: float = 1.0,
@@ -61,6 +53,7 @@ class AnMTP(SamplingBasedController):
         interpolation: str = "akima",  # {"bspline","akima","linear"}
         sample_weighting: str = "cem-softmax",
         risk_strategy: RiskStrategy | None = None,
+        colorize_noise: bool = False,   # !experimental
         seed: int = 0,
     ):
         super().__init__(task, num_randomizations, risk_strategy, seed)
@@ -76,13 +69,26 @@ class AnMTP(SamplingBasedController):
 
         self.num_samples = num_samples
         self.num_elites = num_elites
+        if keep_elites > num_elites:
+            print(f"Warning: keep_elites ({keep_elites}) > num_elites ({num_elites}). Setting keep_elites = num_elites.")
+            self.keep_elites = num_elites
+        elif keep_elites < 1:
+            print(f"Warning: keep_elites ({keep_elites}) < 1. Setting keep_elites = 1.")
+            self.keep_elites = 1
+        else:
+            self.keep_elites = keep_elites
+        if sample_weighting not in ["cem", "cem-softmax", "mppi"]:
+            raise ValueError(f"Invalid sample_weighting: {sample_weighting}")
+        self.sample_weighting = sample_weighting
+        if sample_weighting == "mppi":
+            print("Info: sample_weighting='mppi' is not influenced by elites, all samples are weighted.")
+        
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.sigma_start = sigma_start
         self.temperature = temperature
         self.interpolation = interpolation
         self.alpha = alpha
-        self.sample_weighting = sample_weighting
 
         control_dtype = jnp.float32
         self.aknots = jnp.linspace(1, self.M, self.M, dtype=control_dtype)
@@ -94,6 +100,12 @@ class AnMTP(SamplingBasedController):
         )  # (T, M+1)
 
         self.control_mapper = task.make_control_mapper()
+        
+        # ----------------------
+        # Experimental
+        self.colorize_noise = colorize_noise
+        self.alpha_noise = 1.0  # 0=white, 1=pink, 2=brown
+        # ----------------------
 
     def _start_clamped_knot_vector(self, num_ctrl_points: int, degree: int, *, dtype=jnp.float32) -> jax.Array:
         n_knots = num_ctrl_points + degree + 1
@@ -111,10 +123,11 @@ class AnMTP(SamplingBasedController):
         rng = jax.random.key(seed)
         T, U = self.task.planning_horizon, self.task.nu
         spline = jnp.zeros((T, U), dtype=jnp.float32)
+        elites = jnp.zeros((self.keep_elites, T, U), dtype=jnp.float32) # ! experimental
         mean = jnp.zeros((T, U), dtype=jnp.float32)
         cov = jnp.full_like(mean, self.sigma_start)
         beta = jnp.array(self.beta, dtype=jnp.float32)
-        return AnMTPParams(rng=rng, spline=spline, mean=mean, cov=cov, beta=beta)
+        return AnMTPParams(rng=rng, spline=spline, mean=mean, cov=cov, beta=beta, elites=elites)
 
     # ----------------------
     # Sampling
@@ -127,9 +140,9 @@ class AnMTP(SamplingBasedController):
         # Always fill the whole (R, T, U):
         # slot 0 = deterministic previous spline, slots 1..R-1 = sampled branch (masked MTP or MPPI)
         out = jnp.empty((R, T, U), dtype=jnp.float32)
-        out = out.at[0].set(params.spline)
+        out = out.at[:self.keep_elites].set(params.elites)
 
-        S = R - 1  # number of stochastic samples with fixed shape
+        S = R - self.keep_elites  # number of stochastic samples with fixed shape
 
         # --- MTP branch (full S, later masked) ---
         rng, cp_key, pick_key = jax.random.split(rng, 3)
@@ -148,17 +161,17 @@ class AnMTP(SamplingBasedController):
         if self.interpolation == "bspline":
             mtp_controls = jnp.einsum("tm,bmu->btu", self.bmat, chosen)  # (S,T,U)
         elif self.interpolation == "akima":
-            num_interp = T // (self.M - 1)
-            remain = T - num_interp * (self.M - 1)
+            num_interp = T // (self.M)
+            remain = T - num_interp * (self.M)
             A = jax.vmap(poly_akima, in_axes=(None, 0))(self.aknots, chosen)  # (S, M-1, 4, U)
             interp = poly_interpolation(A, num_interp)                        # (S, T - remain, U)
             mtp_controls = jnp.empty((S, T, U), dtype=interp.dtype)
             mtp_controls = mtp_controls.at[:, :T - remain].set(interp)
             mtp_controls = mtp_controls.at[:, T - remain :].set(jnp.repeat(chosen[:, -1:, :], remain, axis=1))
         elif self.interpolation == "linear":
-            num_interp = T // (self.M - 1)
-            remain = T - num_interp * (self.M - 1)
-            interp = jax.vmap(_interpolate_linear, in_axes=(0, None))(chosen, num_interp)
+            num_interp = T // (self.M )
+            remain = T - num_interp * (self.M)
+            interp = jax.vmap(interpolate_linear, in_axes=(0, None))(chosen, num_interp)
             mtp_controls = jnp.empty((S, T, U), dtype=interp.dtype)
             mtp_controls = mtp_controls.at[:, :T - remain].set(interp)
             mtp_controls = mtp_controls.at[:, T - remain :].set(jnp.repeat(chosen[:, -1:, :], remain, axis=1))
@@ -168,6 +181,8 @@ class AnMTP(SamplingBasedController):
         # --- MPPI branch (full S, later masked) ---
         rng, noise_key = jax.random.split(rng)
         noise = jax.random.normal(noise_key, (S, T, U))
+        if self.colorize_noise:
+            noise = self.colorize_time_series(noise) # !experimental
         mppi_controls = params.mean[None, ...] + params.cov[None, ...] * noise  # (S,T,U)
 
         # --- Masked mixing with fixed shape ---
@@ -176,7 +191,7 @@ class AnMTP(SamplingBasedController):
         mask = (jnp.arange(S) < K)[:, None, None]  # (S,1,1) boolean
         mixed_tail = jnp.where(mask, mtp_controls, mppi_controls)  # (S,T,U)
 
-        out = out.at[1:].set(mixed_tail)
+        out = out.at[self.keep_elites:].set(mixed_tail)
         out = jnp.clip(out, self.task.u_min, self.task.u_max)
         return out, params.replace(rng=rng)
 
@@ -224,8 +239,15 @@ class AnMTP(SamplingBasedController):
         denom = jnp.maximum(1, is_tail.sum())  # avoid div-by-zero if all elites pick slot 0
         frac_mtp_in_elites = (is_mtp_slot & is_tail).sum() / denom
 
-        beta_target = frac_mtp_in_elites
-        new_beta = (1.0 - self.beta_lr) * params.beta + self.beta_lr * beta_target
+        # increase beta if any elites are MTP, decrease otherwise
+        # use jax operations to stay in-jit
+        new_beta = jnp.where(
+            frac_mtp_in_elites > params.beta,
+            (1.0 - self.beta_lr) * params.beta + self.beta_lr * self.beta_max,
+            (1.0 - self.beta_lr) * params.beta + self.beta_lr * self.beta_min,
+        )
+        # beta_target = frac_mtp_in_elites
+        # new_beta = (1.0 - self.beta_lr) * params.beta + self.beta_lr * beta_target
         new_beta = jnp.clip(new_beta, self.beta_min, self.beta_max)
 
         return params.replace(mean=mean, spline=spline, beta=new_beta)
@@ -242,3 +264,32 @@ class AnMTP(SamplingBasedController):
     # Optional manual override
     def update_beta(self, beta: float):
         self.beta = float(jnp.clip(beta, self.beta_min, self.beta_max))
+        
+        
+    # ----------------------
+    # Experimental
+    def colorize_time_series(self, noise, remove_dc=True, eps=1e-8):
+        """
+        noise: (B, T, D) white ~ N(0,1)
+        Returns colored noise with approx unit variance per (B,D) trajectory.
+        alpha=0 -> white, 1 -> pink (1/f), 2 -> brown (1/f^2)
+        """
+        B, T, D = noise.shape
+
+        # reshape to (B*D, T) to FFT each series independently
+        x = noise.reshape(B * D, T)
+
+        # FFT -> apply magnitude shaping -> IFFT
+        Xf = jnp.fft.rfft(x, axis=-1)                           # (B*D, T_r)
+        freqs = jnp.fft.rfftfreq(T)                             # (T_r,)
+        H = (1.0 / jnp.maximum(freqs, eps)) ** (self.alpha_noise / 2.0)    # magnitude shaping
+        if remove_dc:
+            H = H.at[0].set(0.0)
+        Yf = Xf * H[None, :]                                    # broadcast
+        y = jnp.fft.irfft(Yf, n=T, axis=-1)                     # (B*D, T)
+
+        # de-mean and unit-std per series (robust for finite T)
+        y = y - y.mean(axis=-1, keepdims=True)
+        y = y / (y.std(axis=-1, keepdims=True) + eps)
+
+        return y.reshape(B, T, D)

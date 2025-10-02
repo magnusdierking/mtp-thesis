@@ -69,7 +69,7 @@ def poly_interpolation(A: jax.Array, num_points: int = 5, nu: int = 0) -> jax.Ar
     spline : array_like
         Spline values for the given path.
     """
-    x = jnp.linspace(0, 1, num_points + 1)[:-1]
+    x = jnp.linspace(0, 1, num_points + 1)[1:] #! removed first point as this is already executed
     B, dim = A.shape[0], A.shape[-1]
 
     def get_segment(a: jax.Array) -> jax.Array:

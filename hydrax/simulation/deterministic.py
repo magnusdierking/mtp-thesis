@@ -240,9 +240,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
             # policy_params, rollouts = controller.opt_step(mjx_data, policy_params)
             plan_time = time.time() - plan_start
-            
-            controller.beta = float(policy_params.beta) # TODO
-            
+
+            if hasattr(controller, 'beta'):
+                controller.beta = float(policy_params.beta) # TODO
 
             # Visualize the rollouts
             if show_traces:
@@ -299,16 +299,17 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                             controller.task.ee_body_id,
                             u,  # Exclude base DOF
                         )
-                        # print(f"Remapped control action: {u}")
-                        
-                    # Gravity compensation for the robot only
-                    tau_g = gravity_comp_torque(mj_model, mj_data)
-                    # Clear and apply external torques (generalized forces)
-                    mj_data.qfrc_applied[:] = 0.0        # clears all user generalized forces
-                    mj_data.xfrc_applied[:] = 0.0        # clears any body-space external wrenches
-                    mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
-                    # Apply the control to the simulation
-                    mj_data.ctrl[:] = np.array(u[controller.task.actuator_joint_idxs])
+                    # print(f"Remapped control action: {u}")
+                    
+                    if controller.gravity_compensator:
+                        # Gravity compensation for the robot only
+                        tau_g = gravity_comp_torque(mj_model, mj_data)
+                        # Clear and apply external torques (generalized forces)
+                        mj_data.qfrc_applied[:] = 0.0        # clears all user generalized forces
+                        mj_data.xfrc_applied[:] = 0.0        # clears any body-space external wrenches
+                        mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
+                        # Apply the control to the simulation
+                    mj_data.ctrl[:] = np.array(u[np.array(controller.task.actuator_joint_idxs)])
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
             
@@ -325,10 +326,16 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
             # Print some timing information
             rtr = step_dt / (time.time() - start_time)
-            print(
-                f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, beta: {controller.beta:.3f}", 
-                end="\r",
-            )
+            if hasattr(controller, 'beta'):
+                print(
+                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, beta: {controller.beta:.3f}", 
+                    end="\r",
+                )
+            else:
+                print(
+                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s", 
+                    end="\r",
+                )
             # Check for task success
             task_success |= controller.task.success(mj_data)
 

@@ -8,7 +8,7 @@ from scipy.spatial.transform import Rotation as R
 
 
 
-xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/unitree_go2/scene.xml"
+xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/unitree_go2/scene_mjx.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
