@@ -292,6 +292,66 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             if hasattr(controller, 'beta'):
                 controller.beta = float(policy_params.beta) # TODO
                 
+            # !update live plot
+            sites_of_interest = policy_params.predicted_state[..., 1]  # ignore end effector site
+            site_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
+
+            distances = np.linalg.norm(
+                sites_of_interest - np.array(mj_data.site_xpos[site_id]), axis=-1
+            )
+
+            # probs based on distances
+            z = distances / 0.008
+            exps = np.exp(z - np.max(z))  # for numerical stability
+            probs = exps / np.sum(exps)
+
+            # --- update bar heights (left subplot) ---
+            for rect, h in zip(bars, probs):
+                rect.set_height(h)
+
+            ax_bar.set_xticklabels(
+                [f"{v:.2f}" for v in controller.model.body_mass[:, controller.task.T_bid]]
+            )
+
+            ax_bar.relim()
+            ax_bar.autoscale_view(scaley=True)
+
+
+            # Only build a KDE once we have at least 2 samples
+            if len(kde_samples) >= 2:
+                samples_array = np.fromiter(kde_samples, dtype=float)
+
+                # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
+                kde = gaussian_kde(samples_array, bw_method='scott')
+
+                # Grid for evaluation — pad a bit beyond min/max to avoid clipping
+                s_min, s_max = float(samples_array.min()), float(samples_array.max())
+                pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
+                x_kde = np.linspace(s_min - pad, s_max + pad, 512)
+                y_kde = kde(x_kde)
+
+                # Update the line
+                kde_line.set_data(x_kde, y_kde)
+                ax_kde.set_xlim(x_kde[0], x_kde[-1])
+                ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
+            else:
+                # Not enough samples yet — clear the line
+                kde_line.set_data([], [])
+                ax_kde.set_ylim(0, 1)
+
+            # ----------------------------------------------------------------------- #
+
+            fig.canvas.draw_idle()
+            plt.pause(0.01)  # yield to the GUI loop
+            
+            # update domain randomizations
+            updated = controller.update_domain_randomization_model(
+                jax.random.PRNGKey(step), jnp.array(probs)
+            )
+            if updated:
+                kde_samples.extend(np.asarray(controller.model.body_mass[:,controller.task.T_bid].tolist(), dtype=float).ravel())  
+        
+            # !-------------------------------------------
             
             # Visualize the rollouts
             if show_traces:

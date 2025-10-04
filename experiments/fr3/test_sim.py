@@ -12,7 +12,7 @@ def mujoco_to_scipy_quat(q):
 
 
 # Load the MuJoCo model
-xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx_large.xml"
+xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx.xml"
 # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
 xml_dir = os.path.dirname(xml_path)
 
@@ -120,33 +120,11 @@ data.qpos[j_start:j_start+n_joints] = q
 data.qvel[:] = 0.0
 data.ctrl[:] = 0 #q
 mujoco.mj_forward(model, data) 
-body_id = model.body("ee_frame").id
-cols = slice(3, 10)
 
-# Geometric Jacobians at EE position
-jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
-jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
-point = data.xpos[body_id, :3].copy()
-mujoco.mj_jac(model, data, jacp, jacr, point, body_id)
 
-# Select joint columns (your 7-DoF set, e.g., joints 3..9)
-J_pos = jacp[0:3, cols]   # (3, n)
-J_rot = jacr[:,  cols]    # (3, n)
-J = np.vstack((J_pos, J_rot))  # (6, n)
-print(J[:,-1])
-# twist = np.zeros(6, dtype=np.float64)
-# twist[0:2] = target_vel[0:2]  # desired linear
 
-# dq = J.T @ twist
-
-# print model actuator ranges
-print("Actuator ranges:")
-for i in range(model.nu):
-    print(f"Actuator {i} ({mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)}): {model.actuator_ctrlrange[i]}")
-
-# new_q = data.qpos[cols] + model.opt.timestep * dq
-
-# pos_sensor = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos")
+# print everything
+mujoco.mj_printModel(model, '/tmp/model.txt')
     
     
 with mujoco.viewer.launch_passive(model, data) as v:

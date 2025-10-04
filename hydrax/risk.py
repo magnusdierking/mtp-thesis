@@ -26,6 +26,27 @@ class RiskStrategy(ABC):
         pass
 
 
+
+class ExpectedCost(RiskStrategy):
+    """Average cost risk strategy.
+
+    This is the standard expectation w.r.t. a customizable measure.
+    """
+    def __init__(self, weights: jax.Array):
+        """Set the weights for the expectation."""
+        self.weights = weights / jnp.sum(weights)
+        
+    def set_weights(self, weights: jax.Array):
+        """Set the weights for the expectation."""
+        assert jnp.all(weights >= 0), "Weights must be non-negative"
+        # assert jnp.sum(weights) == 1.0, "Weights must sum to a 1"
+        self.weights = weights 
+
+    def combine_costs(self, costs: jax.Array) -> jax.Array:
+        """Take the average cost over all randomizations."""
+        return jnp.average(costs, axis=0, weights=self.weights)
+
+
 class AverageCost(RiskStrategy):
     """Average cost risk strategy.
 

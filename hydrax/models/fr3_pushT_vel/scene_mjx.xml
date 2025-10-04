@@ -23,6 +23,8 @@
         <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" damping="2"/>
         <joint name="T_z" axis="0 0 1" damping="0.01"/>
         <geom class="tblock" name="bottom" type="box" size=".025 0.05 0.025" solref="0.002 1" solimp="0.95 0.99 0.001" mass="0.0655"/>
+          <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
+          <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>
         <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0" solref="0.002 1" solimp="0.95 0.99 0.001" mass="0.07855"/>
 
       </body>

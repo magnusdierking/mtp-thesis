@@ -1,8 +1,9 @@
 import argparse
 
 from hydrax.algs import MPPI, MTP
-from hydrax.algs.mtp.an_mtp_opt import AnMTP
-from hydrax.simulation.deterministic import run_interactive
+# from hydrax.algs.mtp.an_mtp_opt import AnMTP
+from hydrax.algs.mtp.an_mtp_dr import AnMTP
+from hydrax.simulation.deterministic_dr import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
 from hydrax.tasks.pusht_franka import PushTFranka
 
@@ -25,7 +26,7 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-seed = 25
+seed = 34
 
 # Set the controller based on command-line arguments
 if args.algorithm is None: 
@@ -65,15 +66,15 @@ elif args.algorithm == "anmtp":
             N=16, # samples 
             sigma_min=0.05,
             sigma_start=0.1,
-            num_elites=10,
-            keep_elites=5,   # !experimental
-            beta = 0.4,
-            beta_lr = 0.2,        # adaptation step size
-            beta_min = 0.1,
-            beta_max = 0.5,
+            num_elites=12,
+            keep_elites=2,   # !experimental
+            beta = 0.3,
+            beta_lr = 0.1,        # adaptation step size
+            beta_min = 0.05,
+            beta_max = 0.35,
             alpha=0.05,
             interpolation='bspline',
-            num_randomizations=5,
+            num_randomizations=8,
             seed=seed,
         )
 # Define the model used for simulation
@@ -85,10 +86,10 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=50,
+    frequency=25,
     show_traces=True,
-    trace_width=0.75,
-    max_traces=10,
+    trace_width=0.55,
+    max_traces=16,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,

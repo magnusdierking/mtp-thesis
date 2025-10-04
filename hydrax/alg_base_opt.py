@@ -166,64 +166,64 @@ class SamplingBasedController(ABC):
         )  # -> [R, T]
 
         # Controls are identical across domains; choose any domain for trace sites, or combine if desired
-        trace_sites_R_T = sites_NR_R_T[0]  # [R, T, ...]
+        trace_sites_R_T = sites_NR_R_T  # [R, T, ...]
 
         return Trajectory(controls=controls, costs=costs_R_T, trace_sites=trace_sites_R_T)
 
         
         
-    def rollout_with_randomizations2(self, state: mjx.Data, controls: jax.Array, rng: jax.Array):
-        """
-        controls: [R, T, U]
-        returns:  Trajectory with costs [R, T+1] and trace_sites [R, T+1, ...]
-        """
-        # --- make [NR, ...] states ---
-        def tile_state(s, n): return jax.tree.map(lambda a: jnp.broadcast_to(a, (n,) + a.shape), s)
-        states_NR = tile_state(state, self.num_randomizations)
+    # def rollout_with_randomizations2(self, state: mjx.Data, controls: jax.Array, rng: jax.Array):
+    #     """
+    #     controls: [R, T, U]
+    #     returns:  Trajectory with costs [R, T+1] and trace_sites [R, T+1, ...]
+    #     """
+    #     # --- make [NR, ...] states ---
+    #     def tile_state(s, n): return jax.tree.map(lambda a: jnp.broadcast_to(a, (n,) + a.shape), s)
+    #     states_NR = tile_state(state, self.num_randomizations)
 
-        # optional per-domain state randomization (you already do this)
-        if self.num_randomizations > 1:
-            keys = jax.random.split(rng, self.num_randomizations)
-            rand = jax.vmap(self.task.domain_randomize_data)(states_NR, keys)
-            states_NR = states_NR.tree_replace(rand)
+    #     # optional per-domain state randomization (you already do this)
+    #     if self.num_randomizations > 1:
+    #         keys = jax.random.split(rng, self.num_randomizations)
+    #         rand = jax.vmap(self.task.domain_randomize_data)(states_NR, keys)
+    #         states_NR = states_NR.tree_replace(rand)
 
-        NR, R = self.num_randomizations, controls.shape[0]
+    #     NR, R = self.num_randomizations, controls.shape[0]
 
-        # --- flatten to one big batch B = NR*R ---
-        # states: repeat each domain state R times  -> [B, ...]
-        states_flat = jax.tree.map(lambda a: jnp.repeat(a, R, axis=0), states_NR)
+    #     # --- flatten to one big batch B = NR*R ---
+    #     # states: repeat each domain state R times  -> [B, ...]
+    #     states_flat = jax.tree.map(lambda a: jnp.repeat(a, R, axis=0), states_NR)
 
-        # controls: tile the R-block NR times       -> [B, T, U]
-        controls_flat = jnp.tile(controls[None, ...], (NR, 1, 1, 1)).reshape(NR * R, *controls.shape[1:])
+    #     # controls: tile the R-block NR times       -> [B, T, U]
+    #     controls_flat = jnp.tile(controls[None, ...], (NR, 1, 1, 1)).reshape(NR * R, *controls.shape[1:])
 
-        # model: if randomized_axes is not None, those leaves are [NR, *] — repeat along 0 by R
-        model_in = self.model
-        in_axes_model = None
-        if self.randomized_axes is not None:
-            model_in = jax.tree.map(
-                lambda leaf, ax: (jnp.repeat(leaf, R, axis=0) if ax == 0 else leaf),
-                self.model, self.randomized_axes
-            )
-            # after repeating, model_in’s randomized leaves are [B, ...]
-            in_axes_model = jax.tree.map(lambda ax: 0 if ax == 0 else None, self.randomized_axes)
+    #     # model: if randomized_axes is not None, those leaves are [NR, *] — repeat along 0 by R
+    #     model_in = self.model
+    #     in_axes_model = None
+    #     if self.randomized_axes is not None:
+    #         model_in = jax.tree.map(
+    #             lambda leaf, ax: (jnp.repeat(leaf, R, axis=0) if ax == 0 else leaf),
+    #             self.model, self.randomized_axes
+    #         )
+    #         # after repeating, model_in’s randomized leaves are [B, ...]
+    #         in_axes_model = jax.tree.map(lambda ax: 0 if ax == 0 else None, self.randomized_axes)
 
-        # --- one vmap over B ---
-        costs_B, sites_B = jax.vmap(
-            self.eval_rollout,
-            in_axes=(in_axes_model, 0, 0) if in_axes_model is not None else (None, 0, 0)
-        )(model_in, states_flat, controls_flat)   # costs_B: [B, T+1], sites_B: [B, T+1, ...]
+    #     # --- one vmap over B ---
+    #     costs_B, sites_B = jax.vmap(
+    #         self.eval_rollout,
+    #         in_axes=(in_axes_model, 0, 0) if in_axes_model is not None else (None, 0, 0)
+    #     )(model_in, states_flat, controls_flat)   # costs_B: [B, T+1], sites_B: [B, T+1, ...]
 
-        # fold back to [NR, R, ...]
-        costs_NR_R = costs_B.reshape(NR, R, -1)
-        sites_NR_R = jax.tree.map(lambda x: x.reshape(NR, R, *x.shape[1:]), sites_B)
+    #     # fold back to [NR, R, ...]
+    #     costs_NR_R = costs_B.reshape(NR, R, -1)
+    #     sites_NR_R = jax.tree.map(lambda x: x.reshape(NR, R, *x.shape[1:]), sites_B)
 
-        # combine risk across domains per rollout (your logic)
-        costs_R_T1 = jax.vmap(self.risk_strategy.combine_costs, in_axes=1)(costs_NR_R)  # [R, T+1]
+    #     # combine risk across domains per rollout (your logic)
+    #     costs_R_T1 = jax.vmap(self.risk_strategy.combine_costs, in_axes=1)(costs_NR_R)  # [R, T+1]
 
-        # choose which trace to keep (or aggregate) — unchanged
-        trace_sites_R_T1 = jax.tree.map(lambda x: x[0], sites_NR_R)  # pick domain 0
+    #     # choose which trace to keep (or aggregate) — unchanged
+    #     trace_sites_R_T1 = jax.tree.map(lambda x: x[0], sites_NR_R)  # pick domain 0
 
-        return Trajectory(controls=controls, costs=costs_R_T1, trace_sites=trace_sites_R_T1)
+    #     return Trajectory(controls=controls, costs=costs_R_T1, trace_sites=trace_sites_R_T1)
 
         
         

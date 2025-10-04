@@ -25,7 +25,7 @@ class PushTFranka(Task):
         self, planning_horizon: int = 15, sim_steps_per_control_step: int = 15, 
         nu: int = 2, 
         ctrl_limits = {"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
-        trace_sites=["ee_site"],
+        trace_sites=["ee_site", "T_1", "T_2"],
         actuation_type: str = 'velocity',
         ik_type: str = 'pinv',
     ):
@@ -72,6 +72,8 @@ class PushTFranka(Task):
         self.block_global_position_sensor = mujoco.mj_name2id(
             mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "position_world"
         )
+        
+        self.T_bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
         
         # Get block joint indices
         self.block_joint_names = ['T_x', 'T_y', 'T_z']
@@ -249,12 +251,14 @@ class PushTFranka(Task):
         return self.running_cost(state, jnp.zeros(self.model.nu))
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
-        n_geoms = self.model.geom_friction.shape[0]
-        multiplier = jax.random.uniform(rng, (n_geoms,), minval=0.9, maxval=1.1)
-        new_frictions = self.model.geom_friction.at[:, 0].set(
-            self.model.geom_friction[:, 0] * multiplier
-        )
-        return {"geom_friction": new_frictions}
+        new_mass = self.model.body_mass.at[self.T_bid].set(jax.random.uniform(rng, (), minval=0.05, maxval=1))
+        return {"body_mass": new_mass}
+        # n_geoms = self.model.geom_friction.shape[0]
+        # multiplier = jax.random.uniform(rng, (n_geoms,), minval=0.5, maxval=1.5)
+        # new_frictions = self.model.geom_friction.at[:, 0].set(
+        #     self.model.geom_friction[:, 0] * multiplier
+        # )
+        # return {"geom_friction": new_frictions}
 
 
 
