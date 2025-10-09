@@ -1,6 +1,6 @@
 import argparse
 import os
-os.environ["JAX_LOG_COMPILES"] = "1"
+# os.environ["JAX_LOG_COMPILES"] = "1"
 import evosax
 import evosax.algorithms
 import mujoco
@@ -9,8 +9,8 @@ from hydrax.algs import MTP
 from hydrax.algs import AnMTP
 from hydrax.algs import MPPI, Evosax, PredictiveSampling
 from hydrax.risk import WorstCase
-from hydrax.simulation.deterministic import run_interactive
-# from hydrax.simulation.deterministic_experiment import run_headless_simulation
+# from hydrax.simulation.deterministic import run_interactive
+from hydrax.simulation.deterministic_experiment import run_headless_simulation
 from hydrax.tasks.bugtrap import BugTrap
 
 
@@ -58,7 +58,7 @@ if args.algorithm == "ps":
 
 elif args.algorithm == "mppi":
     print("Running MPPI")
-    ctrl = MPPI(task, num_samples=32, noise_level=0.3, temperature=0.01)
+    ctrl = MPPI(task, num_samples=32, noise_level=0.6, temperature=0.01)
     save_path = "./../data/headless_bugtrap_mppi"
 
 elif args.algorithm == "cmaes":
@@ -82,13 +82,15 @@ elif args.algorithm == "mtp":
     seed = 0
     ctrl = MTP(
             task,
-            num_samples=32,
-            M=3,
-            N=32,
+            num_samples=48,
+            M=2,
+            N=16,
             sigma_min=0.1,
-            num_elites=3,
-            beta=0.25,
-            alpha=0.1,
+            sigma_start=0.3,
+            sigma_max=0.4,
+            num_elites=8,
+            beta=0.75,
+            alpha=0.05,
             interpolation='bspline',
             num_randomizations=1,
             seed=seed,
@@ -101,7 +103,7 @@ elif args.algorithm == "anmtp":
     ctrl = AnMTP(
             task,
             num_samples=32,
-            M=3,
+            M=2,
             N=32,
             sigma_min=0.1,
             num_elites=4,
@@ -111,7 +113,7 @@ elif args.algorithm == "anmtp":
             num_randomizations=1,
             seed=seed,
         )
-    save_path = "./../data/headless_bugtrap_mtp"
+    save_path = "./../data/headless_bugtrap_anmtp"
     
 elif args.algorithm == "rs":
     print("Running uniform random search")
@@ -130,25 +132,25 @@ mj_model = task.mj_model
 mj_data = mujoco.MjData(mj_model)
 
 # Run the interactive simulation
-run_interactive(
-    ctrl,
-    mj_model,
-    mj_data,
-    frequency=50,
-    show_traces=True,
-    trace_width=0.25,
-    max_traces=25,
-    record_video=True,
-)
+# run_interactive(
+#     ctrl,
+#     mj_model,
+#     mj_data,
+#     frequency=50,
+#     show_traces=True,
+#     trace_width=0.25,
+#     max_traces=25,
+#     record_video=True,
+# )
 
 # run headless simulation
-# seeds = [0, 1, 2, 3, 4]
-# run_headless_simulation(
-#     task,
-#     ctrl,
-#     seeds=seeds,
-#     frequency=50,
-#     max_step=1000,       
-#     log_file_prefix="bugtrap",
-#     save_path=save_path,
-# )
+seeds = [0, 1, 2, 3, 4, 5, 6]
+run_headless_simulation(
+    task,
+    ctrl,
+    seeds=seeds,
+    frequency=50,
+    max_step=2000,       
+    log_file_prefix="bugtrap",
+    save_path=save_path,
+)

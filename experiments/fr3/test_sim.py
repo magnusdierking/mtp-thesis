@@ -13,12 +13,14 @@ def mujoco_to_scipy_quat(q):
 
 # Load the MuJoCo model
 xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx.xml"
+xml_path = "./../../hydrax/models/pusht_franka_velocity/scene_mjx.xml"
 # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
 os.chdir(xml_dir)
 model = mujoco.MjModel.from_xml_path(os.path.basename(xml_path))
+model.opt.gravity[:] = 0 
 data = mujoco.MjData(model)
 
 # model.opt.gravity[:] = 0.0

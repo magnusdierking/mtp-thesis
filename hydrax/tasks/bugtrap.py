@@ -40,6 +40,8 @@ class BugTrap(Task):
         self.pointmass_id = mj_model.site("pointmass").id
         self.sid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "sphere_touch")
         self.adr = mj_model.sensor_adr[self.sid]
+        # set range for actuator indices, we need all
+        self.actuator_joint_idxs = mj_model.actuator_trnid[:, 0]
 
     def reset(self, seed: int = 0) -> None:
         np.random.seed(seed)
@@ -86,7 +88,7 @@ class BugTrap(Task):
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         """Randomly perturb the actuator gains."""
         multiplier = jax.random.uniform(
-            rng, self.model.actuator_gainprm[:, 0].shape, minval=0.9, maxval=1.1
+            rng, self.model.actuator_gainprm[:, 0].shape, minval=0.99, maxval=1.01
         )
         new_gains = self.model.actuator_gainprm[:, 0] * multiplier
         new_gains = self.model.actuator_gainprm.at[:, 0].set(new_gains)
@@ -98,3 +100,8 @@ class BugTrap(Task):
         """Randomly shift the measured particle position."""
         shift = jax.random.uniform(rng, (2,), minval=-0.01, maxval=0.01)
         return {"qpos": data.qpos + shift}
+
+
+    def make_gravity_compensator(self):
+
+            return None

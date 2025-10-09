@@ -68,6 +68,7 @@ class SamplingBasedController(ABC):
 
         # Set the random seed for domain randomization
         self.set_seed(seed)
+        self.nbr_bins = 80
 
     def set_seed(self, seed: int) -> None:
         if self.num_randomizations > 1:
@@ -183,11 +184,11 @@ class SamplingBasedController(ABC):
             
             cost = self.task.dt * self.task.running_cost(x, u_mapped)
             sites = self.task.get_trace_sites(x)
-            state_bins = jnp.zeros((60, 60))
+            state_bins = jnp.zeros((self.nbr_bins, self.nbr_bins))
 
             def _fill_bins(state_bins, state):
-                x_bin = jnp.clip((state.qpos[0] + 0.3) * 100, 0, 59).astype(int)
-                y_bin = jnp.clip((state.qpos[1] + 0.3) * 100, 0, 59).astype(int)
+                x_bin = jnp.clip((state.qpos[0] + 0.4) * 100, 0, self.nbr_bins - 1).astype(int)
+                y_bin = jnp.clip((state.qpos[1] + 0.4) * 100, 0, self.nbr_bins - 1).astype(int)
                 # jax.debug.print("Filling bins at x_bin: {}, y_bin: {}", x_bin, y_bin)
                 state_bins = state_bins.at[x_bin, y_bin].add(1)
                 return state_bins

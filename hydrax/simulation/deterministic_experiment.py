@@ -13,6 +13,7 @@ import os
 from chrono import Timer
 import os, pickle
 from pathlib import Path
+import traceback
 
 def run_headless_simulation(
     task: Task,
@@ -23,6 +24,7 @@ def run_headless_simulation(
     max_step: int = 10000,
     log_file_prefix: Optional[str] = None,
     save_path: Optional[str] = '.',
+    nbr_bins: int = 80,
 ) -> None:
     """Run deterministic headless MuJoCo simulations with multiple seeds.
 
@@ -66,7 +68,7 @@ def run_headless_simulation(
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
 
             step = 0
-            state_bins = np.zeros((60, 60))  # Initialize state bins for visualization
+            state_bins = np.zeros((nbr_bins, nbr_bins))  # Initialize state bins for visualization
             for step in tqdm(range(max_step)):
                 step += 1
                 
@@ -123,6 +125,7 @@ def run_headless_simulation(
 
         except Exception as e:
             print(f"Experiment with seed {seed} encountered an error: {e}")
+            traceback.print_exc()
             continue
 
         finally:

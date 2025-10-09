@@ -26,7 +26,7 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-seed = 34
+seed = 36
 
 # Set the controller based on command-line arguments
 if args.algorithm is None: 
