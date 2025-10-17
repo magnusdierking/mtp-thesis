@@ -4,7 +4,8 @@ import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
 
-from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
+# from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
+from hydrax.alg_base_opt import SamplingBasedController, Trajectory
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
 
@@ -39,6 +40,7 @@ class MPPI(SamplingBasedController):
         temperature: float,
         num_randomizations: int = 1,
         risk_strategy: RiskStrategy = None,
+        colorize_noise: bool = False,   # !experimental
         seed: int = 0,
     ):
         """Initialize the controller.
@@ -58,6 +60,9 @@ class MPPI(SamplingBasedController):
         self.noise_level = noise_level
         self.num_samples = num_samples
         self.temperature = temperature
+        
+        self.colorize_noise = colorize_noise
+        self.alpha_noise = 3.0  # 0=white, 1=pink, 2=brown
 
     def init_params(self, seed: int = 0) -> MPPIParams:
         """Initialize the policy parameters."""
@@ -78,6 +83,8 @@ class MPPI(SamplingBasedController):
                 self.task.nu,
             ),
         )
+        if self.colorize_noise:
+            noise = self.colorize_time_series(noise) # !experimental
         controls = params.mean + self.noise_level * noise
         return controls, params.replace(rng=rng)
 
@@ -96,3 +103,31 @@ class MPPI(SamplingBasedController):
         idx_float = t / self.task.dt  # zero order hold
         idx = jnp.floor(idx_float).astype(jnp.int32)
         return params.mean[idx]
+    
+    # ----------------------
+    # Experimental
+    def colorize_time_series(self, noise, remove_dc=True, eps=1e-8):
+        """
+        noise: (B, T, D) white ~ N(0,1)
+        Returns colored noise with approx unit variance per (B,D) trajectory.
+        alpha=0 -> white, 1 -> pink (1/f), 2 -> brown (1/f^2)
+        """
+        B, T, D = noise.shape
+
+        # reshape to (B*D, T) to FFT each series independently
+        x = noise.reshape(B * D, T)
+
+        # FFT -> apply magnitude shaping -> IFFT
+        Xf = jnp.fft.rfft(x, axis=-1)                           # (B*D, T_r)
+        freqs = jnp.fft.rfftfreq(T)                             # (T_r,)
+        H = (1.0 / jnp.maximum(freqs, eps)) ** (self.alpha_noise / 2.0)    # magnitude shaping
+        if remove_dc:
+            H = H.at[0].set(0.0)
+        Yf = Xf * H[None, :]                                    # broadcast
+        y = jnp.fft.irfft(Yf, n=T, axis=-1)                     # (B*D, T)
+
+        # de-mean and unit-std per series (robust for finite T)
+        y = y - y.mean(axis=-1, keepdims=True)
+        y = y / (y.std(axis=-1, keepdims=True) + eps)
+
+        return y.reshape(B, T, D)

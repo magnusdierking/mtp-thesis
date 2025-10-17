@@ -197,7 +197,7 @@ class PushTFranka(Task):
         """ Get the orientation error of the block relative to a goal orientation."""
         sensor_adr = self.model.sensor_adr[self.block_orientation_sensor]
         block_quat = state.sensordata[sensor_adr : sensor_adr + 4]
-        return mjx._src.math.quat_sub(block_quat, self.goal_quat_block)
+        return mjx._src.math.quat_sub(block_quat, self.goal_quat_block) # gives axis angle of relative rotation
     
     
     ################################## 
@@ -232,6 +232,8 @@ class PushTFranka(Task):
         position_err = self._get_position_err(state)
         orientation_err = self._get_orientation_err(state)
         position_cost = jnp.sum(jnp.square(position_err))
+        
+        # orientation_cost = jnp.norm(orientation_err)
         orientation_cost = jnp.sum(jnp.square(orientation_err))
         
         total_goal_err = 5 * position_cost + orientation_cost
@@ -259,6 +261,14 @@ class PushTFranka(Task):
         #     self.model.geom_friction[:, 0] * multiplier
         # )
         # return {"geom_friction": new_frictions}
+        
+        
+    def success(self, state):
+        position_cost = self._get_position_err(state)
+        orientation_cost = self._get_orientation_err(state)
+        pos_succ = jnp.sqrt(jnp.sum(jnp.square(position_cost))) < 0.05
+        orn_succ = jnp.sqrt(jnp.sum(jnp.square(orientation_cost))) < 0.1
+        return pos_succ & orn_succ
 
 
 

@@ -8,8 +8,8 @@ from flax.struct import dataclass
 from mujoco import mjx
 
 from functools import partial
-# from hydrax.alg_base_opt import SamplingBasedController, Trajectory
-from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
+from hydrax.alg_base_opt import SamplingBasedController, Trajectory
+# from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
 
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
@@ -27,6 +27,7 @@ class MTPParams:
     spline: jax.Array = None
     last_a_idx: int = 0
     state_bins: jax.Array = None  # Placeholder for state bins
+    beta : float = 0.0              # Placeholder for beta parameter
 
 
 @partial(jax.jit, static_argnums=1)

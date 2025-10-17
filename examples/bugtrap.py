@@ -9,7 +9,7 @@ from hydrax.algs import MTP
 from hydrax.algs import AnMTP
 from hydrax.algs import MPPI, Evosax, PredictiveSampling
 from hydrax.risk import WorstCase
-# from hydrax.simulation.deterministic import run_interactive
+from hydrax.simulation.deterministic import run_interactive
 from hydrax.simulation.deterministic_experiment import run_headless_simulation
 from hydrax.tasks.bugtrap import BugTrap
 
@@ -82,14 +82,15 @@ elif args.algorithm == "mtp":
     seed = 0
     ctrl = MTP(
             task,
-            num_samples=48,
+            num_samples=64,
             M=2,
             N=16,
-            sigma_min=0.1,
-            sigma_start=0.3,
+            sigma_min=0.2,
+            sigma_start=0.4,
             sigma_max=0.4,
-            num_elites=8,
-            beta=0.75,
+            temperature=0.1,
+            num_elites=2,
+            beta=0.5,
             alpha=0.05,
             interpolation='bspline',
             num_randomizations=1,
@@ -105,10 +106,10 @@ elif args.algorithm == "anmtp":
             num_samples=32,
             M=2,
             N=32,
-            sigma_min=0.1,
-            num_elites=4,
+            sigma_min=0.2,
+            num_elites=2,
             beta=0.25,
-            alpha=0.1,
+            alpha=0.05,
             interpolation='bspline',
             num_randomizations=1,
             seed=seed,
@@ -132,25 +133,25 @@ mj_model = task.mj_model
 mj_data = mujoco.MjData(mj_model)
 
 # Run the interactive simulation
-# run_interactive(
-#     ctrl,
-#     mj_model,
-#     mj_data,
-#     frequency=50,
-#     show_traces=True,
-#     trace_width=0.25,
-#     max_traces=25,
-#     record_video=True,
-# )
-
+run_interactive(
+    ctrl,
+    mj_model,
+    mj_data,
+    frequency=25,
+    show_traces=True,
+    trace_width=0.25,
+    max_traces=25,
+    record_video=True,
+)
+exit()
 # run headless simulation
 seeds = [0, 1, 2, 3, 4, 5, 6]
 run_headless_simulation(
     task,
     ctrl,
     seeds=seeds,
-    frequency=50,
-    max_step=2000,       
+    frequency=25,
+    max_step=500,       
     log_file_prefix="bugtrap",
     save_path=save_path,
 )

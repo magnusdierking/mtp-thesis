@@ -65,12 +65,14 @@
       <geom name="pointmass" type="sphere" size=".01" mass=".3"
             contype="2" conaffinity="1"/>
           <site name="s_touch" type="sphere" size=".01" rgba="1 0 0 .15"/>
+          <site name="s_force" type="sphere" size=".01" rgba="0 0 1 .15"/>
       <site name="pointmass" pos="0 0 0" size="0.01"/>
     </body>
   </worldbody>
 
   <sensor>
     <touch name="sphere_touch" site="s_touch"/>
+    <force name="sphere_force" site="s_force"/>
   </sensor>
 
   <actuator>

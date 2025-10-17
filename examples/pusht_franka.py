@@ -3,8 +3,11 @@ import argparse
 from hydrax.algs import MPPI, MTP
 # from hydrax.algs.mtp.an_mtp_opt import AnMTP
 from hydrax.algs.mtp.an_mtp_dr import AnMTP
-from hydrax.simulation.deterministic_dr import run_interactive
+
+from hydrax.simulation.deterministic import run_interactive
+# from hydrax.simulation.deterministic_dr import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
+
 from hydrax.tasks.pusht_franka import PushTFranka
 
 """
@@ -35,10 +38,11 @@ elif args.algorithm == "mppi":
     print("Running MPPI")
     ctrl = MPPI(
         task,
-        num_samples=128,
+        num_samples=64,
         noise_level=0.3,
         temperature=0.1,
-        num_randomizations=4,
+        num_randomizations=2,
+        colorize_noise=True,   # !experimental
         seed=seed,
     )
 elif args.algorithm == "mtp":
@@ -82,26 +86,26 @@ mj_model, mj_data = task.reset(seed=seed)
 
 # Run the interactive simulation
 
-run_interactive(
-    ctrl,
-    mj_model,
-    mj_data,
-    frequency=25,
-    show_traces=True,
-    trace_width=0.55,
-    max_traces=16,
-    fixed_camera_id=0,
-    show_ui=True,
-    record_video=False,
-    seed=seed,
-    )
-
-# run_headless_simulation(
-#     task,
+# run_interactive(
 #     ctrl,
-#     frequency=50,
-#     seeds=[seed],
-#     max_step=1000,
-#     log_file_prefix="pusht_franka_" + args.algorithm,
-#     save_path="./results"
+#     mj_model,
+#     mj_data,
+#     frequency=25,
+#     show_traces=True,
+#     trace_width=0.55,
+#     max_traces=16,
+#     fixed_camera_id=0,
+#     show_ui=True,
+#     record_video=False,
+#     seed=seed,
 #     )
+
+run_headless_simulation(
+    task,
+    ctrl,
+    frequency=50,
+    seeds=[seed],
+    max_step=1000,
+    log_file_prefix="pusht_franka_" + args.algorithm,
+    save_path="./results"
+    )

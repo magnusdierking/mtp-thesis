@@ -257,8 +257,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                                 viewer.user_scn.geoms[ii],
                                 mujoco.mjtGeom.mjGEOM_LINE,
                                 trace_width,
-                                rollouts.trace_sites[i, j, k],        # ! 
-                                rollouts.trace_sites[i, j + 1, k],    # !
+                                rollouts.trace_sites[0, i, j, k],        # ! 
+                                rollouts.trace_sites[0, i, j + 1, k],    # !
                             )
                             ii += 1
 
@@ -329,18 +329,18 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
             # Print some timing information
             rtr = step_dt / (time.time() - start_time)
+            # Check for task success
+            task_success |= controller.task.success(mj_data)
             if hasattr(controller, 'beta'):
                 print(
-                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, beta: {controller.beta:.3f}", 
+                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, success: {task_success:.3f}, beta: {controller.beta:.3f}", 
                     end="\r",
                 )
             else:
                 print(
-                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s", 
+                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, success: {task_success:.3f}", 
                     end="\r",
                 )
-            # Check for task success
-            task_success |= controller.task.success(mj_data)
 
             # Log data for the current step
             logs.append({
