@@ -132,7 +132,7 @@ dependencies:
       - glfw==2.9.0
       - huggingface-hub==0.29.3
       - humanize==4.12.3
-      - hydrax==0.0.1
+      # - hydrax==0.0.1
       - identify==2.6.12
       - idna==3.10
       - importlib-resources==6.5.2
@@ -150,7 +150,7 @@ dependencies:
       - mdurl==0.1.2
       - ml-dtypes==0.5.1
       - msgpack==1.1.0
-      - mtp==0.0.0
+      # - mtp==0.0.0
       - mujoco==3.3.2
       - mujoco-mjx==3.3.2
       - nbformat==5.10.4
