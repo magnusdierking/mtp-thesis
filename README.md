@@ -1,4 +1,4 @@
-# Thesis
+# Model Tensor Planning
 
 Sampling-based model predictive control on GPU with
 [JAX](https://jax.readthedocs.io/) and
@@ -28,21 +28,21 @@ Available methods:
 
 ## Setup (conda)
 
-Set up a conda env with cuda support (first time only):
+Set up a conda env with cuda support:
 
 ```bash
-conda env create -f environment.yml
-```
+# Conda environment setup
+conda update -n base conda -y
+conda create -n mtp python=3.12
+conda activate mtp
+conda env config vars set CUDA_HOME=""
+conda activate mtp
+conda install -c nvidia/label/cuda-12.9.0 cuda-toolkit=12.9.0 -y
+conda install -c conda-forge cudnn=9.10.1.4 -y
+conda install pip uv -y
+conda activate mtp
 
-Enter the conda env:
-
-```bash
-conda activate hydrax
-```
-
-Install the package and dependencies:
-
-```bash
+# Install this library
 pip install -e .
 ```
 
