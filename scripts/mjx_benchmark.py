@@ -24,7 +24,7 @@ def step_one(d):
 
 step_batched = jax.jit(jax.vmap(step_one))
 
-def run_benchmark(n_envs: int, n_steps: int = 100, warmup: int = 10):
+def run_benchmark(n_envs: int, n_steps: int = 1000, warmup: int = 10):
     # Create batched data
     d = make_batched_data(n_envs)
 
@@ -39,17 +39,17 @@ def run_benchmark(n_envs: int, n_steps: int = 100, warmup: int = 10):
     # Timed loop
     t0 = time.time()
     trace_path = "/tmp/jax-trace"
-    with jax.profiler.trace(trace_path, create_perfetto_link=True):
-        for _ in range(n_steps):
-            with jax.profiler.StepTraceAnnotation("Step"):
-                d = step_batched(d)
+    #with jax.profiler.trace(trace_path, create_perfetto_link=True):
+    for _ in range(n_steps):
+        with jax.profiler.StepTraceAnnotation("Step"):
+            d = step_batched(d)
     t1 = time.time()
 
     ms_per_iter = (t1 - t0) * 1000.0 / n_steps
     print(f"{n_envs:>4} envs → {ms_per_iter:7.3f} ms/iter")
-    print(f"Perfetto trace written to: {trace_path}.json")
-    print("Open it at https://ui.perfetto.dev (or click the printed link above).")
+    #print(f"Perfetto trace written to: {trace_path}.json")
+    #print("Open it at https://ui.perfetto.dev (or click the printed link above).")
 
 # Test scaling
-for n in [256]:
+for n in [2, 8, 16, 128, 256, 1024]:
     run_benchmark(n_envs=n)
