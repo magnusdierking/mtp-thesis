@@ -14,7 +14,8 @@ classifiers = [
     "Programming Language :: Python",
 ]
 dependencies = [
-    "jax[cuda12]>=0.6.0,<=0.6.1",
+    "jax; platform_system == 'Darwin'",
+    "jax[cuda12]>=0.6.0,<=0.6.1; platform_system != 'Darwin'",
     "jaxlib",
     "nvidia-cublas-cu12==12.9.0.13",
     "flax",

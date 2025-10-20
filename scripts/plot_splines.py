@@ -49,15 +49,15 @@ C = vmap(get_path)(pairwise_idx)
 p = 2
 knots = jnp.arange(1, M + p + 2, dtype=jnp.float32)
 T = num_points * (M - 1)
-B = compute_b_spline_matrix(knots, p, T, dtype=jnp.float32)
-Bspline2 = jnp.einsum("bmd,hm->bhd", C, B)
+B = compute_b_spline_matrix(knots, p, T)
+Bspline2 = jnp.einsum("...md,hm->...hd", C, B)
 
 # B-spline interpolation d = 3
 p = 3
 knots = jnp.arange(1, M + p + 2, dtype=jnp.float32)
 T = num_points * (M - 1)
-B = compute_b_spline_matrix(knots, p, T, dtype=jnp.float32)
-Bspline3 = jnp.einsum("bmd,hm->bhd", C, B)
+B = compute_b_spline_matrix(knots, p, T)
+Bspline3 = jnp.einsum("...md,hm->...hd", C, B)
 
 # Linear interpolation
 linear_path = vmap(interpolate_path, in_axes=(0, None))(C, num_points)
