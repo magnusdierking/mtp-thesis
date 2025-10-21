@@ -6,9 +6,7 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
-def mujoco_to_scipy_quat(q):
-    return np.array([q[1], q[2], q[3], q[0]])
-
+from hydrax.utils.utils import mujoco_to_scipy_quat
 
 
 # Load the MuJoCo model

@@ -16,6 +16,8 @@ from hydrax.task_base import Task
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
+from hydrax.utils.utils import mujoco_to_scipy_quat
+
 
 class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
