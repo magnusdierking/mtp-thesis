@@ -22,7 +22,7 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 15, sim_steps_per_control_step: int = 15, 
+        self, planning_horizon: int = 15, sim_steps_per_control_step: int = 4, 
         nu: int = 2, 
         ctrl_limits = {"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
         trace_sites=["ee_site", "T_1", "T_2"],
@@ -97,9 +97,9 @@ class PushTFranka(Task):
         # Set the random seed for reproducibility
         np.random.seed(seed)
         mj_model = self.mj_model
-        mj_model.opt.timestep = 0.002
-        mj_model.opt.iterations = 20 # TODO Optimize
-        mj_model.opt.ls_iterations = 20 # TODO Optimize
+        # mj_model.opt.timestep = 0.002
+        # mj_model.opt.iterations = 20 # TODO Optimize
+        # mj_model.opt.ls_iterations = 20 # TODO Optimize
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
         pos_x = np.random.uniform(low=-0.3, high=0.3)
