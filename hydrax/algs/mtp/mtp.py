@@ -355,8 +355,9 @@ class MTP(SamplingBasedController):
         # jax.debug.print("controls shape: {}", rollouts.controls.shape)
         # jax.debug.print("rollout shapes: {}, {}, {}", (rollouts.controls.shape, rollouts.costs.shape, spline.shape))
 
-        return params.replace(spline=spline)
-    
+        # return params.replace(mean=mean, cov=cov, spline=spline)
+        return params.replace(mean=mean, spline=spline)
+
     def get_action(self, params: MTPParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""
         idx_float = t / self.task.dt  # zero order hold

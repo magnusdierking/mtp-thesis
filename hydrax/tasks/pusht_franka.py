@@ -47,7 +47,6 @@ class PushTFranka(Task):
         if ik_type not in ['transpose', 'pinv']:
             raise ValueError("ik_type must be 'transpose' or 'pinv'")
 
-
         super().__init__(
             mj_model,
             planning_horizon=planning_horizon,
@@ -75,7 +74,7 @@ class PushTFranka(Task):
         )
         
         self.T_bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
-        
+
         # Get block joint indices
         self.block_joint_names = ['T_x', 'T_y', 'T_z']
         self.block_joint_idxs = [mj_model.joint(name).id for name in self.block_joint_names]
@@ -178,7 +177,6 @@ class PushTFranka(Task):
 
         else:
             print("IK did not converge.")
-            
 
         mj_data.qpos[self.actuator_joint_idxs] = q  # Set the robot's joint positions
 
