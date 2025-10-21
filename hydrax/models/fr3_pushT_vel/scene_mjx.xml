@@ -39,7 +39,7 @@
   <option solver="Newton"
         jacobian="dense"
         cone="pyramidal"
-        timestep="0.002"
+        timestep="0.01"
         iterations="1"
         ls_iterations="2">
   <!-- Keep your original flag; warmstart helps Newton -->
