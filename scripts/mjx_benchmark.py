@@ -4,9 +4,10 @@ import jax.numpy as jnp
 import mujoco
 import mujoco.mjx as mjx
 
+from hydrax.files import get_root_path
+
 # Load your XML model
-# path = "/home/franka/Lab/mtp-thesis/hydrax/models/fr3_pushT_vel/scene_mjx.xml"
-path = "/home/magnus/GitHub/mtp-thesis/hydrax/models/fr3_pushT_vel/scene_mjx.xml"
+path = (get_root_path() / "models/fr3_pushT_vel/scene_mjx.xml").as_posix()
 mj_model = mujoco.MjModel.from_xml_path(path)
 mx_model = mjx.put_model(mj_model)
 
