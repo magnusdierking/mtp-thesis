@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from mujoco import mjx
 
 from hydrax.tasks.pusht_franka import PushTFranka
-from hydrax.algs import MTP
+from hydrax.algs import MTP, AnMTP
 
 
 def main():
@@ -28,6 +28,19 @@ def main():
         num_randomizations=5,
         seed=seed,
     )
+    ctrl = AnMTP(
+            task,
+            num_samples=32,
+            M=2,
+            N=32,
+            sigma_min=0.2,
+            num_elites=2,
+            beta=0.85,
+            alpha=0.25,
+            interpolation='bspline',
+            num_randomizations=1,
+            seed=seed,
+        )
     mj_model, mj_data = task.reset(seed=seed)
     
     # Initialize the controller
@@ -45,26 +58,31 @@ def main():
     print(f"Time to jit: {time.time() - st:.3f} seconds")
 
     with jax.profiler.StepTraceAnnotation("Warmup"):
-        policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+        for _ in range(3):
+            policy_params, rollouts = jit_optimize(mjx_data, policy_params)
     jax.block_until_ready(rollouts) # ensure all device work is finished
 
     # ---------- perfetto trace of one run ----------
     # The file will contain a clickable link if create_perfetto_link=True
     trace_path = "/tmp/jax-trace"
-    with jax.profiler.trace(trace_path, create_perfetto_link=True):
+    n_steps = 10
+    # with jax.profiler.trace(trace_path, create_perfetto_link=True):
         # time.sleep(1)  # give the profiler a moment to start
         # run multiple iterations to get a more stable trace
         
-        for _ in range(5):
-            # t0 = time.time()
-            with jax.profiler.StepTraceAnnotation("MTP step"):
-                policy_params, rollouts = jit_optimize(mjx_data, policy_params)
-            # jax.block_until_ready(rollouts)  # ensure all device work is finished
-            # t1 = time.time()
-
+        
+    t0 = time.time()
+    for _ in range(10):
+        # with jax.profiler.StepTraceAnnotation("MTP step"):
+            policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+    
+    t1 = time.time()
+            
+    ms_per_step = (t1 - t0) * 1000.0 / n_steps
+    print(f"MTP optimize: {ms_per_step:7.3f} ms/step")
     # print(f"Runtime (steady-state): {t1 - t0:.4f} s")
-    print(f"Perfetto trace written to: {trace_path}.json")
-    print("Open it at https://ui.perfetto.dev (or click the printed link above).")
+    # print(f"Perfetto trace written to: {trace_path}.json")
+    # print("Open it at https://ui.perfetto.dev (or click the printed link above).")
 
 if __name__ == "__main__":
     main()
