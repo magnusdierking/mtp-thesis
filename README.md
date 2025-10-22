@@ -31,6 +31,7 @@ Available methods:
 Set up a conda env with cuda support:
 
 # Conda environment setup
+```bash
 conda update -n base conda -y
 conda create -n mtp python=3.12
 conda activate mtp
