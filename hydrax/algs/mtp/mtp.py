@@ -9,7 +9,7 @@ from mujoco import mjx
 
 from functools import partial
 from hydrax.alg_base_opt import SamplingBasedController, Trajectory
-# from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
+#from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
 
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
@@ -84,7 +84,7 @@ class MTP(SamplingBasedController):
         self.sigma_max = sigma_max
         self.sigma_start = sigma_start
         control_dtype = jnp.float32#getattr(self.task.u_min, "dtype", jnp.float32)
-        self.aknots = jnp.linspace(1, self.M, self.M, dtype=control_dtype)
+        self.aknots = jnp.linspace(1, self.M+1, self.M+1, dtype=control_dtype)
         # self.bknots = jnp.arange(self.M + self.degree + 1)
         # B spline matrix including the current spline as control point
         self.bknots = self.start_clamped_knot_vector((self.M + 1), self.degree, dtype=control_dtype)
@@ -119,8 +119,18 @@ class MTP(SamplingBasedController):
     def init_params(self, seed: int = 0) -> MTPParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
-        spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
-        mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
+        # spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
+        # sample mean with initial variance
+        noise = jax.random.normal(
+            rng,
+            (
+                self.task.planning_horizon,
+                self.task.nu,
+            ),
+        )
+        mean = jnp.zeros((self.task.planning_horizon, self.task.nu)) + self.sigma_start *noise
+        spline = mean.copy()
+        # mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
         cov = jnp.full_like(mean, self.sigma_start)
         
         return MTPParams(rng=rng, 
@@ -224,7 +234,9 @@ class MTP(SamplingBasedController):
                     self.task.nu,
                 ),
             )
-            mppi_controls = params.mean + params.cov * noise
+            # mppi_controls = params.mean + params.cov * noise
+            mppi_controls = params.mean + self.sigma_start * noise
+            
             out = out.at[1+self.nbr_mtp_samples:1+self.nbr_mtp_samples+self.nbr_mppi_samples].set(mppi_controls)
             # controls = jnp.concatenate([controls, mppi_controls], axis=0)
 
@@ -365,4 +377,5 @@ class MTP(SamplingBasedController):
         idx = jnp.floor(idx_float).astype(jnp.int32)
         params = params.replace(last_a_idx=idx)
         action = params.spline[idx]
+        # action = params.mean[idx]  # Use mean action
         return action

@@ -4,7 +4,9 @@ import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
 
-from hydrax.alg_base import SamplingBasedController, Trajectory
+from hydrax.alg_base_opt import SamplingBasedController, Trajectory
+# from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
+
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
 
@@ -34,6 +36,7 @@ class CEM(SamplingBasedController):
         num_elites: int,
         sigma_start: float,
         sigma_min: float,
+        sigma_max: float = 1.0,
         alpha: float = 0.5,
         num_randomizations: int = 1,
         risk_strategy: RiskStrategy = None,
@@ -62,7 +65,7 @@ class CEM(SamplingBasedController):
     def init_params(self, seed: int = 0) -> CEMParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
-        mean = jnp.zeros((self.task.planning_horizon, self.task.model.nu))
+        mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
         cov = jnp.full_like(mean, self.sigma_start)
         return CEMParams(mean=mean, cov=cov, rng=rng)
 
@@ -74,7 +77,7 @@ class CEM(SamplingBasedController):
             (
                 self.num_samples,
                 self.task.planning_horizon,
-                self.task.model.nu,
+                self.task.nu,
             ),
         )
         controls = params.mean + params.cov * noise
@@ -97,6 +100,7 @@ class CEM(SamplingBasedController):
         )
         mean = mean + self.alpha * (params.mean - mean)
         cov = cov + self.alpha * (params.cov - cov)
+        cov = jnp.clip(cov, a_min=self.sigma_min, a_max=self.sigma_start)
 
         return params.replace(mean=mean, cov=cov)
 

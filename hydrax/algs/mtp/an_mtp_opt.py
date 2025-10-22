@@ -47,13 +47,14 @@ class AnMTP(SamplingBasedController):
         num_randomizations: int = 1,
         beta: float = 0.1,
         beta_lr: float = 0.2,        # adaptation step size
-        beta_min: float = 0.0,
+        beta_min: float = 0.05,
         beta_max: float = 0.95,
         alpha: float = 0.5,
         interpolation: str = "akima",  # {"bspline","akima","linear"}
         sample_weighting: str = "cem-softmax",
         risk_strategy: RiskStrategy | None = None,
         colorize_noise: bool = False,   # !experimental
+        shift: bool = False, # !experimental,
         seed: int = 0,
     ):
         super().__init__(task, num_randomizations, risk_strategy, seed)
@@ -91,7 +92,7 @@ class AnMTP(SamplingBasedController):
         self.alpha = alpha
 
         control_dtype = jnp.float32
-        self.aknots = jnp.linspace(1, self.M, self.M, dtype=control_dtype)
+        self.aknots = jnp.linspace(1, self.M+1, self.M+1, dtype=control_dtype)
         # start-clamped knot vector for (M+1) control points (prepend current control)
         self.bknots = self._start_clamped_knot_vector((self.M + 1), self.degree, dtype=control_dtype)
         self.bmat = jnp.asarray(
@@ -105,6 +106,7 @@ class AnMTP(SamplingBasedController):
         # Experimental
         self.colorize_noise = colorize_noise
         self.alpha_noise = 1.0  # 0=white, 1=pink, 2=brown
+        self.shift = shift
         # ----------------------
 
     def _start_clamped_knot_vector(self, num_ctrl_points: int, degree: int, *, dtype=jnp.float32) -> jax.Array:
@@ -136,6 +138,20 @@ class AnMTP(SamplingBasedController):
         rng = params.rng
         T, U = self.task.planning_horizon, self.task.nu
         R = self.num_samples
+        
+        # shift mean, spline, elites according to rolled out actions index
+        if self.shift:
+            idx = params.last_a_idx
+            def _shift(arr):
+                # arr: (T,U)
+                shifted = jnp.roll(arr, -idx, axis=0)
+                shifted = shifted.at[-idx:, :].set(arr[-1,:])  # hold last value
+                return shifted
+            params = params.replace(
+                mean=_shift(params.mean),
+                spline=_shift(params.spline),
+                elites=_shift(params.elites),
+            )
 
         # Always fill the whole (R, T, U):
         # slot 0 = deterministic previous spline, slots 1..R-1 = sampled branch (masked MTP or MPPI)

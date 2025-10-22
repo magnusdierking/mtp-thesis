@@ -4,8 +4,11 @@ import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
 
-# from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
+# for state bins
+#from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
 from hydrax.alg_base_opt import SamplingBasedController, Trajectory
+
+
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
 
@@ -39,6 +42,7 @@ class MPPI(SamplingBasedController):
         noise_level: float,
         temperature: float,
         num_randomizations: int = 1,
+        alpha: float = 0.0,
         risk_strategy: RiskStrategy = None,
         colorize_noise: bool = False,   # !experimental
         seed: int = 0,
@@ -60,6 +64,7 @@ class MPPI(SamplingBasedController):
         self.noise_level = noise_level
         self.num_samples = num_samples
         self.temperature = temperature
+        self.alpha = alpha
         
         self.colorize_noise = colorize_noise
         self.alpha_noise = 3.0  # 0=white, 1=pink, 2=brown
@@ -96,6 +101,7 @@ class MPPI(SamplingBasedController):
         # N.B. jax.nn.softmax takes care of details like baseline subtraction.
         weights = jnp.nan_to_num(jax.nn.softmax(-costs / self.temperature, axis=0))
         mean = jnp.sum(weights[:, None, None] * rollouts.controls, axis=0)
+        mean = mean + self.alpha * (params.mean - mean)
         return params.replace(mean=mean)
 
     def get_action(self, params: MPPIParams, t: float) -> jax.Array:
