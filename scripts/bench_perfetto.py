@@ -11,13 +11,16 @@ from hydrax.algs import MTP, AnMTP
 def main():
     
     # Define the task (cost and dynamics)
-    task = PushTFranka()
+    task = PushTFranka(
+        planning_horizon=20,
+        sim_steps_per_control_step=2
+    )
     seed = 420
     
     controller = MTP(
         task,
         num_samples=64,
-        M=3, # horizon via control points
+        M=10, # horizon via control points
         N=16, # samples 
         sigma_min=0.1,
         sigma_start=0.2,
@@ -78,8 +81,10 @@ def main():
     
     t1 = time.time()
             
-    ms_per_step = (t1 - t0) * 1000.0 / n_steps
+    s_per_step = (t1 - t0) / n_steps
+    ms_per_step = s_per_step * 1000
     print(f"MTP optimize: {ms_per_step:7.3f} ms/step")
+    print(f"MTP optimize frequency: {1/s_per_step:7.3f} Hz")
     # print(f"Runtime (steady-state): {t1 - t0:.4f} s")
     # print(f"Perfetto trace written to: {trace_path}.json")
     # print("Open it at https://ui.perfetto.dev (or click the printed link above).")

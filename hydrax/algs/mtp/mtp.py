@@ -205,8 +205,8 @@ class MTP(SamplingBasedController):
                 mtp_controls_full = mtp_controls_full.at[:, interp_len:].set(tail) # (B, T, U)
 
             elif self.interpolation == 'bspline':
-                mtp_controls_full = jnp.einsum("bmd,hm->bhd", control_points, self.bmat)
-            
+                # TODO this has to incorporate the last taken control as a first point + interpolate
+                mtp_controls_full = jnp.einsum("...md,hm->...hd", control_points, self.bmat)
             elif self.interpolation == 'linear':
                 # interp_vals: (B, interp_len, U)
                 interp_vals = jax.vmap(interpolate_path, in_axes=(0, None))(control_points, num_interp)
@@ -369,7 +369,6 @@ class MTP(SamplingBasedController):
 
         # return params.replace(mean=mean, cov=cov, spline=spline)
         return params.replace(mean=mean, spline=spline)
-
 
     def get_action(self, params: MTPParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""

@@ -1,3 +1,4 @@
+import time
 from typing import Dict
 import os 
 import jax
@@ -15,8 +16,8 @@ from hydrax.task_base import Task
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
-def mujoco_to_scipy_quat(q):
-    return np.array([q[1], q[2], q[3], q[0]])
+from hydrax.utils.utils import mujoco_to_scipy_quat
+
 
 class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
@@ -46,7 +47,6 @@ class PushTFranka(Task):
         if ik_type not in ['transpose', 'pinv']:
             raise ValueError("ik_type must be 'transpose' or 'pinv'")
 
-
         super().__init__(
             mj_model,
             planning_horizon=planning_horizon,
@@ -74,7 +74,7 @@ class PushTFranka(Task):
         )
         
         self.T_bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
-        
+
         # Get block joint indices
         self.block_joint_names = ['T_x', 'T_y', 'T_z']
         self.block_joint_idxs = [mj_model.joint(name).id for name in self.block_joint_names]
@@ -118,10 +118,12 @@ class PushTFranka(Task):
         q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
 
         # IK loop parameters
-        max_iters = 100
-        tolerance = 1e-3
+        max_iters = 1_000
+        tolerance = 1e-6
         damping = 100e-3
+        step_size = 1.2
 
+        ik_start_time = time.time()
         for i in range(max_iters):
             # Set current joint state
             mj_data.qpos[self.actuator_joint_idxs] = q
@@ -148,7 +150,7 @@ class PushTFranka(Task):
             err = np.concatenate([pos_err, orn_err])  # shape (6,)
 
             if np.linalg.norm(err) < tolerance:
-                print(f"Converged in {i} iterations.")
+                print(f"Converged in {i} iterations. Took {time.time() - ik_start_time:.4f} s")
                 break
 
             # Compute Jacobian of the EE
@@ -161,12 +163,12 @@ class PushTFranka(Task):
 
             # Solve damped least squares: dq = (JᵀJ + λ²I)⁻¹ Jᵀ e
             JTJ = J.T @ J
-            H = JTJ + damping * np.eye(n_joints)
+            H = JTJ + damping * np.eye(len(self.actuator_joint_idxs))
             g = J.T @ err
             dq = np.linalg.solve(H, g)
 
             # Update joint configuration
-            q += dq
+            q += step_size * dq
 
             # Clamp to joint limits
             for j in range(n_joints):
@@ -175,13 +177,17 @@ class PushTFranka(Task):
 
         else:
             print("IK did not converge.")
-            
 
         mj_data.qpos[self.actuator_joint_idxs] = q  # Set the robot's joint positions
 
-        # initial control
-        # mj_data.ctrl[:] = np.zeros(mj_model.nu)
-        mj_data.ctrl[:] = q
+        # Initial control signal
+        if self.actuation_type == 'position':
+            mj_data.ctrl[:] = q
+        elif self.actuation_type == 'velocity':
+            mj_data.ctrl[:] = np.zeros_like(q)
+        else:
+            raise ValueError("actuation_type must be 'position' or 'velocity'")
+        
         return mj_model, mj_data
 
     ##################################
