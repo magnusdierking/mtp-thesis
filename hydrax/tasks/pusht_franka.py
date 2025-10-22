@@ -22,7 +22,7 @@ class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
 
     def __init__(
-        self, planning_horizon: int = 15, sim_steps_per_control_step: int = 4, 
+        self, planning_horizon: int = 16, sim_steps_per_control_step: int = 5, 
         nu: int = 2, 
         ctrl_limits = {"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
         trace_sites=["ee_site", "T_1", "T_2"],
@@ -90,7 +90,7 @@ class PushTFranka(Task):
         self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, 0.0])  # [w, x, y, z]
         # initial end effector
         self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-        self.goal_pos_ee = jnp.array([0.3, 0.0, 0.05]) #np.array([0.3, 0.0, 0.05])
+        self.goal_pos_ee = jnp.array([0.3, 0.0, 0.03]) #np.array([0.3, 0.0, 0.05])
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
@@ -119,7 +119,7 @@ class PushTFranka(Task):
 
         # IK loop parameters
         max_iters = 100
-        tolerance = 1e-4
+        tolerance = 1e-3
         damping = 100e-3
 
         for i in range(max_iters):
@@ -253,7 +253,8 @@ class PushTFranka(Task):
         return self.running_cost(state, jnp.zeros(self.model.nu))
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
-        new_mass = self.model.body_mass.at[self.T_bid].set(jax.random.uniform(rng, (), minval=0.05, maxval=1))
+        # new_mass = self.model.body_mass.at[self.T_bid].set(jax.random.uniform(rng, (), minval=0.05, maxval=1))
+        new_mass = self.model.body_mass.at[self.T_bid].set(jax.random.uniform(rng, (), minval=0.05, maxval=1)) # for 
         return {"body_mass": new_mass}
         # n_geoms = self.model.geom_friction.shape[0]
         # multiplier = jax.random.uniform(rng, (n_geoms,), minval=0.5, maxval=1.5)
@@ -266,9 +267,10 @@ class PushTFranka(Task):
     def success(self, state):
         position_cost = self._get_position_err(state)
         orientation_cost = self._get_orientation_err(state)
-        pos_succ = jnp.sqrt(jnp.sum(jnp.square(position_cost))) < 0.05
-        orn_succ = jnp.sqrt(jnp.sum(jnp.square(orientation_cost))) < 0.1
-        return pos_succ & orn_succ
+        pos_err = jnp.sqrt(jnp.sum(jnp.square(position_cost))) 
+        orn_err = jnp.sqrt(jnp.sum(jnp.square(orientation_cost))) 
+
+        return pos_err + orn_err < 0.05
 
 
 
