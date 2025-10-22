@@ -43,7 +43,7 @@ conda install pip uv -y
 conda activate mtp
 
 # Install this library
-pip install -e .
+uv pip install -e .
 ```
 
 (Optional) set up pre-commit hooks:
