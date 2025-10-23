@@ -44,12 +44,14 @@ class BugTrap(Task):
         # set range for actuator indices, we need all
         self.actuator_joint_idxs = mj_model.actuator_trnid[:, 0]
 
-    def reset(self, seed: int = 0) -> None:
-        np.random.seed(seed)
+    def reset(self, seed: int = 0):
+        # np.random.seed(seed)
         self.task_success = False
         mj_data = mujoco.MjData(self.mj_model)
-        base_pos = np.array([-0.0, 0.0])
-        base_pos += np.random.randn(2) * 0.02
+        base_pos = np.array([0.0, 0.0])
+        base_pos[0] += np.random.normal(0.05, 1, size=(1,)) * 0.01
+        base_pos[1] += np.random.normal(0.0, 1, size=(1,)) * 0.05
+        print("Resetting BugTrap task. Initial position:", base_pos)
         mj_data.qpos[:2] = base_pos
         return self.mj_model, mj_data
     
@@ -60,7 +62,7 @@ class BugTrap(Task):
         return contact_cost
     
     def contact_force_cost(self, state: mjx.Data) -> jax.Array:
-        contact = jnp.square(state.sensordata[self.sid_f: self.sid_f + 2]) # force vector norm in x,y
+        contact = jnp.sum(jnp.square(state.sensordata[self.sid_f: self.sid_f + 2])) # force vector norm in x,y
         # contact_cost = jnp.where(contact > 0, contact, 0.0) # exclude reaction forces
         return contact
     
@@ -68,27 +70,24 @@ class BugTrap(Task):
         """The running cost ℓ(xₜ, uₜ) encourages target tracking."""
         # contact_cost = self.contact_cost(state)
         contact_cost = jnp.sum(self.contact_force_cost(state))
+        # position_cost = jnp.sum(
+        #     jnp.abs(state.site_xpos[self.pointmass_id] - state.mocap_pos[0])
+        # )
         position_cost = jnp.sum(
-            jnp.abs(state.site_xpos[self.pointmass_id] - state.mocap_pos[0])
+            jnp.linalg.norm(state.site_xpos[self.pointmass_id] - state.mocap_pos[0])
         )
-        jnp.clip(position_cost, 0.0, 10.0)
-        state_cost = 10 * contact_cost + position_cost
-        # control_cost = jnp.sum(jnp.square(control))
-        return state_cost #+ 0.1 * control_cost
+        
+        # state_cost = 8 * contact_cost + 0.5 * position_cost
+
+        state_cost = jax.lax.cond(
+            state.site_xpos[self.pointmass_id, 0] > 0.11,
+            lambda: 15 * contact_cost + position_cost,  # True
+            lambda: 15 * contact_cost + position_cost,  # False
+        )
+
+        return state_cost 
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
-        """The terminal cost ϕ(x_T)."""
-        # position_cost = jnp.sum(
-        #     jnp.square(state.site_xpos[self.pointmass_id] - state.mocap_pos[0])
-        # )
-        # velocity_cost = jnp.sum(jnp.square(state.qvel))
-        # terminal_cost = jax.lax.cond(
-        #                             state.site_xpos[self.pointmass_id, 0] > 0.1,
-        #                             lambda: 10.0 * position_cost + 0.1 * velocity_cost, # True
-        #                             lambda: 2.0 * position_cost,    # False
-        #                         )
-        
-        # return terminal_cost
         return self.running_cost(state, jnp.zeros(self.mj_model.nu)) 
     
     def success(self, state):
