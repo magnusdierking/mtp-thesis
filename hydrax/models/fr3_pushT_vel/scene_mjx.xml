@@ -22,10 +22,10 @@
         <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" damping="2"/>
         <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" damping="2"/>
         <joint name="T_z" axis="0 0 1" damping="0.01"/>
-        <geom class="tblock" name="bottom" type="box" size=".025 0.05 0.025" solref="0.002 1" solimp="0.95 0.99 0.001" mass="0.0655"/>
+        <geom class="tblock" name="bottom" type="box" size=".025 0.052 0.025" pos="0.0 0.001 0.0" margin="0.001" solref="0.002 1" solimp="0.95 0.99 0.001" mass="0.0655"/>
           <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
           <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>
-        <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0" solref="0.002 1" solimp="0.95 0.99 0.001" mass="0.07855"/>
+        <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" margin="0.001" pos="0.0 0.075 0.0" solref="0.002 1" solimp="0.95 0.99 0.001" mass="0.07855"/>
 
       </body>
   </worldbody>
@@ -39,9 +39,9 @@
   <option solver="Newton"
         jacobian="dense"
         cone="pyramidal"
-        timestep="0.01"
-        iterations="1"
-        ls_iterations="2">
+        timestep="0.005"
+        iterations="15"
+        ls_iterations="20">
   <!-- Keep your original flag; warmstart helps Newton -->
   <flag eulerdamp="disable" warmstart="enable"/>
   </option>
@@ -66,8 +66,8 @@
 
   <worldbody>
     <!-- Plane for the robot ee to move on -->
-    <body name="plane" pos="0 0 0.05">
-      <geom type="plane" size="1 1 0.01" pos="0 0 0" mass="0.001" contype="0" conaffinity="0" rgba="0.9 0.9 0.9 0.00" />
+    <body name="plane" pos="0 0 0.03">
+      <geom type="plane" size="1 1 0.01" pos="0 0 0" mass="0.001" contype="0" conaffinity="0" rgba="0.9 0.9 0.9 0.0" />
     </body>
 
     <!-- <geom type="box" fromto="0 0 0 0.05 0 0" size="0.002" rgba="1 0 0 1"/>  -->
@@ -75,10 +75,26 @@
     <!-- <geom type="box" fromto="0 0 0 0 0 0.05" size="0.002" rgba="0 0 1 1"/>  -->
 
     <!-- Slider site to attach ee to for constraint -->
-    <body name="plane_slider" pos="0.3 0.0 0.05">
+    <!-- <body name="plane_slider" pos="0.3 0.0 0.03">
       <joint name="jx" type="slide" axis="1 0 0"/>
       <joint name="jy" type="slide" axis="0 1 0"/>
       <geom type="sphere" size="0.005" mass="0.001" contype="0" conaffinity="0" rgba="1 1 1 0.1"/>
+      <site name="slider_connect" pos="0 0 0" size="0.001" rgba="0 0 1 0.3"/>
+    </body> -->
+    <body name="plane_slider" pos="0.3 0.0 0.03" gravcomp="1">
+      <!-- Very light, low inertia; adjust if you see jitter -->
+      <inertial pos="0 0 0" mass="0.002" diaginertia="1e-6 1e-6 1e-6"/>
+
+      <!-- Frictionless, no springs -->
+      <joint name="jx" type="slide" axis="1 0 0"
+            damping="0" frictionloss="0" armature="0" stiffness="0"/>
+      <joint name="jy" type="slide" axis="0 1 0"
+            damping="0" frictionloss="0" armature="0" stiffness="0"/>
+
+      <!-- Visual-only marker; no collisions -->
+      <geom type="sphere" size="0.005" mass="0.0" density="0"
+            contype="0" conaffinity="0" rgba="1 1 1 0.1"/>
+
       <site name="slider_connect" pos="0 0 0" size="0.001" rgba="0 0 1 0.3"/>
     </body>
 
@@ -86,8 +102,7 @@
 
   <!-- Equality constraint for end effector -->
   <equality>
-    <connect site1="ee_site" site2="slider_connect"
-            solref="0.002 1" solimp="1 1 0.001"/>
+    <connect site1="ee_site" site2="slider_connect" solref="0.002 1" solimp="1 1 0.001"/>
   </equality>
 
   <sensor>

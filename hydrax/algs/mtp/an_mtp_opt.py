@@ -5,6 +5,9 @@ import jax.numpy as jnp
 from flax.struct import dataclass
 
 from hydrax.alg_base_opt import SamplingBasedController, Trajectory
+# from alg_base_visuals import SamplingBasedController, Trajectory
+
+
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
 from .splines.akima import poly_akima, poly_interpolation
@@ -124,9 +127,19 @@ class AnMTP(SamplingBasedController):
     def init_params(self, seed: int = 0) -> AnMTPParams:
         rng = jax.random.key(seed)
         T, U = self.task.planning_horizon, self.task.nu
-        spline = jnp.zeros((T, U), dtype=jnp.float32)
-        elites = jnp.zeros((self.keep_elites, T, U), dtype=jnp.float32) # ! experimental
-        mean = jnp.zeros((T, U), dtype=jnp.float32)
+        
+        noise = jax.random.normal(
+            rng,
+            (
+                self.task.planning_horizon,
+                self.task.nu,
+            ),
+        )
+        mean = jnp.zeros((self.task.planning_horizon, self.task.nu)) + self.sigma_start *noise
+        spline = mean.copy()
+        # set all elites to spline
+        elites = spline[None, ...].repeat(self.keep_elites, axis=0)
+
         cov = jnp.full_like(mean, self.sigma_start)
         beta = jnp.array(self.beta, dtype=jnp.float32)
         return AnMTPParams(rng=rng, spline=spline, mean=mean, cov=cov, beta=beta, elites=elites)
@@ -258,10 +271,16 @@ class AnMTP(SamplingBasedController):
         # increase beta if any elites are MTP, decrease otherwise
         # use jax operations to stay in-jit
         new_beta = jnp.where(
-            frac_mtp_in_elites > params.beta,
+            frac_mtp_in_elites > 0,#params.beta,
             (1.0 - self.beta_lr) * params.beta + self.beta_lr * self.beta_max,
             (1.0 - self.beta_lr) * params.beta + self.beta_lr * self.beta_min,
         )
+        # !experimental - set mean to spline if it is from MTP
+        # mean = jax.lax.cond(is_mtp_slot[0],
+        #                     lambda _: spline,
+        #                     lambda _: mean,
+        #                     operand=None)
+    
         # beta_target = frac_mtp_in_elites
         # new_beta = (1.0 - self.beta_lr) * params.beta + self.beta_lr * beta_target
         new_beta = jnp.clip(new_beta, self.beta_min, self.beta_max)
