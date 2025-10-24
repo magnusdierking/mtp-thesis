@@ -78,9 +78,11 @@ def run_headless_simulation(
         np.random.seed(seed)
 
         plan_times = []
+ 
         try:
-            mj_model, mj_data = task.reset()
+            mj_model, mj_data = task.reset(seed=seed)
             controller.set_seed(seed)
+            
 
             task_success = False
             replan_period = 1.0 / frequency
@@ -128,14 +130,12 @@ def run_headless_simulation(
                     else:
                         #  remap controls if a control mapper is provided
                         if controller.control_mapper is not None:
-                            print(f"Original control action: {u}")
                             u = differential_IK(
                                 mj_model,
                                 mj_data,
                                 controller.task.ee_body_id,
                                 u,  # Exclude base DOF
                             )
-                            print(f"Remapped control action: {u}")
                             
                         # Gravity compensation for the robot only
                         tau_g = gravity_comp_torque(mj_model, mj_data)
@@ -151,6 +151,8 @@ def run_headless_simulation(
                     if np.isnan(u).any():
                         print("NaN detected in control input; stopping current experiment.")
                         break
+                    state_error = np.linalg.norm(controller.task._get_position_err(mj_data) 
+                                + np.linalg.norm(controller.task._get_orientation_err(mj_data)))
                 
                 task_success |= controller.task.success(mj_data)
                                 
@@ -163,6 +165,7 @@ def run_headless_simulation(
                     "control": np.array(u).tolist(),
                     "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
                     "state_cost": float(rollouts.costs[0, 0]),
+                    "state_error": float(state_error),
                     "success": task_success,
                 })
 
@@ -182,7 +185,8 @@ def run_headless_simulation(
                 with open(log_file, "w", newline="") as csvfile:
                     fieldnames = [
                         "step", "sim_time", "plan_time", "qpos", "qvel",
-                        "control", "running_cost", "state_cost", "success"
+                        "control", "running_cost", "state_cost", "success",
+                        "state_error"
                     ]
                     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                     writer.writeheader()

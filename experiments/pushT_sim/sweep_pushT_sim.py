@@ -26,24 +26,26 @@ data = {}
 path = get_data_path() / "pushT_sim"
 path.mkdir(parents=True, exist_ok=True)
 
+num_samples = 32
+
 for controller in ["mppi", "cem", "mtp", "anmtp"]:
+# for controller in ["mppi"]:
     
     if controller == "mppi":
         ctrl = MPPI(
             task,
-            num_samples=128,
+            num_samples=num_samples,
             noise_level=0.3,
             temperature=0.1,
             num_randomizations=1,
             colorize_noise=False,   # !experimental
             alpha=0.1,
-            seed=seed
         )
         print("Running MPPI")
     elif controller == "cem":
         ctrl = CEM(
             task,
-            num_samples=128,
+            num_samples=num_samples,
             num_elites=12,
             sigma_start=0.2,
             sigma_min=0.05,
@@ -53,7 +55,7 @@ for controller in ["mppi", "cem", "mtp", "anmtp"]:
     elif controller == "mtp":
         ctrl = MTP(
             task,
-            num_samples=128,
+            num_samples=num_samples,
             M=3, # horizon via control points
             N=32, # samples 
             sigma_min=0.1,
@@ -63,13 +65,12 @@ for controller in ["mppi", "cem", "mtp", "anmtp"]:
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,
-            seed=seed,
         )
         print("Running MTP")
     elif controller == "anmtp":
         ctrl = AnMTP(
             task,
-            num_samples=128,
+            num_samples=num_samples,
             M=3, # horizon via control points
             N=32, # samples 
             sigma_min=0.05,
@@ -83,58 +84,23 @@ for controller in ["mppi", "cem", "mtp", "anmtp"]:
             alpha=0.05,
             interpolation='bspline',
             num_randomizations=1,
-            seed=seed,
         )
         print("Running AnMTP")
-
-    for seed in [0, 1, 2, 3, 4]:
         
-        mj_model, mj_data = task.reset(seed=seed)
-        error_log = f"./error_logs/pusht_franka_{controller}_seed{seed}.log"
-        
-        
-        
-        
-        
-        # TODO should return error log data
-        data[controller][str(seed)] = run_headless_simulation(
-            task,
-            ctrl,
-            frequency=50,
-            seeds=[seed],
-            max_step=500,
-            log_file_prefix="pusht_franka_" + controller,   
+        print(
+            f"Planning with {ctrl.task.planning_horizon} steps "
+            f"over a {ctrl.task.planning_horizon * ctrl.task.dt} "
+            f"second horizon."
         )
 
-    
-# Save data
-with open(path / "sweep_pushT_sim_data.pkl", "wb") as f:
-    pickle.dump(data, f)
-
-
-# run_interactive(
-#     ctrl,
-#     mj_model,
-#     mj_data,
-#     frequency=25,
-#     show_traces=True,
-#     trace_width=0.55,
-#     max_traces=16,
-#     fixed_camera_id=0,
-#     show_ui=True,
-#     record_video=False,
-#     max_step=500,
-#     seed=seed,
-#     error_log_path=error_log,
-#     )
-
-
-# run_headless_simulation(
-#     task,
-#     ctrl,
-#     frequency=50,
-#     seeds=[seed],
-#     max_step=500,
-#     log_file_prefix="pusht_franka_" + args.algorithm,
-#     save_path="./results"
-#     )
+    for seed in [1, 2, 3]:
+        
+        run_headless_simulation(
+            task,
+            ctrl,
+            frequency=25,
+            seeds=[seed],
+            max_step=500,
+            log_file_prefix="pusht_franka_" + controller, 
+            save_path=path.as_posix(),  
+        )
