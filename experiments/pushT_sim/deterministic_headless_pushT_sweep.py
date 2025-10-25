@@ -13,6 +13,8 @@ import os
 from chrono import Timer
 import os, pickle
 from pathlib import Path
+from collections import deque
+
 
 def differential_IK(
     model: mujoco.MjModel,
@@ -39,6 +41,30 @@ def differential_IK(
 
     return dq
 
+K = 8                 # window for slope
+TAU = -1e-3  
+cost_window = deque(maxlen=K)
+
+def slope_over_window(vals):
+    # least-squares slope against t = 0..n-1
+    n = len(vals)
+    if n < 2: return 0.0
+    x_mean = (n - 1) / 2.0
+    y_mean = sum(vals) / n
+    num = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(vals))
+    den = sum((i - x_mean) ** 2 for i in range(n))
+    return num / den if den > 0 else 0.0
+
+def update_beta_trend(cost, beta, beta_min, beta_max, eta_up=0.1, eta_down=0.0):
+    cost_window.append(cost)
+    m = slope_over_window(list(cost_window))
+
+    if m > TAU:  # not going down fast enough (or rising)
+        beta = min(beta_max, beta * (1.0 + eta_up))
+    else:        # trending down sufficiently
+        beta = max(beta_min, beta * (1.0 - eta_down))
+
+    return beta
 
 def gravity_comp_torque(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
     qvel_bak, qacc_bak = data.qvel.copy(), data.qacc.copy()
@@ -146,6 +172,7 @@ def run_headless_simulation(
                         # Apply the control to the simulation
                         mj_data.ctrl[:] = np.array(u[controller.task.actuator_joint_idxs])
 
+
                     mujoco.mj_step(mj_model, mj_data)
 
                     if np.isnan(u).any():
@@ -154,6 +181,19 @@ def run_headless_simulation(
                     state_error = np.linalg.norm(controller.task._get_position_err(mj_data) 
                                 + np.linalg.norm(controller.task._get_orientation_err(mj_data)))
                 
+                if hasattr(policy_params, 'beta'):
+                    # Update beta based on cost trend
+                    new_beta = update_beta_trend(
+                        state_error,
+                        float(policy_params.beta),
+                        controller.beta_min,
+                        controller.beta_max,
+                        eta_up=0.1,
+                        eta_down=0.0
+                    )
+                    controller.update_beta(new_beta)
+                    print(f"Updated beta: {new_beta:.4f}")
+
                 task_success |= controller.task.success(mj_data)
                                 
                 logs.append({

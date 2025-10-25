@@ -95,6 +95,7 @@ class BugTrap(Task):
             jnp.square(state.site_xpos[self.pointmass_id] - state.mocap_pos[0])
         )
         return jnp.sqrt(position_cost) < self.success_threshold
+        # return False
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         """Randomly perturb the actuator gains."""

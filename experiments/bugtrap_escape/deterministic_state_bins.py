@@ -76,9 +76,10 @@ def run_headless_simulation(
             for step in tqdm(range(max_step)):
                 step += 1
                 
-                beta = float(policy_params.beta)
-                controller.update_beta(beta)
-                beta_log.append(beta)
+                if hasattr(policy_params, 'beta'):
+                    beta = float(policy_params.beta)
+                    controller.update_beta(beta)
+                    beta_log.append(beta)
                 
                 mjx_data = mjx_data.replace(
                     qpos=jnp.array(mj_data.qpos),
@@ -145,12 +146,13 @@ def run_headless_simulation(
                 with open(log_file, "wb") as f:
                     pickle.dump(state_bins, f, protocol=pickle.HIGHEST_PROTOCOL)
                 print(f"State bins saved to {log_file}")
-                
-                log_file = log_dir / f"{log_file_prefix}_seed_{seed}_beta.pkl"
-                with open(log_file, "wb") as f:
-                    pickle.dump(beta_log, f, protocol=pickle.HIGHEST_PROTOCOL)
-                print(f"Beta log saved to {log_file}")
-                
+
+                if hasattr(policy_params, 'beta'):
+                    log_file = log_dir / f"{log_file_prefix}_seed_{seed}_beta.pkl"
+                    with open(log_file, "wb") as f:
+                        pickle.dump(beta_log, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    print(f"Beta log saved to {log_file}")
+
             #########################################################   
             plan_times = np.array(plan_times)
             print(f"Iteration time: {np.mean(plan_times)} \\pm {np.std(plan_times)} seconds")

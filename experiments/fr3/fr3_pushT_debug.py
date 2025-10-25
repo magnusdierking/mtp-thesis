@@ -56,10 +56,32 @@ class FR3_PushT(FrankaPandaServer):
         self.add_collision_primitive(
             id="table",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(1.5, 1, 0.1),
+            dimensions=(2.0, 0.8, 0.1),
             position=np.array([0.0, 0.0, -0.05]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
+        self.add_collision_primitive(
+            id="wall x",
+            primitive_type=SolidPrimitive.BOX,
+            dimensions=(0.1, 0.8, 0.4),
+            position=np.array([1.05, 0.0, 0.1]),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
+        )
+        self.add_collision_primitive(
+            id="wall y_neg",
+            primitive_type=SolidPrimitive.BOX,
+            dimensions=(2.0, 0.1, 0.4),
+            position=np.array([0.0, -0.45, 0.1]),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
+        )
+        self.add_collision_primitive(
+            id="wall y_pos",
+            primitive_type=SolidPrimitive.BOX,
+            dimensions=(2.0, 0.1, 0.4),
+            position=np.array([0.0, 0.45, 0.1]),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
+        )
+     
         # TODO add walls around action space
         
         ####################################
@@ -69,7 +91,7 @@ class FR3_PushT(FrankaPandaServer):
         # # wait 
         # time.sleep(2.0)
         
-        self.init_pos = np.array([0.4, 0.0, 0.26])
+        self.init_pos = np.array([0.35, 0.0, 0.27])   # 0,26
         # add small noise: keep x small, increase variance in y
         self.init_pos[0] += np.random.normal(0, 0.01)   # x
         self.init_pos[1] += np.random.normal(0, 0.05)   # y (larger variance)
@@ -131,6 +153,7 @@ class FR3_PushT(FrankaPandaServer):
         self.viewer = viewer
 
         self.create_timer(1.0 / 10.0, self._step_debug_sim)
+        time.sleep(1.0)  # wait for viewer to initialize
 
         ####################################
         ##         Set up Timers          ##    
@@ -175,18 +198,19 @@ class FR3_PushT(FrankaPandaServer):
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
+        # objectPushT, fr3-calibration-ee
         
         # TODO hardcoded for now, potentially automatically publish after calibration in the future
 
         # Translation (meters)
-        t.transform.translation.x = 2.59938
-        t.transform.translation.y = -0.99226
-        t.transform.translation.z = -0.05083
+        t.transform.translation.x = 1.12763
+        t.transform.translation.y = -1.26957
+        t.transform.translation.z = -0.02129
 
-        t.transform.rotation.x = 0.00583
-        t.transform.rotation.y = -0.00801
-        t.transform.rotation.z = 0.99976
-        t.transform.rotation.w = 0.01940
+        t.transform.rotation.x = -0.00703
+        t.transform.rotation.y = -0.00123
+        t.transform.rotation.z = 0.99989
+        t.transform.rotation.w = 0.01335
 
         # Broadcast once; static transforms are latched
         self.static_tf = t
@@ -218,7 +242,7 @@ class FR3_PushT(FrankaPandaServer):
         
         lin_t, quat_t = self._update_T()
         self.debug_data.qpos[0] = -lin_t[1] # x in block, -y in robot
-        self.debug_data.qpos[1] = lin_t[0] -0.5 # y in block, x in robot, offset from spawn
+        self.debug_data.qpos[1] = lin_t[0] -0.44 # y in block, x in robot, offset from spawn
         self.debug_data.qpos[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) - np.pi 
         print(f"Object yaw: {self.debug_data.qpos[2]*180.0/np.pi} deg")
         self.debug_data.qpos[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
@@ -295,7 +319,7 @@ if __name__ == '__main__':
     
  
     # Load the MuJoCo model
-    xml_path = "/home/franka/Lab/mtp-thesis/hydrax/models/fr3_pushT_pos/scene_mjx.xml"
+    xml_path = "/home/mtp/Lab/mtp-thesis/hydrax/models/fr3_pushT_vel/scene_mjx.xml"
     # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
     xml_dir = os.path.dirname(xml_path)
     print(os.path.basename(xml_path))

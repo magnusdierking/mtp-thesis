@@ -11,7 +11,7 @@ from hydrax.utils.utils import mujoco_to_scipy_quat
 
 # Load the MuJoCo model
 xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx.xml"
-xml_path = "./../../hydrax/models/pusht_franka_velocity/scene_mjx.xml"
+# xml_path = "./../../hydrax/models/pusht_franka_velocity/scene_mjx.xml"
 # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
 xml_dir = os.path.dirname(xml_path)
 
@@ -37,7 +37,7 @@ print(data.ctrl)
                          
                          # initial position of robot
 # Desired EE pose in world frame
-des_pos = np.array([0.3, 0.0, 0.05])
+des_pos = np.array([0.3, 0.0, 0.035])
 des_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
 
 # Body ID for end-effector
@@ -54,9 +54,9 @@ joint_limits = np.array([model.jnt_range[i] for i in range(j_start, model.njnt)]
 q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
 
 # IK loop parameters
-max_iters = 100
-tolerance = 1e-4
-damping = 100e-3
+max_iters = 300
+tolerance = 1e-3
+damping = 50e-3
 
 for i in range(max_iters):
     # Set current joint state

@@ -15,10 +15,10 @@ Run an interactive simulation of the push-T task with predictive sampling.
 
 # Define the task (cost and dynamics)
 task = PushTFranka(ik_type = 'pinv',
-                   planning_horizon=16,
-                   sim_steps_per_control_step=4,
+                   planning_horizon=12,
+                   sim_steps_per_control_step=6,
                    ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
-                   trace_sites=["ee_site", "T_1", "T_2"],
+                #    trace_sites=["ee_site", "T_1", "T_2"],
                    actuation_type='velocity',
                    )
 
@@ -26,10 +26,10 @@ data = {}
 path = get_data_path() / "pushT_sim"
 path.mkdir(parents=True, exist_ok=True)
 
-num_samples = 32
+num_samples = 256
 
-for controller in ["mppi", "cem", "mtp", "anmtp"]:
-# for controller in ["mppi"]:
+# for controller in ["mppi", "cem", "mtp", "anmtp"]:
+for controller in ["anmtp"]:
     
     if controller == "mppi":
         ctrl = MPPI(
@@ -79,8 +79,8 @@ for controller in ["mppi", "cem", "mtp", "anmtp"]:
             keep_elites=4,   # !experimental
             beta = 0.25,
             beta_lr = 0.1,        # adaptation step size
-            beta_min = 0.05,
-            beta_max = 0.35,
+            beta_min = 0.15,
+            beta_max = 0.55,
             alpha=0.05,
             interpolation='bspline',
             num_randomizations=1,
@@ -93,7 +93,7 @@ for controller in ["mppi", "cem", "mtp", "anmtp"]:
             f"second horizon."
         )
 
-    for seed in [1, 2, 3]:
+    for seed in [0, 1, 2, 3, 5, 6]:
         
         run_headless_simulation(
             task,

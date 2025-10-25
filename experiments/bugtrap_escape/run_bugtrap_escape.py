@@ -1,6 +1,14 @@
 import argparse
 
-from hydrax.algs import MTP, AnMTP, MPPI, CEM
+# from hydrax.algs import MPPI, CEM, MTP, AnMTP
+
+
+from mtp_visuals import MTP 
+from an_mtp_opt_vis import AnMTP
+from mppi_visuals import MPPI
+from cem_visual import CEM
+
+
 from hydrax.risk import WorstCase
 from deterministic_beta import run_interactive
 # from hydrax.simulation.deterministic_experiment import run_headless_simulation
@@ -58,26 +66,25 @@ elif args.algorithm == "cem":
 
 elif args.algorithm == "mtp":
     print("Running MTP")
-    seed = 0
     ctrl = MTP(
             task,
             num_samples=128,
             M=4,
             N=32,
             sigma_start=0.15, # 0.2
+            sigma_min=0.05,
+            sigma_max=0.25,
             temperature=0.01,
             num_elites=8, # 2
             beta=0.55, # 0.3
             alpha=0.0,
             interpolation='akima',
             num_randomizations=1,
-            seed=seed,
         )
     save_path = "./../../data/headless_bugtrap_mtp"
 
 elif args.algorithm == "anmtp":
     print("Running Annealed MTP")
-    seed = 0
     ctrl = AnMTP(
             task,
             num_samples=128,
@@ -86,14 +93,16 @@ elif args.algorithm == "anmtp":
             sigma_start=0.15,
             temperature=0.01,
             num_elites=8,
-            beta=0.5,
-            beta_lr=0.15,
-            beta_min=0.05,
+            keep_elites=1,   # !experimental
+            beta=0.55,
+            beta_lr=0.3,
+            beta_decay=0.9,
+            beta_min=0.1,
             beta_max=0.6,
-            alpha=0.0,
+            alpha=0.1,
             interpolation='akima',
             num_randomizations=1,
-            seed=seed,
+            beta_strategy='greedy',
         )
     save_path = "./../../data/headless_bugtrap_anmtp"
     
@@ -105,17 +114,20 @@ mj_model, mj_data = task.reset()
 
 # ----- for inspection -----
 # Run the interactive simulation
-run_interactive(
-    ctrl,
-    mj_model,
-    mj_data,
-    frequency=25,
-    show_traces=True,
-    trace_width=0.25,
-    max_traces=25,
-    record_video=False,
-)
-exit()
+
+# seed = 10
+# run_interactive(
+#     ctrl,
+#     mj_model,
+#     mj_data,
+#     frequency=25,
+#     show_traces=True,
+#     trace_width=0.25,
+#     max_traces=25,
+#     record_video=False,
+#     seed=seed,
+# )
+# exit()
 
 
 

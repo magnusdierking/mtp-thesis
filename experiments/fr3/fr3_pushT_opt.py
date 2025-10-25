@@ -1,4 +1,7 @@
 import math, time, argparse, numpy as np
+import os
+os.environ.setdefault("JAX_PLATFORM_NAME", "cuda")
+os.environ.setdefault("JAX_ENABLE_X64", "0")  # prefer fp32
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
@@ -18,6 +21,7 @@ from franka_panda_server import FrankaPandaServer
 
 import jax
 import jax.numpy as jnp
+
 from mujoco import mjx
 import concurrent.futures
 
@@ -35,19 +39,31 @@ class FR3_PushT(FrankaPandaServer):
         self.add_collision_primitive(
             id="table",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(1.5, 1.0, 0.1),
+            dimensions=(2.0, 0.8, 0.1),
             position=np.array([0.0, 0.0, -0.05]),
-            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
-
-        # --- Go to initial pose (blocking call outside timers) ---
-        init_pos = np.array([0.4, 0.0, 0.26])
-        init_pos[0] += np.random.normal(0, 0.01)
-        init_pos[1] += np.random.normal(0, 0.05)
-        init_quat = np.array([1.0, 0.0, 0.0, 0.0])
-        pose = np.eye(4); pose[:3,:3] = R.from_quat(init_quat).as_matrix(); pose[:3,3] = init_pos
-        self.plan_and_move_to_pose(pose)
-        time.sleep(1.0)
+        self.add_collision_primitive(
+            id="wall x",
+            primitive_type=SolidPrimitive.BOX,
+            dimensions=(0.1, 0.8, 0.4),
+            position=np.array([1.05, 0.0, 0.1]),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
+        )
+        self.add_collision_primitive(
+            id="wall y_neg",
+            primitive_type=SolidPrimitive.BOX,
+            dimensions=(2.0, 0.1, 0.4),
+            position=np.array([0.0, -0.45, 0.1]),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
+        )
+        self.add_collision_primitive(
+            id="wall y_pos",
+            primitive_type=SolidPrimitive.BOX,
+            dimensions=(2.0, 0.1, 0.4),
+            position=np.array([0.0, 0.45, 0.1]),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
+        )
 
         # --- TF setup ---
         self.br = StaticTransformBroadcaster(self)
@@ -56,13 +72,25 @@ class FR3_PushT(FrankaPandaServer):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
+        # --- Go to initial pose (blocking call outside timers) ---
+        init_pos = np.array([0.4, 0.0, 0.28])
+        init_pos[0] += np.random.normal(0, 0.01)
+        init_pos[1] += np.random.normal(0, 0.05)
+        init_quat = np.array([1.0, 0.0, 0.0, 0.0])
+        pose = np.eye(4); pose[:3,:3] = R.from_quat(init_quat).as_matrix(); pose[:3,3] = init_pos
+        self.plan_and_move_to_pose(pose)
+        time.sleep(1.0)
+
         # Wait for first joint state (don’t block timers later)
         while not self._states_received():
             rclpy.spin_once(self, timeout_sec=0.1)
 
         # --- Controller / JAX ---
         self.ctrl = ctrl
-        self.mjx_data = mjx.forward(ctrl.task.model, mjx.make_data(ctrl.task.model))
+        model_f32 = mjx.convert_model(ctrl.task.model, dtype=jnp.float32)
+        self.mjx_data = mjx.forward(model_f32, mjx.make_data(model_f32))
+        ctrl.task.model = model_f32  # keep everything consistent
+        # self.mjx_data = mjx.forward(ctrl.task.model, mjx.make_data(ctrl.task.model))
         self.policy_params = ctrl.init_params(seed)
         self.get_logger().info(
             f"Backend: {jax.default_backend()} | Horizon {ctrl.task.planning_horizon} "
@@ -76,10 +104,10 @@ class FR3_PushT(FrankaPandaServer):
         # self._executable = self._jit_optimize.lower(self.mjx_data, self.policy_params).compile()
         self._jit_optimize = jax.jit(
                                 lambda d, p: ctrl.optimize(d, p)[0],
-                                donate_argnums=(0, 1), # doante both
+                                donate_argnums=(1,), # doante both
                             )
         self._executable = self._jit_optimize.lower(self.mjx_data, self.policy_params).compile()
-        self._get_action = jax.jit(ctrl.get_action)
+        self._get_action = ctrl.get_action
         t1 = time.time()
         self.get_logger().info(f"JIT compile finished in {t1 - t0:.2f} s")
 
@@ -91,6 +119,9 @@ class FR3_PushT(FrankaPandaServer):
         self._tmp_lin = np.empty(3, dtype=np.float64)
         self._tmp_quat = np.empty(4, dtype=np.float64)
         self._idx_robot_start, self._idx_robot_end = 3, -2
+        # device buffer
+        self._q_dev  = jnp.array(self.mjx_data.qpos)  # on device
+        self._dq_dev = jnp.array(self.mjx_data.qvel)
 
         # Command state
         self._current_u = np.zeros((2,), dtype=np.float32)
@@ -105,11 +136,16 @@ class FR3_PushT(FrankaPandaServer):
     
 
         # --- Timers & threading ---
-        self.mpc_freq = 10.0     # Hz (planner)
+        self.mpc_freq = 3.0     # Hz (planner)
         self.servo_freq = 50.0  # Hz (publisher)
 
         self.servo_group   = ReentrantCallbackGroup()
         self.planner_group = MutuallyExclusiveCallbackGroup()
+
+        # Servo setup
+        self.get_logger().info("Starting servo...")
+        self.servo.enable_servo()
+        self.servo.use_twist()
 
         # Servo timer: never blocks
         qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.BEST_EFFORT, history=QoSHistoryPolicy.KEEP_LAST)
@@ -121,24 +157,22 @@ class FR3_PushT(FrankaPandaServer):
         self._plan_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._planning = False
 
-        # Servo setup
-        self.get_logger().info("Starting servo...")
-        self.servo.enable_servo()
-        self.servo.use_twist()
-
     # ---------- Static TF ----------
     def _publish_static_robot_tf(self):
         t = TransformStamped()
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
-        t.transform.translation.x = 2.59938
-        t.transform.translation.y = -0.99226
-        t.transform.translation.z = -0.05083
-        t.transform.rotation.x = 0.00583
-        t.transform.rotation.y = -0.00801
-        t.transform.rotation.z = 0.99976
-        t.transform.rotation.w = 0.01940
+
+        t.transform.translation.x = 1.12763
+        t.transform.translation.y = -1.26957
+        t.transform.translation.z = -0.02129
+
+        t.transform.rotation.x = -0.00703
+        t.transform.rotation.y = -0.00123
+        t.transform.rotation.z = 0.99989
+        t.transform.rotation.w = 0.01335
+
         self.br.sendTransform(t)
         self.get_logger().info('Published static TF fr3_link0 -> optitrack')
 
@@ -154,29 +188,58 @@ class FR3_PushT(FrankaPandaServer):
         self._tmp_quat[:] = (rq.x, rq.y, rq.z, rq.w)
         return self._tmp_lin, self._tmp_quat
 
+    # def _update_state(self):
+    #     tvals = self._get_T_pose()
+    #     if tvals is None:
+    #         return False
+    #     lin_t, quat_t = tvals
+    #     self._q_buf[:] = self.mjx_data.qpos
+    #     self._dq_buf[:] = self.mjx_data.qvel
+    #     # map object pose
+    #     self._q_buf[0] = -lin_t[1]
+    #     self._q_buf[1] =  lin_t[0] - 0.44
+    #     self._q_buf[2] = math.atan2(2*(quat_t[3]*quat_t[2] + quat_t[0]*quat_t[1]),
+    #                                 1 - 2*(quat_t[1]*quat_t[1] + quat_t[2]*quat_t[2])) - math.pi
+    #     # robot joints
+    #     with self._lock:
+    #         js = self._current_joint_state
+    #         if js is None:
+    #             return False
+    #         s, e = self._idx_robot_start, self._idx_robot_end
+    #         self._q_buf[s:e]  = js.position
+    #         self._dq_buf[s:e] = js.velocity
+    #     # update mjx data (host arrays are copied to device inside executable)
+    #     self.mjx_data = self.mjx_data.replace(qpos=self._q_buf, qvel=self._dq_buf)
+    #     return True
     def _update_state(self):
         tvals = self._get_T_pose()
         if tvals is None:
             return False
         lin_t, quat_t = tvals
-        self._q_buf[:] = self.mjx_data.qpos
-        self._dq_buf[:] = self.mjx_data.qvel
-        # map object pose
-        self._q_buf[0] = -lin_t[1]
-        self._q_buf[1] =  lin_t[0] - 0.5
-        self._q_buf[2] = math.atan2(2*(quat_t[3]*quat_t[2] + quat_t[0]*quat_t[1]),
-                                    1 - 2*(quat_t[1]*quat_t[1] + quat_t[2]*quat_t[2])) - math.pi
-        # robot joints
+
+        ang = math.atan2(2*(quat_t[3]*quat_t[2] + quat_t[0]*quat_t[1]),
+                        1 - 2*(quat_t[1]*quat_t[1] + quat_t[2]*quat_t[2])) - math.pi
+
+        q  = self._q_dev
+        dq = self._dq_dev
+
+        # scalar field updates
+        q  = q.at[0].set(-lin_t[1])
+        q  = q.at[1].set(lin_t[0] - 0.44)
+        q  = q.at[2].set(ang)
+
         with self._lock:
             js = self._current_joint_state
             if js is None:
                 return False
             s, e = self._idx_robot_start, self._idx_robot_end
-            self._q_buf[s:e]  = js.position
-            self._dq_buf[s:e] = js.velocity
-        # update mjx data (host arrays are copied to device inside executable)
-        self.mjx_data = self.mjx_data.replace(qpos=self._q_buf, qvel=self._dq_buf)
+            q  = q.at[s:e].set(jnp.asarray(js.position, dtype=q.dtype))
+            dq = dq.at[s:e].set(jnp.asarray(js.velocity, dtype=dq.dtype))
+
+        self._q_dev, self._dq_dev = q, dq
+        self.mjx_data = self.mjx_data.replace(qpos=q, qvel=dq)
         return True
+    
 
     # ---------- Planner (non-blocking) ----------
     def _plan_trigger(self):
@@ -251,17 +314,40 @@ if __name__ == '__main__':
         args.algorithm = "mtp"
 
     # Task + controller
-    task = PushTFranka()
+    task = PushTFranka(ik_type = 'pinv',
+                       planning_horizon=12,
+                       sim_steps_per_control_step=4,
+                       ctrl_limits={"u_min": jnp.array([-0.35, -0.35]), 
+                                    "u_max": jnp.array([0.35, 0.35])},
+                       trace_sites=[],
+                       actuation_type='velocity',)
     seed = 42
     if args.algorithm == "mppi":
-        ctrl = MPPI(task, num_samples=128, noise_level=0.3, temperature=0.1,
-                    num_randomizations=4, seed=seed)
+        ctrl = MPPI(task, 
+                    num_samples=256, 
+                    noise_level=0.3, 
+                    temperature=0.1,
+                    num_randomizations=5, 
+                    seed=seed)
     else:
-        ctrl = MTP(task, num_samples=64, M=2, N=16, num_elites=12,
-                   beta=0.25, alpha=0.01, interpolation='bspline',
-                   num_randomizations=5, seed=seed)
+        ctrl = MTP(task, 
+                   num_samples=64, 
+                   M=2, 
+                   N=16, 
+                   num_elites=12,
+                   beta=0.25, 
+                   alpha=0.01, 
+                   interpolation='bspline',
+                   num_randomizations=5, 
+                   seed=seed)
+        
+    print(
+        f"Planning with {ctrl.task.planning_horizon} steps "
+        f"over a {ctrl.task.planning_horizon * ctrl.task.dt} "
+        f"second horizon."
+    )
 
-    node = FR3_PushT(ctrl=ctrl, robot_ip="10.90.90.144", seed=seed)
+    node = FR3_PushT(ctrl=ctrl, robot_ip="10.90.90.77", seed=seed)
 
     # Run with two threads so servo and planner can overlap
     executor = MultiThreadedExecutor(num_threads=2)

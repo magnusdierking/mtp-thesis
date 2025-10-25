@@ -9,7 +9,6 @@ from mujoco import mjx
 
 from functools import partial
 from hydrax.alg_base_opt import SamplingBasedController, Trajectory
-#from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
 
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task

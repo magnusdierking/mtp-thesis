@@ -26,7 +26,7 @@ class MTPParams:
     spline: jax.Array = None
     last_a_idx: int = 0
     state_bins: jax.Array = None  # Placeholder for state bins
-    beta : float = 0.0              # Placeholder for beta parameter
+    # beta : float = 0.0              # Placeholder for beta parameter
 
 
 @partial(jax.jit, static_argnums=1)
@@ -356,10 +356,10 @@ class MTP(SamplingBasedController):
         
         mean = jnp.sum(weighted_controls, axis=0)
         # TODO - can we change this ?
-        #cov = jnp.sqrt(jnp.sum(weights[:, None, None] * (controls - mean) ** 2, axis=0))
-        #cov = jnp.clip(cov, self.sigma_min, self.sigma_max)
+        cov = jnp.sqrt(jnp.sum(weights[:, None, None] * (controls - mean) ** 2, axis=0))
+        cov = jnp.clip(cov, self.sigma_min, self.sigma_max)
         mean = mean + self.alpha * (params.mean - mean)
-        #cov = cov + self.alpha * (params.cov - cov)
+        cov = cov + self.alpha * (params.cov - cov)
         spline = rollouts.controls[next_idx]  # use the best elite as control
         # print rollouts shapes 
         # jax.debug.print("costs: {}", costs)
@@ -367,7 +367,7 @@ class MTP(SamplingBasedController):
         # jax.debug.print("rollout shapes: {}, {}, {}", (rollouts.controls.shape, rollouts.costs.shape, spline.shape))
 
         # return params.replace(mean=mean, cov=cov, spline=spline)
-        return params.replace(mean=mean, spline=spline)
+        return params.replace(mean=mean, cov=cov, spline=spline)
 
     def get_action(self, params: MTPParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""

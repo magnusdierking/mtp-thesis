@@ -21,7 +21,51 @@ import matplotlib.pyplot as plt
 Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
 """    
-    
+# def differential_IK(
+#     model: mujoco.MjModel,
+#     data: mujoco.MjData,
+#     body_id: str = "ee_frame",
+#     world_site_vel_desired: np.ndarray = np.zeros(2),
+# ) -> np.ndarray:
+#     """
+#     Differential IK for all dofs in the model, with planar motion priority
+#     and roll/pitch anti-tilt damping.
+#     """
+#     # Geometric Jacobians at body_id
+#     jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
+#     jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
+#     mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
+
+#     # Build 6×nv Jacobian
+#     J = np.vstack((jacp, jacr))
+
+#     # --- Roll/pitch anti-tilt (use current angular velocity) ---
+#     v_curr = J @ data.qvel                     # [vx, vy, vz, wx, wy, wz]
+#     wx, wy = v_curr[3], v_curr[4]
+#     k_rp = 2.0                                 # tune ~2..10
+#     # Desired 6D twist: vx, vy from input; vz=0; wx/wy damped; wz=0
+#     twist = np.array([
+#         world_site_vel_desired[0],
+#         world_site_vel_desired[1],
+#         0.0,
+#         -k_rp * wx,                           # kill roll
+#         -k_rp * wy,                           # kill pitch
+#         0.0                                   # leave yaw free
+#     ], dtype=np.float64)
+
+#     # --- Optional row-weighting: prioritize planar translation over orientation ---
+#     W = np.diag([1.0, 1.0, 0.0, 0.3, 0.3, 0.0])   # lightweight priority; adjust if needed
+#     Jw = J
+#     tw = twist
+
+#     # Damped least-squares with the weighted Jacobian
+#     lam = 1e-3
+#     JwJwT = Jw @ Jw.T
+#     J_pseudo_inv = Jw.T @ np.linalg.inv(JwJwT + (lam * lam) * np.eye(6))
+
+#     dq = J_pseudo_inv @ tw
+#     return dq
+  
 def differential_IK(
     model: mujoco.MjModel,
     data: mujoco.MjData,
@@ -42,10 +86,25 @@ def differential_IK(
 
     # Compute dq with damped pseudo-inverse
     J_pseudo_inv = J.T @ np.linalg.inv(J @ J.T + 1e-6 * np.eye(6))
+    ee_orientation_sensor = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_quat"
+        )
+
+    sensor_adr = model.sensor_adr[ee_orientation_sensor]
+    ee_quat = data.sensordata[sensor_adr : sensor_adr + 4]
+    goal_quat = jnp.array([0.0, 0.0, 0.0, 1.0])  # Assuming goal orientation is aligned with x-axis
+    e_rot = mjx._src.math.quat_sub(ee_quat, goal_quat)                                      # (3,)
+
+    # Commanded planar twist + corrective twist
+    twist_cmd = jnp.concatenate([world_site_vel_desired, jnp.zeros(4)])     # [vx, vy, 0, 0, 0, 0]
+    twist_err = jnp.concatenate([jnp.zeros(3), e_rot])                 # [ex, ey, ez, ewx, ewy, ewz]
+    twist = twist_cmd + twist_err
     twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
+
     dq = J_pseudo_inv @ twist
 
     return dq
+
 
 
 def gravity_comp_torque(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:

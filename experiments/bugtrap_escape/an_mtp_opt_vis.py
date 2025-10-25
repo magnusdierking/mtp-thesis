@@ -4,15 +4,14 @@ import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
 
-from hydrax.alg_base_opt import SamplingBasedController, Trajectory
-# from alg_base_visuals import SamplingBasedController, Trajectory
+from alg_base_visuals import SamplingBasedController, Trajectory
 
 
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
-from .splines.akima import poly_akima, poly_interpolation
-from .splines.bsplines import compute_b_spline_matrix
-from .splines.linear import interpolate_linear
+from hydrax.algs.mtp.splines.akima import poly_akima, poly_interpolation
+from hydrax.algs.mtp.splines.bsplines import compute_b_spline_matrix
+from hydrax.algs.mtp.splines.linear import interpolate_linear
 
 
 @dataclass
@@ -60,7 +59,7 @@ class AnMTP(SamplingBasedController):
         colorize_noise: bool = False,   # !experimental
         shift: bool = False, # !experimental,
         seed: int = 0,
-        beta_strategy: str = "task", # task, ratio, greedy
+        beta_strategy: str = "ratio", # task, ratio, greedy
     ):
         super().__init__(task, num_randomizations, risk_strategy, seed)
         assert degree >= 2, "degree must be at least 2."
@@ -270,7 +269,8 @@ class AnMTP(SamplingBasedController):
         is_mtp_slot = (tail_idx < K) # number of elites in MTP slots
         denom = jnp.maximum(1, is_tail.sum())  # avoid div-by-zero if all elites pick slot 0
         if self.beta_strategy == "task":
-            new_beta = params.beta  # no adaptation
+            # Todo
+            pass
         elif self.beta_strategy == "greedy":
             # increase beta if best elite is MTP, decrease otherwise
             new_beta = jnp.where(

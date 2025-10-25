@@ -102,9 +102,9 @@ class PushTFranka(Task):
         # mj_model.opt.ls_iterations = 20 # TODO Optimize
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
-        pos_x = np.random.uniform(low=-0.3, high=0.3)
-        pos_y = np.random.uniform(low=-0.25, high=0.1)
-        angle = np.random.uniform(-np.pi/2, np.pi/2)
+        pos_x = np.random.uniform(low=-0.2, high=0.2)
+        pos_y = np.random.uniform(low=-0.15, high=0.05)
+        angle = np.random.uniform(np.pi/4, np.pi)
 
         # Assuming the block's pose is at the beginning of qpos
         mj_data.qpos[0] = pos_x
@@ -242,7 +242,7 @@ class PushTFranka(Task):
         # orientation_cost = jnp.norm(orientation_err)
         orientation_cost = jnp.sum(jnp.square(orientation_err))
         
-        total_goal_err = 5 * position_cost + orientation_cost
+        total_goal_err = 8 * position_cost + orientation_cost
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
@@ -304,7 +304,8 @@ class PushTFranka(Task):
             tau_g = mjx.inverse(model, d).qfrc_bias
             return tau_g[jnp.array(actuator_joint_idxs)]
 
-        return gravity_comp_torque
+        # return gravity_comp_torque
+        return None
     
     
     def make_control_mapper(self):
@@ -347,28 +348,81 @@ class PushTFranka(Task):
             elif self.actuation_type == 'velocity':
                 return dq
         
+        # @jax.jit
+        # def ik_mapper_pinv(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
+        #     """
+        #     control: shape (6,) desired (vx, vy, vz, wx, wy, wz) in task space.
+        #     """
+        #     qpos = data.qpos
+        #     J = fk_jac(qpos)                       
+        #     J = J[:, self.actuator_joint_idxs]     
+        #     # Compute dq with damped pseudo-inverse
+        #     twist = jnp.concatenate([control_xy, jnp.zeros(4)]) 
+        #     # Apparently compiles better than inv
+        #     lam = 1e-3
+        #     JJt = J @ J.T
+        #     L = jnp.linalg.cholesky(JJt + (lam*lam) * jnp.eye(6, dtype=J.dtype))
+        #     y = jax.scipy.linalg.solve_triangular(L, twist, lower=True)
+        #     z = jax.scipy.linalg.solve_triangular(L.T, y, lower=False)
+        #     dq = J.T @ z
+            
+        #     if self.actuation_type == 'position':
+        #         return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
+        #     elif self.actuation_type == 'velocity':
+        #         return dq
+            
+        
+            
+        def quat_to_mat(q):
+            w, x, y, z = q
+            ww, xx, yy, zz = w*w, x*x, y*y, z*z
+            wx, wy, wz = w*x, w*y, w*z
+            xy, xz, yz = x*y, x*z, y*z
+            return jnp.array([
+                [ww+xx-yy-zz,   2*(xy-wz),     2*(xz+wy)],
+                [2*(xy+wz),     ww-xx+yy-zz,   2*(yz-wx)],
+                [2*(xz-wy),     2*(yz+wx),     ww-xx-yy+zz]
+            ])
+
         @jax.jit
-        def ik_mapper_pinv(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
+        def ik_mapper_pinv(
+            data: mjx.Data,
+            control_xy: jax.Array,        
+            kp_ori: float = 2.0,
+            lam: float = 1e-3,
+        ) -> jax.Array:
             """
-            control: shape (6,) desired (vx, vy, vz, wx, wy, wz) in task space.
+            Adds a corrective twist from pose error to the commanded planar twist.
+            Keep your fk_jac and a pose function fk_pose(qpos)->(p(3,), R(3,3)).
             """
             qpos = data.qpos
-            J = fk_jac(qpos)                       
-            J = J[:, self.actuator_joint_idxs]     
-            # Compute dq with damped pseudo-inverse
-            twist = jnp.concatenate([control_xy, jnp.zeros(4)]) 
-            # Apparently compiles better than inv
-            lam = 1e-3
+            # Jacobian (6 x nv) restricted to actuated joints
+            J_full = fk_jac(qpos)                      # (6, nv_total)
+            J = J_full[:, self.actuator_joint_idxs]    # (6, n_act)
+
+            # Current EE pose (replace fk_pose with your pose function)
+            sensor_adr = self.model.sensor_adr[self.ee_orientation_sensor]
+            ee_quat = data.sensordata[sensor_adr : sensor_adr + 4]
+            goal_quat = jnp.array([0.0, 0.0, 0.0, 1.0])  # Assuming goal orientation is aligned with x-axis
+            e_rot = mjx._src.math.quat_sub(ee_quat, goal_quat)                                      # (3,)
+
+            # Commanded planar twist + corrective twist
+            twist_cmd = jnp.concatenate([control_xy, jnp.zeros(4)])     # [vx, vy, 0, 0, 0, 0]
+            twist_err = jnp.concatenate([jnp.zeros(3), e_rot])                 # [ex, ey, ez, ewx, ewy, ewz]
+            twist = twist_cmd + twist_err
+
+            # --- DLS via Cholesky ---
             JJt = J @ J.T
-            L = jnp.linalg.cholesky(JJt + (lam*lam) * jnp.eye(6, dtype=J.dtype))
+            L = jnp.linalg.cholesky(JJt + (lam * lam) * jnp.eye(6, dtype=J.dtype))
             y = jax.scipy.linalg.solve_triangular(L, twist, lower=True)
             z = jax.scipy.linalg.solve_triangular(L.T, y, lower=False)
             dq = J.T @ z
-            
+
             if self.actuation_type == 'position':
                 return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
             elif self.actuation_type == 'velocity':
                 return dq
+
 
         if self.ik_type == 'transpose':
             return ik_mapper_transpose

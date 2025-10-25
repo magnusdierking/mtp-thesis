@@ -1,21 +1,29 @@
 import argparse
 
 from hydrax.algs import MPPI, MTP, CEM
-# from hydrax.algs.mtp.an_mtp_opt import AnMTP
-from hydrax.algs.mtp.an_mtp_dr import AnMTP
+from hydrax.algs.mtp.an_mtp_opt import AnMTP
+# from hydrax.algs.mtp.an_mtp_dr import AnMTP
 
 from hydrax.simulation.deterministic import run_interactive
 # from hydrax.simulation.deterministic_dr import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
 
 from hydrax.tasks.pusht_franka import PushTFranka
+import jax
+import jax.numpy as jnp
 
 """
 Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 # Define the task (cost and dynamics)
-task = PushTFranka(ik_type = 'pinv')
+task = PushTFranka(ik_type = 'pinv',
+                planning_horizon=12,
+                sim_steps_per_control_step=5,
+                ctrl_limits={"u_min": jnp.array([-0.35, -0.35]), 
+                            "u_max": jnp.array([0.35, 0.35])},
+                trace_sites=["ee_site"],
+                actuation_type='velocity',)
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
@@ -30,7 +38,7 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-seed = 43 # 36, ... 
+seed = 84 # 36, ... 
 
 # Set the controller based on command-line arguments
 if args.algorithm is None: 
@@ -40,7 +48,7 @@ elif args.algorithm == "mppi":
     ctrl = MPPI(
         task,
         num_samples=128,
-        noise_level=0.3,
+        noise_level=0.25,
         temperature=0.1,
         num_randomizations=1,
         colorize_noise=False,   # !experimental
@@ -93,9 +101,10 @@ elif args.algorithm == "anmtp":
             beta = 0.25,
             beta_lr = 0.1,        # adaptation step size
             beta_min = 0.05,
-            beta_max = 0.35,
-            alpha=0.05,
-            interpolation='bspline',
+            beta_max = 0.5,
+            alpha=0.1,
+            interpolation='akima',
+            shift = False,
             num_randomizations=1,
             seed=seed,
         )
@@ -110,7 +119,7 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=25,
+    frequency=15,
     show_traces=True,
     trace_width=0.55,
     max_traces=16,
@@ -119,7 +128,7 @@ run_interactive(
     record_video=False,
     max_step=500,
     seed=seed,
-    error_log_path=error_log,
+    # error_log_path=error_log,
     )
 
 

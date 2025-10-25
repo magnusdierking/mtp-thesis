@@ -130,6 +130,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         f"simulating at {1.0/mj_model.opt.timestep} Hz"
     )
 
+    mj_model, mj_data = controller.task.reset(seed=seed)
+    controller.set_seed(seed)
+
     # Initialize the controller
     mjx_data = mjx.put_data(mj_model, mj_data)
     mjx_data = mjx_data.replace(
