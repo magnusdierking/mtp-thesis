@@ -1,8 +1,12 @@
 <mujoco model="bugtrap">
-  <option timestep="0.01" iterations="4" ls_iterations="4"
-          o_solimp="0.999 0.999 0.001 0.5 2" o_solref="-4000 -100">
+  <option timestep="0.01" iterations="10" ls_iterations="20" impratio="5"
+          o_solimp="0.9 0.95 0.001 0.5 2" o_solref="-200 -20">
     <flag contact="enable" eulerdamp="disable"/>
   </option>
+
+  <default>
+    <geom friction="0 0 0" condim="1"/>
+  </default>
 
   <worldbody>
     <!-- Non-colliding mocap goal -->
@@ -18,16 +22,15 @@
       <geom type="box" size="0.005 0.30 0.02" mass="50"
             contype="1" conaffinity="2" rgba="0.7 0.7 0.7 1"/>
     </body>
+    <!-- Right wall at x = 0.30 -->
+    <body name="wall_right" pos="0.305 0 0.01">
+      <geom type="box" size="0.005 0.30 0.02" mass="50"
+            contype="1" conaffinity="2" rgba="0.7 0.7 0.7 1"/>
+    </body>
 
     <!-- Bottom wall at y = -0.30 -->
     <body name="wall_bottom" pos="0 -0.305 0.01">
       <geom type="box" size="0.30 0.005 0.02" mass="50"
-            contype="1" conaffinity="2" rgba="0.7 0.7 0.7 1"/>
-    </body>
-
-    <!-- Right wall at x = 0.30 -->
-    <body name="wall_right" pos="0.305 0 0.01">
-      <geom type="box" size="0.005 0.30 0.02" mass="50"
             contype="1" conaffinity="2" rgba="0.7 0.7 0.7 1"/>
     </body>
 
@@ -45,16 +48,28 @@
     </body>
 
     <!-- Lower inner bar at y = -0.10, spanning x ∈ [-0.10, 0.10] -->
-    <body name="wall_inner_y_minus" pos="0.000 -0.100 0.01">
-      <geom type="box" size="0.095 0.005 0.02" mass="25"
+    <body name="wall_inner_y_minus" pos="0.02 -0.100 0.01">
+      <geom type="box" size="0.075 0.005 0.02" mass="25"
             contype="1" conaffinity="2" rgba="0.7 0.7 0.7 1"/>
     </body>
 
     <!-- Upper inner bar at y = 0.10 -->
-    <body name="wall_inner_y_plus" pos="0.000 0.100 0.01">
-      <geom type="box" size="0.095 0.005 0.02" mass="25"
+    <body name="wall_inner_y_plus" pos="0.02 0.100 0.01">
+      <geom type="box" size="0.075 0.005 0.02" mass="25"
             contype="1" conaffinity="2" rgba="0.7 0.7 0.7 1"/>
     </body>
+
+    <!-- Lower inner bar at y = -0.10, spanning x ∈ [-0.10, 0.10] -->
+    <!-- <body name="wall_inner_y_minus" pos="0.000 -0.100 0.01">
+      <geom type="box" size="0.095 0.005 0.02" mass="25"
+            contype="1" conaffinity="2" rgba="0.7 0.7 0.7 1"/>
+    </body> -->
+
+    <!-- Upper inner bar at y = 0.10 -->
+    <!-- <body name="wall_inner_y_plus" pos="0.000 0.100 0.01">
+      <geom type="box" size="0.095 0.005 0.02" mass="25"
+            contype="1" conaffinity="2" rgba="0.7 0.7 0.7 1"/>
+    </body> -->
 
     <!-- Moving particle -->
     <body name="pointmass" pos="0 0 .01">
