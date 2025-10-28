@@ -4,6 +4,7 @@ from hydrax.algs import MPPI, MTP, CEM
 from hydrax.algs.mtp.an_mtp_opt import AnMTP
 # from hydrax.algs.mtp.an_mtp_dr import AnMTP
 
+from hydrax.utils.files import get_data_path
 from hydrax.simulation.deterministic import run_interactive
 # from hydrax.simulation.deterministic_dr import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
@@ -18,7 +19,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 
 # Define the task (cost and dynamics)
 task = PushTFranka(ik_type = 'pinv',
-                planning_horizon=12,
+                planning_horizon=15,
                 sim_steps_per_control_step=5,
                 ctrl_limits={"u_min": jnp.array([-0.35, -0.35]), 
                             "u_max": jnp.array([0.35, 0.35])},
@@ -38,7 +39,18 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-seed = 84 # 36, ... 
+
+
+seed = 84545 # 36, ... 
+num_samples = 1028
+num_randomizations = 1
+
+data = {}
+path = get_data_path() / "pushT_sim" / args.algorithm 
+if not path.exists():       
+    path.mkdir(parents=True, exist_ok=True)
+path = path / f"seed_{seed}.csv"
+
 
 # Set the controller based on command-line arguments
 if args.algorithm is None: 
@@ -47,10 +59,10 @@ elif args.algorithm == "mppi":
     print("Running MPPI")
     ctrl = MPPI(
         task,
-        num_samples=128,
+        num_samples=num_samples,
         noise_level=0.25,
         temperature=0.1,
-        num_randomizations=1,
+        num_randomizations=num_randomizations,
         colorize_noise=False,   # !experimental
         alpha=0.1,
         seed=seed
@@ -61,11 +73,12 @@ elif args.algorithm == "cem":
     print("Running CEM")
     ctrl = CEM(
         task,
-        num_samples=128,
+        num_samples=num_samples,
         num_elites=12,
         sigma_start=0.2,
         sigma_min=0.05,
         alpha=0.1,
+        num_randomizations=num_randomizations,
     )
     error_log = "./../data/error_log_pushT/cem_{seed}.npy".format(seed=seed)
     
@@ -73,7 +86,7 @@ elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
         task,
-        num_samples=128,
+        num_samples=num_samples,
         M=3, # horizon via control points
         N=32, # samples 
         sigma_min=0.1,
@@ -82,7 +95,7 @@ elif args.algorithm == "mtp":
         beta=0.35,
         alpha=0.1,
         interpolation='bspline',
-        num_randomizations=1,
+        num_randomizations=num_randomizations,
         seed=seed,
     )
     error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
@@ -91,7 +104,7 @@ elif args.algorithm == "anmtp":
     print("Running AnMTP")
     ctrl = AnMTP(
             task,
-            num_samples=128,
+            num_samples=num_samples,
             M=3, # horizon via control points
             N=32, # samples 
             sigma_min=0.05,
@@ -105,7 +118,7 @@ elif args.algorithm == "anmtp":
             alpha=0.1,
             interpolation='akima',
             shift = False,
-            num_randomizations=1,
+            num_randomizations=num_randomizations,
             seed=seed,
         )
     error_log = "./../data/error_log_pushT/anmtp_{seed}.npy".format(seed=seed)
@@ -128,7 +141,7 @@ run_interactive(
     record_video=False,
     max_step=500,
     seed=seed,
-    # error_log_path=error_log,
+    log_file=path.as_posix(),
     )
 
 

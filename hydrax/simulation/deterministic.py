@@ -1,6 +1,7 @@
 import time
 from typing import Sequence
 import csv
+from xml.parsers.expat import model
 
 from hydrax.algs.mtp.beta_scheduler import RatioEMAScheduler
 import jax
@@ -66,6 +67,42 @@ controller running one after the other in the same thread.
 #     dq = J_pseudo_inv @ tw
 #     return dq
   
+
+
+def quat_normalize(q):
+    return q / jnp.linalg.norm(q)
+
+def quat_conj(q):  # [w, x, y, z]
+    w, x, y, z = q
+    return jnp.array([w, -x, -y, -z])
+
+def quat_mul(q1, q2):
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    return jnp.array([
+        w1*w2 - x1*x2 - y1*y2 - z1*z2,
+        w1*x2 + x1*w2 + y1*z2 - z1*y2,
+        w1*y2 - x1*z2 + y1*w2 + z1*x2,
+        w1*z2 + x1*y2 - y1*x2 + z1*w2
+    ])
+
+def quat_error_body(qd, q):
+    """Right-invariant error q_e = qd * q^{-1} (error in current/body frame)."""
+    qd = quat_normalize(qd)
+    q  = quat_normalize(q)
+    qe = quat_mul(qd, quat_conj(q))
+    # Enforce shortest rotation (w >= 0)
+    return quat_to_rotvec(jnp.where(qe[0] < 0.0, -qe, qe))
+
+def quat_to_rotvec(qe, eps=1e-8):
+    """Quaternion (unit) -> rotation vector (axis * angle)."""
+    w, x, y, z = qe
+    w = jnp.clip(w, -1.0, 1.0)
+    angle = 2.0 * jnp.arccos(w)
+    s = jnp.sqrt(1.0 - w*w)
+    axis = jnp.where(s < eps, jnp.array([1.0, 0.0, 0.0]), jnp.array([x, y, z]) / s)
+    return angle * axis
+
 def differential_IK(
     model: mujoco.MjModel,
     data: mujoco.MjData,
@@ -79,29 +116,45 @@ def differential_IK(
     jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
     jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
 
-    mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
+    bodyid = model.body("ee_frame").id
+    mujoco.mj_jacBody(model, data, jacp, jacr, bodyid)
+
+    actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
+    actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
+
+    # get current joint positions
+    qpos = data.qpos.copy()
+    qnow = qpos[jnp.array(actuator_joint_idxs)]
+    qhome = np.array([ 0.51199203,  0.1014329,  -0.36340348, -2.9813132,   0.50339095,  3.06692214, -1.92271156])
 
     # Build jacobian
-    J = np.vstack((jacp, jacr))  # (6, n)
+    J = np.vstack((jacp, jacr))[:,np.array(actuator_joint_idxs)]  # (6, n)
+    J_pinv = np.linalg.pinv(J)
+    twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
 
-    # Compute dq with damped pseudo-inverse
-    J_pseudo_inv = J.T @ np.linalg.inv(J @ J.T + 1e-6 * np.eye(6))
+    N = np.eye(J.shape[1]) - J_pinv @ J
+    kp_ori = 2.0
+
+    ee_position_sensor = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
+    )
+    sensor_adr_pos = model.sensor_adr[ee_position_sensor]
+    ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
+
     ee_orientation_sensor = mujoco.mj_name2id(
             model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_quat"
         )
-
     sensor_adr = model.sensor_adr[ee_orientation_sensor]
     ee_quat = data.sensordata[sensor_adr : sensor_adr + 4]
-    goal_quat = jnp.array([0.0, 0.0, 0.0, 1.0])  # Assuming goal orientation is aligned with x-axis
-    e_rot = mjx._src.math.quat_sub(ee_quat, goal_quat)                                      # (3,)
+    ee_quat = np.array(ee_quat)
+    goal_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071])  # Assuming goal orientation is aligned with x-axis
+    goal_quat = np.array(goal_quat)
+    goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
 
-    # Commanded planar twist + corrective twist
-    twist_cmd = jnp.concatenate([world_site_vel_desired, jnp.zeros(4)])     # [vx, vy, 0, 0, 0, 0]
-    twist_err = jnp.concatenate([jnp.zeros(3), e_rot])                 # [ex, ey, ez, ewx, ewy, ewz]
-    twist = twist_cmd + twist_err
-    twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
+    temp = np.concatenate([world_site_vel_desired, np.array([-ee_pos[2]])])
+    twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
+    dq = J_pinv @ twist_err + N @ (kp_ori * (qhome - qnow))
 
-    dq = J_pseudo_inv @ twist
 
     return dq
 
@@ -356,12 +409,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     if controller.control_mapper is not None:
                         # print(f"Original control action: {u}")
                         u = differential_IK(
-                            mj_model,
-                            mj_data,
-                            controller.task.ee_body_id,
-                            u,  # Exclude base DOF
+                            model=mj_model,
+                            data=mj_data,
+                            # controller.task.ee_body_id,
+                            world_site_vel_desired=u,  # Exclude base DOF
                         )
-                    # print(f"Remapped control action: {u}")
+                        # print(f"Remapped control action: {u}")
                     
                     if controller.gravity_compensator:
                         # Gravity compensation for the robot only
@@ -371,9 +424,13 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                         mj_data.xfrc_applied[:] = 0.0        # clears any body-space external wrenches
                         mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
                         # Apply the control to the simulation
-                    mj_data.ctrl[:] = np.array(u[np.array(controller.task.actuator_joint_idxs)])
+                    # mj_data.ctrl[:] = np.array(u[np.array(controller.task.actuator_joint_idxs)])
+                    mj_data.ctrl[:] = np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
+                
+            state_error = np.linalg.norm(controller.task._get_position_err(mj_data) 
+                        + np.linalg.norm(controller.task._get_orientation_err(mj_data)))
             
             # Capture frame if recording
             if record_video and recorder.is_recording:
@@ -410,6 +467,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "qvel": np.array(mjx_data.qvel).tolist(),
                 "control": np.array(u).tolist(),
                 "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
+                "state_error": float(state_error),
                 "state_cost": float(rollouts.costs[0, 0]),
                 "success": task_success,
             })
@@ -433,7 +491,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     # Save logs to a CSV file if specified
     if log_file:
         with open(log_file, "w", newline="") as csvfile:
-            fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "control", "running_cost", "state_cost", "success"]
+            fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "control", "state_error", "running_cost", "state_cost", "success"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for log in logs:

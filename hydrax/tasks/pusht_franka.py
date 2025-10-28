@@ -90,7 +90,7 @@ class PushTFranka(Task):
         self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, 0.0])  # [w, x, y, z]
         # initial end effector
         self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-        self.goal_pos_ee = jnp.array([0.3, 0.0, 0.03]) #np.array([0.3, 0.0, 0.05])
+        self.goal_pos_ee = jnp.array([0.25, 0.0, 0.03]) #np.array([0.3, 0.0, 0.05])
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
@@ -102,8 +102,10 @@ class PushTFranka(Task):
         # mj_model.opt.ls_iterations = 20 # TODO Optimize
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
-        pos_x = np.random.uniform(low=-0.2, high=0.2)
-        pos_y = np.random.uniform(low=-0.15, high=0.05)
+        sign_x = np.random.choice([-1, 1])
+        pos_x = sign_x * np.random.uniform(low=0.05, high=0.25)
+        sign_y = np.random.choice([-1, 1])
+        pos_y = sign_y * np.random.uniform(low=-0.15, high=0.05)
         angle = np.random.uniform(np.pi/4, np.pi)
 
         # Assuming the block's pose is at the beginning of qpos
@@ -242,7 +244,7 @@ class PushTFranka(Task):
         # orientation_cost = jnp.norm(orientation_err)
         orientation_cost = jnp.sum(jnp.square(orientation_err))
         
-        total_goal_err = 8 * position_cost + orientation_cost
+        total_goal_err = 10 * position_cost + orientation_cost
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
@@ -250,7 +252,7 @@ class PushTFranka(Task):
         
         # TODO velocity error for the T ?
         control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
-        error = total_goal_err+ 0.25 * ee_block_distance_cost # + 0.05 * control_cost 
+        error = total_goal_err + 0.25 * ee_block_distance_cost # + 0.05 * control_cost 
         
         return error 
                                                                               
@@ -324,6 +326,7 @@ class PushTFranka(Task):
             d = data0.replace(qpos=qpos)
             d = mjx.forward(model, d)
             pos = d.xpos[body_id]                    # (3,)
+            # jax.debug.print("Quaternion: {q}", q=d.xquat[body_id])
             axis, angle = mjx._src.math.quat_to_axis_angle(d.xquat[body_id])
             rotvec = angle * axis                    # (3,)
             return jnp.concatenate([pos[:3], rotvec], axis=0)  # (6,)
@@ -372,17 +375,39 @@ class PushTFranka(Task):
         #         return dq
             
         
-            
-        def quat_to_mat(q):
+        def quat_normalize(q):
+            return q / jnp.linalg.norm(q)
+
+        def quat_conj(q):  # [w, x, y, z]
             w, x, y, z = q
-            ww, xx, yy, zz = w*w, x*x, y*y, z*z
-            wx, wy, wz = w*x, w*y, w*z
-            xy, xz, yz = x*y, x*z, y*z
+            return jnp.array([w, -x, -y, -z])
+
+        def quat_mul(q1, q2):
+            w1, x1, y1, z1 = q1
+            w2, x2, y2, z2 = q2
             return jnp.array([
-                [ww+xx-yy-zz,   2*(xy-wz),     2*(xz+wy)],
-                [2*(xy+wz),     ww-xx+yy-zz,   2*(yz-wx)],
-                [2*(xz-wy),     2*(yz+wx),     ww-xx-yy+zz]
+                w1*w2 - x1*x2 - y1*y2 - z1*z2,
+                w1*x2 + x1*w2 + y1*z2 - z1*y2,
+                w1*y2 - x1*z2 + y1*w2 + z1*x2,
+                w1*z2 + x1*y2 - y1*x2 + z1*w2
             ])
+
+        def quat_error_body(qd, q):
+            """Right-invariant error q_e = qd * q^{-1} (error in current/body frame)."""
+            qd = quat_normalize(qd)
+            q  = quat_normalize(q)
+            qe = quat_mul(qd, quat_conj(q))
+            # Enforce shortest rotation (w >= 0)
+            return quat_to_rotvec(jnp.where(qe[0] < 0.0, -qe, qe))
+
+        def quat_to_rotvec(qe, eps=1e-8):
+            """Quaternion (unit) -> rotation vector (axis * angle)."""
+            w, x, y, z = qe
+            w = jnp.clip(w, -1.0, 1.0)
+            angle = 2.0 * jnp.arccos(w)
+            s = jnp.sqrt(1.0 - w*w)
+            axis = jnp.where(s < eps, jnp.array([1.0, 0.0, 0.0]), jnp.array([x, y, z]) / s)
+            return angle * axis
 
         @jax.jit
         def ik_mapper_pinv(
@@ -399,24 +424,35 @@ class PushTFranka(Task):
             # Jacobian (6 x nv) restricted to actuated joints
             J_full = fk_jac(qpos)                      # (6, nv_total)
             J = J_full[:, self.actuator_joint_idxs]    # (6, n_act)
+            
+        
+            J_lin = J[:3, :]    # (3, n_act)
+            J_ang = J[3:, :]    # (3, n_act)
 
             # Current EE pose (replace fk_pose with your pose function)
             sensor_adr = self.model.sensor_adr[self.ee_orientation_sensor]
             ee_quat = data.sensordata[sensor_adr : sensor_adr + 4]
-            goal_quat = jnp.array([0.0, 0.0, 0.0, 1.0])  # Assuming goal orientation is aligned with x-axis
-            e_rot = mjx._src.math.quat_sub(ee_quat, goal_quat)                                      # (3,)
+
+            sensor_adr_pos = self.model.sensor_adr[self.ee_position_sensor]
+            ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
+
+            goal_quat = jnp.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071]) # Assuming goal orientation is aligned with x-axis
+            e_rot = quat_error_body(goal_quat, ee_quat)                                   # (3,)
 
             # Commanded planar twist + corrective twist
             twist_cmd = jnp.concatenate([control_xy, jnp.zeros(4)])     # [vx, vy, 0, 0, 0, 0]
-            twist_err = jnp.concatenate([jnp.zeros(3), e_rot])                 # [ex, ey, ez, ewx, ewy, ewz]
-            twist = twist_cmd + twist_err
+            temp = jnp.concatenate([control_xy, jnp.array([-ee_pos[2]])])
+            twist_err = jnp.concatenate([temp, e_rot])                 # [ex, ey, ez, ewx, ewy, ewz]
+            twist = twist_cmd # twist_err
 
-            # --- DLS via Cholesky ---
-            JJt = J @ J.T
-            L = jnp.linalg.cholesky(JJt + (lam * lam) * jnp.eye(6, dtype=J.dtype))
-            y = jax.scipy.linalg.solve_triangular(L, twist, lower=True)
-            z = jax.scipy.linalg.solve_triangular(L.T, y, lower=False)
-            dq = J.T @ z
+
+            # rotational correction via nullspace
+            N = jnp.eye(J.shape[1]) - jnp.linalg.pinv(J) @ J
+            # twist = twist_cmd + N @ (kp_ori * J_ang.T @ e_rot)
+            qnow = qpos[jnp.array(self.actuator_joint_idxs)]
+            qhome = jnp.array([ 0.51199203,  0.1014329,  -0.36340348, -2.9813132,   0.50339095,  3.06692214, -1.92271156])
+
+            dq = jnp.linalg.pinv(J) @ twist_err + N @ (kp_ori * (qhome - qnow))
 
             if self.actuation_type == 'position':
                 return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq

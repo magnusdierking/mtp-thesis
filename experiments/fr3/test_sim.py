@@ -129,6 +129,6 @@ mujoco.mj_printModel(model, '/tmp/model.txt')
     
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
-
+        data.ctrl[0] = 0.01 #q
         mujoco.mj_step(model, data)
         v.sync()

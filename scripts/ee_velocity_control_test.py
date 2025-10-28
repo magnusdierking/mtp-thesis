@@ -10,11 +10,70 @@ from scipy.linalg import null_space
 from scipy.spatial.transform import Rotation as R
 
 
+
+def quat_normalize(q):
+    return q / jnp.linalg.norm(q)
+
+def quat_conj(q):  # [w, x, y, z]
+    w, x, y, z = q
+    return jnp.array([w, -x, -y, -z])
+
+def quat_mul(q1, q2):
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    return jnp.array([
+        w1*w2 - x1*x2 - y1*y2 - z1*z2,
+        w1*x2 + x1*w2 + y1*z2 - z1*y2,
+        w1*y2 - x1*z2 + y1*w2 + z1*x2,
+        w1*z2 + x1*y2 - y1*x2 + z1*w2
+    ])
+
+def quat_error_body(qd, q):
+    """Right-invariant error q_e = qd * q^{-1} (error in current/body frame)."""
+    qd = quat_normalize(qd)
+    q  = quat_normalize(q)
+    qe = quat_mul(qd, quat_conj(q))
+    # Enforce shortest rotation (w >= 0)
+    return quat_to_rotvec(jnp.where(qe[0] < 0.0, -qe, qe))
+
+def quat_to_rotvec(qe, eps=1e-8):
+    """Quaternion (unit) -> rotation vector (axis * angle)."""
+    w, x, y, z = qe
+    w = jnp.clip(w, -1.0, 1.0)
+    angle = 2.0 * jnp.arccos(w)
+    s = jnp.sqrt(1.0 - w*w)
+    axis = jnp.where(s < eps, jnp.array([1.0, 0.0, 0.0]), jnp.array([x, y, z]) / s)
+    return angle * axis
+
+# def differential_IK(
+#     model: mujoco.MjModel,
+#     data: mujoco.MjData,
+#     body_id: str = "ee_frame",
+#     world_site_vel_desired: np.ndarray = np.zeros(6),
+# ) -> np.ndarray:
+#     """
+#     Differential IK for all dofs in the model.
+#     """
+#     # Geometric Jacobians at body_id
+#     jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
+#     jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
+
+#     mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
+
+#     # Build jacobian
+#     J = np.vstack((jacp, jacr))  # (6, n)
+
+#     # Compute dq with damped pseudo-inverse
+#     J_pseudo_inv = J.T @ np.linalg.inv(J @ J.T + 1e-6 * np.eye(6))
+#     dq = J_pseudo_inv @ world_site_vel_desired
+
+#     return dq
+
 def differential_IK(
     model: mujoco.MjModel,
     data: mujoco.MjData,
     body_id: str = "ee_frame",
-    world_site_vel_desired: np.ndarray = np.zeros(6),
+    world_site_vel_desired: np.ndarray = np.zeros(2),
 ) -> np.ndarray:
     """
     Differential IK for all dofs in the model.
@@ -23,14 +82,51 @@ def differential_IK(
     jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
     jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
 
-    mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
+    bodyid = model.body("ee_frame").id
+    mujoco.mj_jacBody(model, data, jacp, jacr, bodyid)
+
+    actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
+    actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
+
+    # J = J[:, actuator_joint_idxs]        # (6, n_act)
+    jacpr = jacp[:, actuator_joint_idxs]
+    jacrr = jacr[:, actuator_joint_idxs]
 
     # Build jacobian
     J = np.vstack((jacp, jacr))  # (6, n)
+    print("J shape:", J.shape)
+    J_pinv = np.linalg.pinv(J)
+    twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
+    print("twist shape:", twist.shape)
 
-    # Compute dq with damped pseudo-inverse
-    J_pseudo_inv = J.T @ np.linalg.inv(J @ J.T + 1e-6 * np.eye(6))
-    dq = J_pseudo_inv @ world_site_vel_desired
+    N = np.eye(J.shape[1]) - J_pinv @ J
+    kp_ori = 10.0
+
+    # J_pseudo_inv = J.T @ np.linalg.inv(J @ J.T + 1e-6 * np.eye(6))
+    
+    # dq = J_pseudo_inv @ twist
+
+    ee_orientation_sensor = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_quat"
+        )
+    sensor_adr = model.sensor_adr[ee_orientation_sensor]
+    ee_quat = data.sensordata[sensor_adr : sensor_adr + 4]
+    ee_quat = np.array(ee_quat)
+    goal_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071])  # Assuming goal orientation is aligned with x-axis
+    goal_quat = np.array(goal_quat)
+    goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
+
+    temp = np.concatenate([world_site_vel_desired, np.zeros(1)])
+    twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
+    dq = J_pinv @  twist_err #twist + N @ (kp_ori * J.T @ twist_err)
+    # #
+    # N = jnp.eye(J.shape[1]) - jnp.linalg.pinv(J) @ J
+    # kp_ori = 2.0
+    # dq = -jnp.linalg.pinv(J) @ (twist_cmd) + N @ (kp_ori * J.T @ twist_err)
+    #  twist = twist_cmd + twist_err
+    # twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
+
+    # dq = J_pseudo_inv @ twist
 
     return dq
 
@@ -62,7 +158,7 @@ def gravity_comp_torque(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarra
 
 if __name__ == "__main__":
     
-    seed = 10
+    seed = 154
 
     task = PushTFranka(actuation_type='velocity')
 
@@ -107,7 +203,7 @@ if __name__ == "__main__":
                 t = i * mj_model.opt.timestep
 
                 # Tangential EE velocity
-                radius = 0.5
+                radius = 0.3
                 omega = 0.05 * 2 * np.pi  # rad/s
                 if motion_type == 'x':
                     dx = radius * omega * np.sin(omega * (time.time() - simulation_start_time))  # vx
@@ -115,8 +211,8 @@ if __name__ == "__main__":
                 else:
                     dx = 0
                     dy = -radius * omega * np.cos(omega * (time.time() - simulation_start_time))  # vy
-                a = np.array([dx, dy, 0.0, 0.0, 0.0, 0.0])
-
+                # a = np.array([dx, dy, 0.0, 0.0, 0.0, 0.0])
+                a = np.array([dx, dy])
                 dq = differential_IK(
                     mj_model,
                     mj_data,
