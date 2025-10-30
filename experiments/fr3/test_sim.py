@@ -10,7 +10,7 @@ from hydrax.utils.utils import mujoco_to_scipy_quat
 
 
 # Load the MuJoCo model
-xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx.xml"
+xml_path = "./../../hydrax/models/fr3_pushT_pos/scene_mjx.xml"
 # xml_path = "./../../hydrax/models/pusht_franka_velocity/scene_mjx.xml"
 # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
 xml_dir = os.path.dirname(xml_path)
@@ -18,7 +18,7 @@ xml_dir = os.path.dirname(xml_path)
 # Change working directory temporarily
 os.chdir(xml_dir)
 model = mujoco.MjModel.from_xml_path(os.path.basename(xml_path))
-model.opt.gravity[:] = 0 
+# model.opt.gravity[:] = 0 
 data = mujoco.MjData(model)
 
 # model.opt.gravity[:] = 0.0
@@ -114,12 +114,12 @@ else:
 
 
 # initial control
-data.qpos[0] = 0.1
-data.qpos[1] = -0.1
-data.qpos[j_start:j_start+n_joints] = q
-data.qvel[:] = 0.0
-data.ctrl[:] = 0 #q
-mujoco.mj_forward(model, data) 
+# data.qpos[0] = 0.1
+# data.qpos[1] = -0.1
+# data.qpos[j_start:j_start+n_joints] = q
+# data.qvel[:] = 0.0
+data.ctrl[:] = q
+# mujoco.mj_forward(model, data) 
 
 
 
@@ -129,6 +129,6 @@ mujoco.mj_printModel(model, '/tmp/model.txt')
     
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
-        data.ctrl[0] = 0.01 #q
+        # data.ctrl[0] = 0.01 #q
         mujoco.mj_step(model, data)
         v.sync()

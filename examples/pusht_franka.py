@@ -18,13 +18,27 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 # Define the task (cost and dynamics)
+#velocity control
 task = PushTFranka(ik_type = 'pinv',
-                planning_horizon=15,
-                sim_steps_per_control_step=5,
-                ctrl_limits={"u_min": jnp.array([-0.35, -0.35]), 
-                            "u_max": jnp.array([0.35, 0.35])},
-                trace_sites=["ee_site"],
-                actuation_type='velocity',)
+                    planning_horizon=10,
+                    sim_steps_per_control_step=5,
+                    ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
+                                "u_max": jnp.array([0.4, 0.4])},
+                    trace_sites=["ee_site"],
+                    actuation_type='velocity',
+                    sampling_space="velocity",
+                )
+
+# position control
+# task = PushTFranka(ik_type = 'pinv',
+#                 planning_horizon=15,
+#                 sim_steps_per_control_step=5,
+#                 ctrl_limits={"u_min": jnp.array([0.35, 0.8]), 
+#                             "u_max": jnp.array([-0.35, 0.35])},
+#                 trace_sites=["ee_site"],
+#                 actuation_type='position',
+#                 sampling_space="position",
+#                 )
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
@@ -41,8 +55,8 @@ args = parser.parse_args()
 
 
 
-seed = 84545 # 36, ... 
-num_samples = 1028
+seed = 845545 # 36, ... 
+num_samples = 512
 num_randomizations = 1
 
 data = {}
@@ -109,15 +123,15 @@ elif args.algorithm == "anmtp":
             N=32, # samples 
             sigma_min=0.05,
             sigma_start=0.2,
-            num_elites=12,
+            num_elites=24,
             keep_elites=4,   # !experimental
             beta = 0.25,
             beta_lr = 0.1,        # adaptation step size
             beta_min = 0.05,
-            beta_max = 0.5,
-            alpha=0.1,
+            beta_max = 0.35,
+            alpha=0.2,
             interpolation='akima',
-            shift = False,
+            shift = True,
             num_randomizations=num_randomizations,
             seed=seed,
         )
@@ -132,10 +146,10 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=15,
+    frequency=10,
     show_traces=True,
     trace_width=0.55,
-    max_traces=16,
+    max_traces=32,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,

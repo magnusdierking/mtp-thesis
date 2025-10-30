@@ -18,6 +18,8 @@ from hydrax.utils.video import VideoRecorder
 from hydrax.algs.mtp.beta_scheduler import *
 import matplotlib.pyplot as plt
 
+from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
+
 """
 Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
@@ -66,48 +68,46 @@ controller running one after the other in the same thread.
 
 #     dq = J_pseudo_inv @ tw
 #     return dq
-  
 
+def ik(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    body_id: str = "ee_frame",
+    desired_xy: np.ndarray = np.zeros(2),
+    num_iters: int = 10,
+) -> np.ndarray:
 
-def quat_normalize(q):
-    return q / jnp.linalg.norm(q)
+    step_size = 0.05
+    actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
+    actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
 
-def quat_conj(q):  # [w, x, y, z]
-    w, x, y, z = q
-    return jnp.array([w, -x, -y, -z])
+    for _ in range(num_iters):
+        ee_position_sensor = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
+        )
+        sensor_adr_pos = model.sensor_adr[ee_position_sensor]
+        ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
 
-def quat_mul(q1, q2):
-    w1, x1, y1, z1 = q1
-    w2, x2, y2, z2 = q2
-    return jnp.array([
-        w1*w2 - x1*x2 - y1*y2 - z1*z2,
-        w1*x2 + x1*w2 + y1*z2 - z1*y2,
-        w1*y2 - x1*z2 + y1*w2 + z1*x2,
-        w1*z2 + x1*y2 - y1*x2 + z1*w2
-    ])
+        desired_xy_vel = np.clip(desired_xy - ee_pos[:2], -step_size, step_size)
 
-def quat_error_body(qd, q):
-    """Right-invariant error q_e = qd * q^{-1} (error in current/body frame)."""
-    qd = quat_normalize(qd)
-    q  = quat_normalize(q)
-    qe = quat_mul(qd, quat_conj(q))
-    # Enforce shortest rotation (w >= 0)
-    return quat_to_rotvec(jnp.where(qe[0] < 0.0, -qe, qe))
+        dq = differential_IK(
+            model,
+            data,
+            body_id=body_id,
+            world_site_vel_desired=desired_xy,
+        )
+        # Apply joint update
+        data.qpos[actuator_joint_idxs] += dq
+        mujoco.mj_forward(model, data)
+    return data.qpos[actuator_joint_idxs]
 
-def quat_to_rotvec(qe, eps=1e-8):
-    """Quaternion (unit) -> rotation vector (axis * angle)."""
-    w, x, y, z = qe
-    w = jnp.clip(w, -1.0, 1.0)
-    angle = 2.0 * jnp.arccos(w)
-    s = jnp.sqrt(1.0 - w*w)
-    axis = jnp.where(s < eps, jnp.array([1.0, 0.0, 0.0]), jnp.array([x, y, z]) / s)
-    return angle * axis
 
 def differential_IK(
     model: mujoco.MjModel,
     data: mujoco.MjData,
     body_id: str = "ee_frame",
     world_site_vel_desired: np.ndarray = np.zeros(2),
+    with_null_space: bool = True,
 ) -> np.ndarray:
     """
     Differential IK for all dofs in the model.
@@ -132,9 +132,6 @@ def differential_IK(
     J_pinv = np.linalg.pinv(J)
     twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
 
-    N = np.eye(J.shape[1]) - J_pinv @ J
-    kp_ori = 2.0
-
     ee_position_sensor = mujoco.mj_name2id(
         model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
     )
@@ -151,10 +148,14 @@ def differential_IK(
     goal_quat = np.array(goal_quat)
     goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
 
-    temp = np.concatenate([world_site_vel_desired, np.array([-ee_pos[2]])])
+    temp = np.concatenate([world_site_vel_desired, np.array([0.035-ee_pos[2]])])
     twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
-    dq = J_pinv @ twist_err + N @ (kp_ori * (qhome - qnow))
+    dq = J_pinv @ twist_err
 
+    if with_null_space:
+        N = np.eye(J.shape[1]) - J_pinv @ J
+        kp_ori = 10.0
+        dq += N @ (kp_ori * (qhome - qnow))
 
     return dq
 
@@ -391,8 +392,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     viewer.user_scn,
                 )
 
-            # for k in range(controller.nbr_actions):
-            
+      
             # Step the simulation
             for i in range(sim_steps_per_replan):
                 t = i * mj_model.opt.timestep
@@ -408,12 +408,21 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     # remap controls if a control mapper is provided
                     if controller.control_mapper is not None:
                         # print(f"Original control action: {u}")
-                        u = differential_IK(
-                            model=mj_model,
-                            data=mj_data,
-                            # controller.task.ee_body_id,
-                            world_site_vel_desired=u,  # Exclude base DOF
-                        )
+                        if controller.task.actuation_type == 'velocity':
+                            u = differential_IK(
+                                model=mj_model,
+                                data=mj_data,
+                                # controller.task.ee_body_id,
+                                world_site_vel_desired=u,  # Exclude base DOF
+                            )
+                        elif controller.task.actuation_type == 'position':
+                            # u = ik(
+                            #     model=mj_model,
+                            #     data=mj_data,
+                            #     body_id=controller.task.ee_body_id,
+                            #     desired_xy=u,
+                            # )
+                            pass
                         # print(f"Remapped control action: {u}")
                     
                     if controller.gravity_compensator:
@@ -424,7 +433,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                         mj_data.xfrc_applied[:] = 0.0        # clears any body-space external wrenches
                         mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
                         # Apply the control to the simulation
-                    # mj_data.ctrl[:] = np.array(u[np.array(controller.task.actuator_joint_idxs)])
+                    # mj_data.ctrl[:] = np.array(mj_data.qpos[np.array(controller.task.actuator_joint_idxs)])
                     mj_data.ctrl[:] = np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()

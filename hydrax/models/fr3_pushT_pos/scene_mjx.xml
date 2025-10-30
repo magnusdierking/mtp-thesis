@@ -1,66 +1,85 @@
 <mujoco model="fr3 scene">
 
-  <!-- Push T setup -->
-  <worldbody>
-    <camera name='top_view' pos="-0.276 -0.512 0.817" xyaxes="0.864 -0.503 0.000 0.404 0.694 0.596"/>
-
-      <body name="goal" mocap="true" pos="0.5 0.0 0.009" quat="1 0 0 -1">
-        <geom class="goal" name="goal_bottom" type="box" size=".025 0.05 0.025"/>
-        <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
-      </body>
-
-      <body name="block" pos="0.5 0.0 0.026" quat="1 0 0 -1">
-        <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" />
-        <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" />
-        <joint name="T_z" axis="0 0 1"/>
-        <geom name="bottom" type="box" size=".025 0.05 0.025" />
-        <geom name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0" />
-      </body>
-  </worldbody>
-
-
-  <!-- Robot model (keep this here or joint order will change)-->
-  <include file="fr3_pos_mjx.xml"/>
-
-  <!-- MJX optimization -->
-  <option cone="pyramidal" timestep="0.001" iterations="1" ls_iterations="5" >
-    <flag eulerdamp="disable"/>
-  </option>
-  <custom>
-    <numeric data="12" name="max_contact_points"/>
-  </custom>
-
-  <!-- Set goal as ghost -->
+ <!-- Default settings for friction -->
   <default>
+    <default class="tblock">
+      <!-- friction = [slide spin roll]; keep your values -->
+      <geom friction="0.8 0.05 0.002" 
+            solref="0.003 1.0" 
+            margin="0.005"
+            solimp="0.9 0.99 0.005"
+            condim="3"
+            contype="2" 
+            conaffinity="5"/>  
+    </default>
     <default class="goal">
       <geom conaffinity="0" contype="0" rgba="0 1 0 0.2"/>
     </default>
   </default>
 
+  <!-- Push T setup -->
   <worldbody>
-    <!-- Plane for the robot ee to move on -->
-    <body name="plane" pos="0 0 0.05">
-      <geom type="plane" size="1 1 0.01" pos="0 0 0" mass="0.001" contype="0" conaffinity="0" rgba="0.9 0.9 0.9 0.05" />
+    <camera name='top_view' pos="-0.276 -0.512 0.817" xyaxes="0.864 -0.503 0.000 0.404 0.694 0.596"/>
+
+      <body name="goal" mocap="true" pos="0.4 0.0 0.009" quat="1 0 0 -1">
+        <geom class="goal" name="goal_bottom" type="box" size=".025 0.05 0.025"/>
+        <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
+      </body>
+
+      <body name="block" pos="0.4 0.0 0.026" quat="1 0 0 -1">
+        <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" damping="1"/>
+        <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" damping="1"/>
+        <joint name="T_z" axis="0 0 1" damping="0.01"/>
+        <geom class="tblock" name="bottom" type="box" size=".025 0.052 0.025" pos="0.0 0.001 0.0" mass="0.0655"/>
+          <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
+          <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>
+        <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"  mass="0.07855"/>
+
+      </body>
+  </worldbody>
+
+
+  <!-- Robot model -->
+  <include file="fr3_pos_mjx.xml"/>
+
+
+  <option impratio="3"
+          solver="Newton"
+          jacobian="auto"
+          cone="pyramidal"
+          timestep="0.01" 
+          iterations="3"
+          ls_iterations="8">
+  <flag eulerdamp="disable" 
+        warmstart="enable"/>
+  </option>
+  <custom>
+    <numeric data="64" name="max_contact_points"/>
+    <numeric name="maxhullverts"   data="64"/>
+    <numeric data="256" name="max_geom_pairs"/>
+  </custom>
+
+
+  <size nconmax="1024"/>
+
+  <worldbody>
+
+    <body name="sphere_carrier" pos="0.3 0 0.035" quat="0 0.7071068 0.7071068 0"> 
+      <joint type="slide" axis="1 0 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             <!-- x -->
+      <joint type="slide" axis="0 1 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             <!-- y -->
+      <!-- <joint type="hinge" axis="0 0 1" damping="0" frictionloss="0" armature="0" stiffness="0"/>             yaw -->
+      <geom name="ee_sphere" type="sphere" size="0.015"
+            friction="0 0.0 0.0"
+            contype="0" conaffinity="0"/>
+      <site name="sphere_site" pos="0 0 0"/>
     </body>
-
-    <!-- <geom type="box" fromto="0 0 0 0.05 0 0" size="0.002" rgba="1 0 0 1"/>  -->
-    <!-- <geom type="box" fromto="0 0 0 0 0.05 0" size="0.002" rgba="0 1 0 1"/>          -->
-    <!-- <geom type="box" fromto="0 0 0 0 0 0.05" size="0.002" rgba="0 0 1 1"/>  -->
-
-    <!-- Slider site to attach ee to for constraint -->
-    <body name="plane_slider" pos="0.3 0.0 0.05">
-      <joint name="jx" type="slide" axis="1 0 0"/>
-      <joint name="jy" type="slide" axis="0 1 0"/>
-      <geom type="sphere" size="0.005" mass="0.001" contype="0" conaffinity="0" rgba="1 1 1 0.1"/>
-      <site name="slider_connect" pos="0 0 0" size="0.001" rgba="0 0 1 0.3"/>
-    </body>
-
   </worldbody>
 
   <!-- Equality constraint for end effector -->
   <equality>
-    <connect site1="ee_site" site2="slider_connect"
-            solref="0.002 1" solimp="1 1 0.001"/>
+    <connect site1="ee_site" site2="sphere_site"
+             solref="0.003 1.0" 
+             solimp="0.9 0.99 0.005"/>
   </equality>
 
   <sensor>
@@ -72,15 +91,6 @@
   <!-- Defines the spatial region to compute model statistics like mass, center of mass, etc. -->
   <statistic center="0.2 0 0.4" extent=".8"/>
 
-
-
-  <!-- Default -->
-  <visual>
-    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
-    <rgba haze="0.15 0.25 0.35 1"/>
-    <global azimuth="120" elevation="-20"/>
-  </visual>
-
   <asset>
     <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
     <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
@@ -90,6 +100,8 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <geom name="floor" type="plane" size="0 0 0.05"
+          material="groundplane" friction="8 0.05 0.002" condim="3"
+          contype="4" conaffinity="3"/>  <!-- 3 = 1|2 (robot | objects) -->
   </worldbody>
 </mujoco>

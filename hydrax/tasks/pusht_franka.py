@@ -2,13 +2,15 @@ import time
 from typing import Dict
 import os 
 import jax
-# from jax import config
-# config.update("jax_log_compiles", True)  
+import jax.scipy as jsp
+from jax import lax
+from jaxlie import SE3
 
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
 import numpy as np
+from functools import partial
 
 from hydrax.files import get_root_path
 from hydrax.task_base import Task
@@ -16,7 +18,7 @@ from hydrax.task_base import Task
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 
-from hydrax.utils.utils import mujoco_to_scipy_quat
+from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
 
 
 class PushTFranka(Task):
@@ -28,9 +30,11 @@ class PushTFranka(Task):
         ctrl_limits = {"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
         trace_sites=["ee_site", "T_1", "T_2"],
         actuation_type: str = 'velocity',
+        sampling_space: str = 'velocity',
         ik_type: str = 'pinv',
     ):
         """Load the MuJoCo model and set task parameters."""
+        self.sampling_space = sampling_space
         self.actuation_type = actuation_type
         if actuation_type == 'position':
             mj_model = mujoco.MjModel.from_xml_path(
@@ -90,7 +94,7 @@ class PushTFranka(Task):
         self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, 0.0])  # [w, x, y, z]
         # initial end effector
         self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-        self.goal_pos_ee = jnp.array([0.25, 0.0, 0.03]) #np.array([0.3, 0.0, 0.05])
+        self.goal_pos_ee = jnp.array([0.35, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
@@ -103,9 +107,9 @@ class PushTFranka(Task):
         mj_data = mujoco.MjData(self.mj_model)
         # Randomize the block's position and orientation
         sign_x = np.random.choice([-1, 1])
-        pos_x = sign_x * np.random.uniform(low=0.05, high=0.25)
+        pos_x = sign_x * np.random.uniform(low=0.05, high=0.15)
         sign_y = np.random.choice([-1, 1])
-        pos_y = sign_y * np.random.uniform(low=-0.15, high=0.05)
+        pos_y = np.random.uniform(low=-0.1, high=0.15)
         angle = np.random.uniform(np.pi/4, np.pi)
 
         # Assuming the block's pose is at the beginning of qpos
@@ -121,9 +125,9 @@ class PushTFranka(Task):
 
         # IK loop parameters
         max_iters = 1_000
-        tolerance = 1e-6
+        tolerance = 1e-3
         damping = 100e-3
-        step_size = 1.2
+        step_size = 1.0
 
         ik_start_time = time.time()
         for i in range(max_iters):
@@ -178,7 +182,7 @@ class PushTFranka(Task):
                 q[j] = np.clip(q[j], low, high)
 
         else:
-            print("IK did not converge.")
+            print(f"IK did not converge. {err}, {np.linalg.norm(err)}")
 
         mj_data.qpos[self.actuator_joint_idxs] = q  # Set the robot's joint positions
 
@@ -332,9 +336,21 @@ class PushTFranka(Task):
             return jnp.concatenate([pos[:3], rotvec], axis=0)  # (6,)
 
         fk_jac = jax.jit(jax.jacrev(fk_fn))
+
         
+        if self.actuation_type == 'position':
+            return self.make_ik_mapper(type=self.ik_type, fk_jac=fk_jac)
+        elif self.actuation_type == 'velocity':
+            return self.make_differential_ik_mapper(type=self.ik_type, fk_jac=fk_jac)
+
+
+
+
+    def make_differential_ik_mapper(self, type: str = 'pinv', fk_jac = None):        
+            
+    
         @jax.jit
-        def ik_mapper_transpose(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
+        def diff_ik_mapper_transpose(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
             """
             control_xy: shape (2,) desired (vx, vy) in task space.
             Enforces zero z and rotational motion: J_rot * dq = 0.
@@ -346,74 +362,40 @@ class PushTFranka(Task):
 
             dq = J.T @ twist
             
-            if self.actuation_type == 'position':
+            if self.sampling_space == 'position':
                 return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
-            elif self.actuation_type == 'velocity':
+            elif self.sampling_space == 'velocity':
                 return dq
-        
-        # @jax.jit
-        # def ik_mapper_pinv(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
-        #     """
-        #     control: shape (6,) desired (vx, vy, vz, wx, wy, wz) in task space.
-        #     """
-        #     qpos = data.qpos
-        #     J = fk_jac(qpos)                       
-        #     J = J[:, self.actuator_joint_idxs]     
-        #     # Compute dq with damped pseudo-inverse
-        #     twist = jnp.concatenate([control_xy, jnp.zeros(4)]) 
-        #     # Apparently compiles better than inv
-        #     lam = 1e-3
-        #     JJt = J @ J.T
-        #     L = jnp.linalg.cholesky(JJt + (lam*lam) * jnp.eye(6, dtype=J.dtype))
-        #     y = jax.scipy.linalg.solve_triangular(L, twist, lower=True)
-        #     z = jax.scipy.linalg.solve_triangular(L.T, y, lower=False)
-        #     dq = J.T @ z
             
-        #     if self.actuation_type == 'position':
-        #         return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
-        #     elif self.actuation_type == 'velocity':
-        #         return dq
-            
-        
-        def quat_normalize(q):
-            return q / jnp.linalg.norm(q)
-
-        def quat_conj(q):  # [w, x, y, z]
-            w, x, y, z = q
-            return jnp.array([w, -x, -y, -z])
-
-        def quat_mul(q1, q2):
-            w1, x1, y1, z1 = q1
-            w2, x2, y2, z2 = q2
-            return jnp.array([
-                w1*w2 - x1*x2 - y1*y2 - z1*z2,
-                w1*x2 + x1*w2 + y1*z2 - z1*y2,
-                w1*y2 - x1*z2 + y1*w2 + z1*x2,
-                w1*z2 + x1*y2 - y1*x2 + z1*w2
-            ])
-
-        def quat_error_body(qd, q):
-            """Right-invariant error q_e = qd * q^{-1} (error in current/body frame)."""
-            qd = quat_normalize(qd)
-            q  = quat_normalize(q)
-            qe = quat_mul(qd, quat_conj(q))
-            # Enforce shortest rotation (w >= 0)
-            return quat_to_rotvec(jnp.where(qe[0] < 0.0, -qe, qe))
-
-        def quat_to_rotvec(qe, eps=1e-8):
-            """Quaternion (unit) -> rotation vector (axis * angle)."""
-            w, x, y, z = qe
-            w = jnp.clip(w, -1.0, 1.0)
-            angle = 2.0 * jnp.arccos(w)
-            s = jnp.sqrt(1.0 - w*w)
-            axis = jnp.where(s < eps, jnp.array([1.0, 0.0, 0.0]), jnp.array([x, y, z]) / s)
-            return angle * axis
+            # @jax.jit
+            # def ik_mapper_pinv(data: mjx.Data, control_xy: jax.Array) -> jax.Array:
+            #     """
+            #     control: shape (6,) desired (vx, vy, vz, wx, wy, wz) in task space.
+            #     """
+            #     qpos = data.qpos
+            #     J = fk_jac(qpos)                       
+            #     J = J[:, self.actuator_joint_idxs]     
+            #     # Compute dq with damped pseudo-inverse
+            #     twist = jnp.concatenate([control_xy, jnp.zeros(4)]) 
+            #     # Apparently compiles better than inv
+            #     lam = 1e-3
+            #     JJt = J @ J.T
+            #     L = jnp.linalg.cholesky(JJt + (lam*lam) * jnp.eye(6, dtype=J.dtype))
+            #     y = jax.scipy.linalg.solve_triangular(L, twist, lower=True)
+            #     z = jax.scipy.linalg.solve_triangular(L.T, y, lower=False)
+            #     dq = J.T @ z
+                
+            #     if self.actuation_type == 'position':
+            #         return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
+            #     elif self.actuation_type == 'velocity':
+            #         return dq
+                
 
         @jax.jit
-        def ik_mapper_pinv(
+        def diff_ik_mapper_pinv(
             data: mjx.Data,
             control_xy: jax.Array,        
-            kp_ori: float = 2.0,
+            kp_ori: float = 10.0,
             lam: float = 1e-3,
         ) -> jax.Array:
             """
@@ -441,7 +423,7 @@ class PushTFranka(Task):
 
             # Commanded planar twist + corrective twist
             twist_cmd = jnp.concatenate([control_xy, jnp.zeros(4)])     # [vx, vy, 0, 0, 0, 0]
-            temp = jnp.concatenate([control_xy, jnp.array([-ee_pos[2]])])
+            temp = jnp.concatenate([control_xy, jnp.array([0.035-ee_pos[2]])])
             twist_err = jnp.concatenate([temp, e_rot])                 # [ex, ey, ez, ewx, ewy, ewz]
             twist = twist_cmd # twist_err
 
@@ -454,15 +436,86 @@ class PushTFranka(Task):
 
             dq = jnp.linalg.pinv(J) @ twist_err + N @ (kp_ori * (qhome - qnow))
 
-            if self.actuation_type == 'position':
+            if self.sampling_space == 'position':
                 return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
-            elif self.actuation_type == 'velocity':
+            elif self.sampling_space == 'velocity':
                 return dq
 
 
-        if self.ik_type == 'transpose':
+        if type == 'transpose':
+            return diff_ik_mapper_transpose
+        elif type == 'pinv':
+            return diff_ik_mapper_pinv
+
+
+    def make_ik_mapper(self, type: str = 'pinv', fk_jac = None):    
+        """
+        IK mapping function from task to joint space, 
+        JIT friendly to be used inside optimize
+        """
+
+        
+        @jax.jit
+        def ik_mapper_transpose(data: mjx.Data, desired_pose: jax.Array) -> jax.Array:
+            """
+            desired_pose: shape (6,) desired (x, y, z, rotvec(3)) in task space.
+            """
+            qpos = data.qpos
+            J = fk_jac(qpos)                       
+            J = J[:, self.actuator_joint_idxs]     
+            current_pose = fk_jac(qpos)           
+            pose_err = desired_pose - current_pose  
+            dq = J.T @ pose_err
+            
+            if self.sampling_space == 'position':
+                return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
+            elif self.sampling_space == 'velocity':
+                return dq
+        @jax.jit
+        def ik_mapper_pinv(
+            data,
+            desired_xy: jnp.ndarray, #x,y 
+            # actuator_joint_idxs: jnp.ndarray,
+            num_iters: int = 20,
+            step_size: float = 1.0,
+            damping: float = 1e-3,
+        ) -> jnp.ndarray:
+            
+            goal_quat = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # wxyz
+            desired_pose = SE3(wxyz_xyz=jnp.concatenate([goal_quat, jnp.array([desired_xy[0], desired_xy[1], 0.03])]))
+            qpos0 = data.qpos  # treat as immutable; we just read the initial state
+
+            def body_fn(_i, qpos, data):
+                # Jacobian restricted to actuated joints
+                J = fk_jac(qpos)[:, self.actuator_joint_idxs]          # (6, n_act)
+
+                # Current task-space pose and error
+                # current_pose = fk_pose(qpos)                      # (6,)
+                # forward kinematics function
+                data = data.replace(qpos=qpos)
+                data = mjx.forward(self.model, data)
+                current_pose = SE3(wxyz_xyz=jnp.concatenate([data.xquat[self.ee_body_id], data.xpos[self.ee_body_id]]))
+
+                delta_pose = desired_pose.multiply(current_pose.inverse())
+                pose_err = delta_pose.log()                       # (6,)  (linear, angular)
+                
+                # Damped least-squares (via Cholesky on JJ^T + λ^2 I)
+                JJt = J @ J.T                                     # (6, 6)
+                L = jnp.linalg.cholesky(JJt + (damping**2) * jnp.eye(6, dtype=J.dtype))
+                y = jsp.linalg.solve_triangular(L, pose_err, lower=True)
+                z = jsp.linalg.solve_triangular(L.T, y, lower=False)
+                dq_act = J.T @ z                                  # (n_act,)
+
+                # Scatter into full q-space and take a step
+                dq_full = jnp.zeros_like(qpos).at[jnp.array(self.actuator_joint_idxs)].set(dq_act)
+                qpos_next = qpos + step_size * dq_full
+                return qpos_next
+            
+
+            qpos_final = lax.fori_loop(0, num_iters, partial(body_fn, data=data), qpos0)
+            return qpos_final[jnp.array(self.actuator_joint_idxs)]
+                    
+        if type == 'transpose':
             return ik_mapper_transpose
-        elif self.ik_type == 'pinv':
+        elif type == 'pinv':
             return ik_mapper_pinv
-
-
