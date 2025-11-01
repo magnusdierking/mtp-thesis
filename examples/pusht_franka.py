@@ -56,7 +56,7 @@ args = parser.parse_args()
 
 
 seed = 845545 # 36, ... 
-num_samples = 512
+num_samples = 64
 num_randomizations = 1
 
 data = {}
@@ -131,7 +131,7 @@ elif args.algorithm == "anmtp":
             beta_max = 0.35,
             alpha=0.2,
             interpolation='akima',
-            shift = True,
+            shift = False,
             num_randomizations=num_randomizations,
             seed=seed,
         )

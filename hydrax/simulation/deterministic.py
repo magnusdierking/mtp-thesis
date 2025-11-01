@@ -437,10 +437,13 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     mj_data.ctrl[:] = np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
-                
+            # data    
             state_error = np.linalg.norm(controller.task._get_position_err(mj_data) 
                         + np.linalg.norm(controller.task._get_orientation_err(mj_data)))
-            
+            # only for pusht
+            sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
+            ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
+
             # Capture frame if recording
             if record_video and recorder.is_recording:
                 renderer.update_scene(mj_data, viewer.cam)
@@ -472,8 +475,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "step": step,
                 "sim_time": float(mjx_data.time),
                 "plan_time": plan_time,
-                "qpos": np.array(mjx_data.qpos).tolist(),
-                "qvel": np.array(mjx_data.qvel).tolist(),
+                "qpos": np.array(mj_data.qpos).tolist(),
+                "qvel": np.array(mj_data.qvel).tolist(),
+                "ee_pos": np.array(ee_pos).tolist(),
                 "control": np.array(u).tolist(),
                 "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
                 "state_error": float(state_error),
@@ -500,7 +504,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     # Save logs to a CSV file if specified
     if log_file:
         with open(log_file, "w", newline="") as csvfile:
-            fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "control", "state_error", "running_cost", "state_cost", "success"]
+            fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "ee_pos", "control", "state_error", "running_cost", "state_cost", "success"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for log in logs:
