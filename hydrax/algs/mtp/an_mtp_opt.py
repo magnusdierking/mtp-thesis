@@ -270,7 +270,7 @@ class AnMTP(SamplingBasedController):
         is_mtp_slot = (tail_idx < K) # number of elites in MTP slots
         denom = jnp.maximum(1, is_tail.sum())  # avoid div-by-zero if all elites pick slot 0
         if self.beta_strategy == "task":
-            new_beta = params.beta  # no adaptation
+            new_beta = params.beta
         elif self.beta_strategy == "greedy":
             # increase beta if best elite is MTP, decrease otherwise
             new_beta = jnp.where(
@@ -306,10 +306,10 @@ class AnMTP(SamplingBasedController):
         return params.spline[idx]
 
     # Optional manual override
-    def update_beta(self, beta: float):
-        self.beta = float(jnp.clip(beta, self.beta_min, self.beta_max))
-        
-        
+    def update_beta(self, beta: float, params: AnMTPParams) -> AnMTPParams:
+        # self.beta = float(jnp.clip(beta, self.beta_min, self.beta_max))
+        return params.replace(beta=beta)
+
     # ----------------------
     # Experimental
     def colorize_time_series(self, noise, remove_dc=True, eps=1e-8):

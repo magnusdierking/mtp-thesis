@@ -32,6 +32,7 @@ class PushTFranka(Task):
         actuation_type: str = 'velocity',
         sampling_space: str = 'velocity',
         ik_type: str = 'pinv',
+        det_init: dict = {},
     ):
         """Load the MuJoCo model and set task parameters."""
         self.sampling_space = sampling_space
@@ -94,23 +95,23 @@ class PushTFranka(Task):
         self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, 0.0])  # [w, x, y, z]
         # initial end effector
         self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-        self.goal_pos_ee = jnp.array([0.35, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
+        self.goal_pos_ee = jnp.array([0.45, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
+
+        self.det_init = det_init
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
         # Set the random seed for reproducibility
         np.random.seed(seed)
         mj_model = self.mj_model
-        # mj_model.opt.timestep = 0.002
-        # mj_model.opt.iterations = 20 # TODO Optimize
-        # mj_model.opt.ls_iterations = 20 # TODO Optimize
         mj_data = mujoco.MjData(self.mj_model)
-        # Randomize the block's position and orientation
+
         sign_x = np.random.choice([-1, 1])
-        pos_x = sign_x * np.random.uniform(low=0.05, high=0.15)
-        sign_y = np.random.choice([-1, 1])
-        pos_y = np.random.uniform(low=-0.1, high=0.15)
-        angle = np.random.uniform(np.pi/4, np.pi)
+        pos_x = self.det_init.get("block_pos_x", sign_x * np.random.uniform(low=0.1, high=0.25))
+        pos_y = self.det_init.get("block_pos_y", np.random.uniform(low=-0.1, high=0.15))
+        angle = self.det_init.get("block_angle", np.random.uniform(np.pi/4, np.pi))
+        self.goal_pos_ee = self.det_init.get("ee_goal_pos", self.goal_pos_ee)
+
 
         # Assuming the block's pose is at the beginning of qpos
         mj_data.qpos[0] = pos_x
@@ -248,7 +249,7 @@ class PushTFranka(Task):
         # orientation_cost = jnp.norm(orientation_err)
         orientation_cost = jnp.sum(jnp.square(orientation_err))
         
-        total_goal_err = 10 * position_cost + orientation_cost
+        total_goal_err = 20 * position_cost + orientation_cost
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
@@ -256,7 +257,7 @@ class PushTFranka(Task):
         
         # TODO velocity error for the T ?
         control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
-        error = total_goal_err + 0.25 * ee_block_distance_cost # + 0.05 * control_cost 
+        error = total_goal_err + 0.05 * ee_block_distance_cost # + 0.05 * control_cost 
         
         return error 
                                                                               

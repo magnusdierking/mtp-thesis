@@ -67,7 +67,7 @@
 
   <worldbody>
 
-    <body name="sphere_carrier" pos="0.3 0 0.035" quat="0 0.7071068 0.7071068 0"> 
+    <body name="sphere_carrier" pos="0.45 0 0.035" quat="0 0.7071068 0.7071068 0"> 
       <joint type="slide" axis="1 0 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             <!-- x -->
       <joint type="slide" axis="0 1 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             <!-- y -->
       <!-- <joint type="hinge" axis="0 0 1" damping="0" frictionloss="0" armature="0" stiffness="0"/>             yaw -->

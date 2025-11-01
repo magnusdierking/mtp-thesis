@@ -325,11 +325,14 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             )
 
         # --- init ---
-        step = 0
-        #alpha = 0.15          
-        #kw = {"beta_min": 0.1, "beta_max": 0.6}
-        #sched = RatioEMAScheduler(alpha=alpha, **kw).init(mj_data.qpos)
+        if hasattr(controller, 'beta'):
+            alpha = 0.25          
+            sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
+            ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
+            kw = {"beta_min": controller.beta_min, "beta_max": controller.beta_max}
+            sched = RatioEMAScheduler(alpha=alpha, **kw).init(np.array(ee_pos))
 
+        step = 0 
         while viewer.is_running():
             step += 1
             start_time = time.time()
@@ -343,21 +346,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 time=mj_data.time,
             )
 
-            # ----- adaptive beta (single alpha) -----
-            # x = jnp.array(mj_data.qpos)
-            # beta = sched.update(x)
-            # controller.update_beta(float(beta))
-            # print(f"Updated beta to {float(beta):.3f}")
-            # -------------------------------------------
 
             # Do a replanning step
             plan_start = time.time()
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
             # policy_params, rollouts = controller.opt_step(mjx_data, policy_params)
             plan_time = time.time() - plan_start
-
-            if hasattr(controller, 'beta'):
-                controller.beta = float(policy_params.beta) # TODO
                 
             
             # Visualize the rollouts
@@ -444,6 +438,14 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
             ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
 
+            # ----- adaptive beta (single alpha) -----
+            # x = jnp.array(mj_data.qpos)
+            if hasattr(controller, 'beta'):
+                beta = sched.update(np.array(ee_pos))
+                policy_params = controller.update_beta(float(beta), policy_params)
+                print(f"Updated beta to {float(beta):.3f}")
+            # -------------------------------------------
+
             # Capture frame if recording
             if record_video and recorder.is_recording:
                 renderer.update_scene(mj_data, viewer.cam)
@@ -461,7 +463,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             task_success |= controller.task.success(mj_data)
             if hasattr(controller, 'beta'):
                 print(
-                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, success: {task_success:.3f}, beta: {controller.beta:.3f}", 
+                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, success: {task_success:.3f}, beta: {policy_params.beta:.3f}", 
                     end="\r",
                 )
             else:

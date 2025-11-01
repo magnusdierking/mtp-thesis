@@ -95,12 +95,13 @@ class CEM(SamplingBasedController):
 
         # The new proposal distribution is a Gaussian fit to the elites.
         mean = jnp.mean(rollouts.controls[elites], axis=0)
-        cov = jnp.maximum(
-            jnp.std(rollouts.controls[elites], axis=0), self.sigma_min
-        )
+        cov = params.cov
+        # cov = jnp.maximum(
+        #     jnp.std(rollouts.controls[elites], axis=0), self.sigma_min
+        # )
         mean = mean + self.alpha * (params.mean - mean)
-        cov = cov + self.alpha * (params.cov - cov)
-        cov = jnp.clip(cov, a_min=self.sigma_min, a_max=self.sigma_start)
+        # cov = cov + self.alpha * (params.cov - cov)
+        # cov = jnp.clip(cov, a_min=self.sigma_min, a_max=self.sigma_start)
 
         return params.replace(mean=mean, cov=cov)
 

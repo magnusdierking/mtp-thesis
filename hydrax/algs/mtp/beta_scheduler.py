@@ -46,6 +46,7 @@ class BetaScheduler(ABC):
         if x.size != self.dim:
             raise ValueError(f"state dim changed: got {x.size}, expected {self.dim}")
         beta = float(self._update_impl(x))
+        print(f"Raw beta: {beta:.3f}")
         self.beta = _clip(beta, self.beta_min, self.beta_max)
         return self.beta
 

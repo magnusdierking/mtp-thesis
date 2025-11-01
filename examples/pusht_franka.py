@@ -12,21 +12,31 @@ from hydrax.simulation.deterministic_headless import run_headless_simulation
 from hydrax.tasks.pusht_franka import PushTFranka
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 """
 Run an interactive simulation of the push-T task with predictive sampling.
 """
 
+
+det_init = {
+    "block_pos_x": 0.2,
+    "block_pos_y": 0.1,
+    "block_angle": np.pi/3,
+    "ee_goal_pos": [0.35, 0.0, 0.035]
+}
+
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=10,
-                    sim_steps_per_control_step=5,
+                    planning_horizon=8,
+                    sim_steps_per_control_step=3,
                     ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
                                 "u_max": jnp.array([0.4, 0.4])},
                     trace_sites=["ee_site"],
                     actuation_type='velocity',
                     sampling_space="velocity",
+                    det_init=det_init
                 )
 
 # position control
@@ -55,8 +65,8 @@ args = parser.parse_args()
 
 
 
-seed = 845545 # 36, ... 
-num_samples = 64
+seed = 445 # 36, ... 
+num_samples = 256
 num_randomizations = 1
 
 data = {}
@@ -125,12 +135,12 @@ elif args.algorithm == "anmtp":
             sigma_start=0.2,
             num_elites=24,
             keep_elites=4,   # !experimental
-            beta = 0.25,
+            beta = 0.1,
             beta_lr = 0.1,        # adaptation step size
             beta_min = 0.05,
             beta_max = 0.35,
-            alpha=0.2,
-            interpolation='akima',
+            alpha=0.1,
+            interpolation='bspline',
             shift = False,
             num_randomizations=num_randomizations,
             seed=seed,
@@ -155,7 +165,7 @@ run_interactive(
     record_video=False,
     max_step=500,
     seed=seed,
-    log_file=path.as_posix(),
+    #log_file=path.as_posix(),
     )
 
 
