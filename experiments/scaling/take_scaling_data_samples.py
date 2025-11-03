@@ -100,21 +100,6 @@ det_init = {
     "ee_goal_pos": [0.35, 0.0, 0.035]
 }
 
-# Define the task (cost and dynamics)
-#velocity control
-task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=12,
-                    sim_steps_per_control_step=4,
-                    ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
-                                "u_max": jnp.array([0.4, 0.4])},
-                    trace_sites=["ee_site"],
-                    actuation_type='velocity',
-                    sampling_space="velocity",
-                    det_init=det_init
-                )
-
-
-
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
     description="Run an interactive simulation of the walker task."
@@ -132,17 +117,32 @@ args = parser.parse_args()
 frequency=10
 max_step=200
 seed = 445 # 36, ... 
+horizon = 12
+steps_per_control = 4
+
+# Define the task (cost and dynamics)
+#velocity control
+task = PushTFranka(ik_type = 'pinv',
+                    planning_horizon=horizon,
+                    sim_steps_per_control_step=steps_per_control,
+                    ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
+                                "u_max": jnp.array([0.4, 0.4])},
+                    trace_sites=["ee_site"],
+                    actuation_type='velocity',
+                    sampling_space="velocity",
+                    det_init=det_init
+                )
 
 
 
-# num_samples_sweep = [128, 256, 512, 1024, 2048, 4096]
-# num_randomizations_sweep = [1, 2, 4, 8, 16, 32]
+num_samples_sweep = [128, 256, 512, 1024, 2048]
+num_randomizations_sweep = [1, 2, 4, 8, 16]
 
-num_samples_sweep = [128, 256]
-num_randomizations_sweep = [1,2]
+# num_samples_sweep = [128]
+# num_randomizations_sweep = [1]
 
 
-path = Path('./scaling_data_samples/')
+path = Path(f'./scaling_data_samples_{horizon}_{steps_per_control}/')
 path.mkdir(parents=True, exist_ok=True)
 path = path / f"{args.algorithm}.pkl"
 
