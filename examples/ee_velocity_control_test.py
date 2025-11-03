@@ -13,8 +13,10 @@ from scipy.spatial.transform import Rotation as R
 def differential_IK(
     model: mujoco.MjModel,
     data: mujoco.MjData,
-    body_id: str = "ee_frame",
+    body_id: int = 0,
     world_site_vel_desired: np.ndarray = np.zeros(6),
+    world_body_pos_des: np.ndarray = np.zeros(3),
+    world_body_quat_des: np.ndarray = np.array([1.0, 0.0, 0.0, 0.0]),
 ) -> np.ndarray:
     """
     Differential IK for all dofs in the model.
@@ -30,6 +32,18 @@ def differential_IK(
 
     # Compute dq with damped pseudo-inverse
     J_pseudo_inv = J.T @ np.linalg.inv(J @ J.T + 1e-6 * np.eye(6))
+    
+    world_body_quat = data.xquat[body_id]
+
+    error_angle = R.from_quat(world_body_quat_des, scalar_first=True) * R.from_quat(world_body_quat, scalar_first=True).inv()
+    error_angle = error_angle.as_rotvec()  # axis-angle representation
+
+    world_site_vel_desired[3:] = error_angle
+    
+    # only z position control
+    error_pos = world_body_pos_des - data.xpos[body_id]
+    world_site_vel_desired[2] = error_pos[2]
+    
     dq = J_pseudo_inv @ world_site_vel_desired
 
     return dq
@@ -65,7 +79,9 @@ if __name__ == "__main__":
         mj_model.opt.disableflags |= mujoco.mjtDisableBit.mjDSBL_GRAVITY
         mujoco.mj_forward(mj_model, mj_data)
     
-    ee_initial_quat = mj_data.xquat[task.ee_body_id]
+    ee_initial_pos = mj_data.xpos[task.ee_body_id].copy()
+    
+    ee_initial_quat = mj_data.xquat[task.ee_body_id].copy()
     ee_initial_euler = R.from_quat(ee_initial_quat, scalar_first=True).as_euler('xyz', degrees=True)
 
     planning_frequency = 250.0  # Hz
@@ -113,6 +129,8 @@ if __name__ == "__main__":
                     mj_data,
                     task.ee_body_id,
                     a,
+                    ee_initial_pos,
+                    ee_initial_quat,
                 )
                 
                 # Gravity compensation for the robot only
@@ -147,7 +165,12 @@ if __name__ == "__main__":
             ee_current_quat = mj_data.xquat[task.ee_body_id]
             ee_current_euler = R.from_quat(ee_current_quat, scalar_first=True).as_euler('xyz', degrees=True)
             ee_drift_euler = ee_current_euler - ee_initial_euler
-            msg = f"EE euler drift: {ee_drift_euler}"
+            # map the error to [-180, 180]
+            ee_drift_euler = (ee_drift_euler + 180.0) % 360.0 - 180.0
+            
+            ee_drift_pos = mj_data.xpos[task.ee_body_id] - ee_initial_pos
+
+            msg = f"EE pos drift: {np.array2string(ee_drift_pos, precision=4, suppress_small=True)} m | EE euler drift: {np.array2string(ee_drift_euler, precision=4, suppress_small=True)} deg"
 
             # Print some information
             real_time_rate = step_dt / (time.time() - start_time)
