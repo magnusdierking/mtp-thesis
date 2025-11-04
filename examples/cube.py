@@ -5,11 +5,11 @@ from evosax.algorithms import (
     DiffusionEvolution,
 )
 import mujoco
-from mtp.mtp import MTP
-from hydrax.algs import CEM, MPPI, Evosax, PredictiveSampling
+from hydrax.algs.mtp.an_mtp_opt import AnMTP
+from hydrax.algs import CEM, MPPI, Evosax, MTP, PredictiveSampling
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.tasks.cube import CubeRotation
-from hydrax.simulation.deterministic import run_interactive
+from hydrax.simulation.deterministic_clean import run_interactive
 
 """
 Run an interactive simulation of the cube rotation task.
@@ -36,6 +36,7 @@ subparsers.add_parser("cem", help="Cross-Entropy Method")
 subparsers.add_parser("oes", help="OpenAIES")
 subparsers.add_parser("de", help="Diffusion Evolution")
 subparsers.add_parser("mtp", help="MTP")
+subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
 seed = 111
@@ -82,6 +83,28 @@ elif args.algorithm == "mtp":
         num_randomizations=8,
         seed=seed,
     )
+elif args.algorithm == "anmtp":
+    print("Running AnMTP")
+    ctrl = AnMTP(
+            task,
+            num_samples=128,
+            M=2, # horizon via control points
+            N=32, # samples 
+            sigma_min=0.05,
+            sigma_start=0.5,
+            sigma_max=0.5,
+            num_elites=24,
+            keep_elites=4,   # !experimental
+            beta = 0.35,
+            beta_lr = 0.1,        # adaptation step size
+            beta_min = 0.05,
+            beta_max = 0.35,
+            alpha=0.1,
+            interpolation='akima',
+            shift = False,
+            num_randomizations=4,
+            seed=seed,
+        )
 elif args.algorithm == "oes":
     print("Running OpenES")
     ctrl = Evosax(task, Open_ES, num_samples=128, num_randomizations=8, seed=seed)

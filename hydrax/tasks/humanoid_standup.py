@@ -16,7 +16,7 @@ class HumanoidStandup(Task):
         self, planning_horizon: int = 3, sim_steps_per_control_step: int = 10
     ):
         """Load the MuJoCo model and set task parameters."""
-        mj_model = mujoco.MjModel.from_xml_path((get_root_path() / "hydrax" / "models" / "g1" / "scene.xml").as_posix())
+        mj_model = mujoco.MjModel.from_xml_path((get_root_path() / "models" / "g1" / "scene.xml").as_posix())
 
         super().__init__(
             mj_model,
@@ -29,6 +29,9 @@ class HumanoidStandup(Task):
         self.orientation_sensor_id = mj_model.sensor("imu_in_torso_quat").id
         self.velocity_sensor_id = mj_model.sensor("imu_in_torso_linvel").id
         self.torso_id = mj_model.site("imu_in_torso").id
+        
+        nbr_actuators = mj_model.nu
+        self.actuator_joint_idxs = np.arange(nbr_actuators).tolist()
 
         # Set the target height
         self.target_height = 0.9
@@ -101,3 +104,10 @@ class HumanoidStandup(Task):
         qvel = data.qvel.at[0:6].set(data.qvel[0:6] + v_err)
 
         return {"qpos": qpos, "qvel": qvel}
+
+
+    def make_control_mapper(self):
+        return None
+    
+    def make_gravity_compensator(self):
+        return None

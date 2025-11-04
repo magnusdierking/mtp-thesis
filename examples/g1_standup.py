@@ -3,9 +3,9 @@ from evosax.algorithms import (
     Open_ES,
     DiffusionEvolution,
 )
-from mtp.mtp import MTP
-from hydrax.algs import CEM, MPPI, Evosax, PredictiveSampling
-from hydrax.simulation.deterministic import run_interactive
+from hydrax.algs import MTP, CEM, MPPI, Evosax, PredictiveSampling
+from hydrax.algs.mtp.an_mtp_opt import AnMTP
+from hydrax.simulation.deterministic_clean import run_interactive
 from hydrax.tasks.humanoid_standup import HumanoidStandup
 
 
@@ -25,14 +25,16 @@ subparsers.add_parser("cem", help="Cross-Entropy Method")
 subparsers.add_parser("oes", help="OpenAIES")
 subparsers.add_parser("de", help="Diffusion Evolution")
 subparsers.add_parser("mtp", help="MTP")
+subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
 seed = 1111
-frequency = 100
+frequency = 50
 
 # Define the task (cost and dynamics)
 task = HumanoidStandup(
-    planning_horizon=3,
+    planning_horizon=4,
+    sim_steps_per_control_step=3,
 )
 
 # Set the controller based on command-line arguments
@@ -71,13 +73,35 @@ elif args.algorithm == "mtp":
         temperature=0.1,
         sigma_min=0.2,
         sigma_max=0.3,
-        num_elites=100,
+        num_elites=10,
         beta=0.05,
-        alpha=0.,
+        alpha=0.0,
         interpolation='akima',
         num_randomizations=4,
         seed=seed,
     )
+elif args.algorithm == "anmtp":
+    print("Running AnMTP")
+    ctrl = AnMTP(
+            task,
+            num_samples=128,
+            M=2, # horizon via control points
+            N=32, # samples 
+            sigma_min=0.05,
+            sigma_start=0.5,
+            sigma_max=0.5,
+            num_elites=24,
+            keep_elites=4,   # !experimental
+            beta = 0.35,
+            beta_lr = 0.1,        # adaptation step size
+            beta_min = 0.05,
+            beta_max = 0.5,
+            alpha=0.1,
+            interpolation='akima',
+            shift = False,
+            num_randomizations=4,
+            seed=seed,
+        )
 elif args.algorithm == "oes":
     print("Running OpenAIES")
     ctrl = Evosax(
