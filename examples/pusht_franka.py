@@ -18,42 +18,66 @@ import numpy as np
 Run an interactive simulation of the push-T task with predictive sampling.
 """
 
-
-
-# very easy, but local minimum appears
-# seed = 10
-# det_init = {
-#     "block_pos_x": 0.05,
-#     "block_pos_y": 0.05,
-#     "block_angle": np.pi/2,
-#     "ee_goal_pos": [0.35, 0.0, 0.035]
-# }
-
-# very easy, but local minimum appears
-seed = 42
-update_cov = False
+# for short horizon test
+seed = 100
+update_cov = True
+sigma_max = 0.75
+sigma_min = 0.05
+sigma_start = 0.2
 det_init = {
-    "block_pos_x": 0.1,
-    "block_pos_y": 0.05,
-    "block_angle": np.pi/6,
+    "block_pos_x": -0.1,
+    "block_pos_y": 0.1,
+    "block_angle": 3*np.pi/4,
     "ee_goal_pos": [0.35, 0.0, 0.035]
 }
 
-
-# seed = 445
-# update_cov = True
+# very easy, but local minimum appears
+# TODO make this even easier, just a straight push
+# seed = 10
+# update_cov = False
+# sigma_max = 0.75
+# sigma_min = 0.05
+# sigma_start = 0.2
 # det_init = {
-#     "block_pos_x": 0.2,
-#     "block_pos_y": 0.1,
-#     "block_angle": np.pi/3,
+#     "block_pos_x": 0.05,
+#     "block_pos_y": 0.05,
+#     "block_angle": np.pi/8,
+#     "ee_goal_pos": [0.55, 0.0, 0.035]
+# }
+
+# harder, but local minimum appears
+# seed = 42
+# update_cov = True
+# sigma_max = 0.75
+# sigma_min = 0.05
+# sigma_start = 0.2
+# det_init = {
+#     "block_pos_x": 0.1,
+#     "block_pos_y": 0.05,
+#     "block_angle": np.pi/6,
 #     "ee_goal_pos": [0.35, 0.0, 0.035]
 # }
+
+# very hard cna result in failure
+# seed = 445
+# update_cov = False
+# sigma_max = 0.75
+# sigma_min = 0.05
+# sigma_start = 0.2
+# det_init = {
+#     "block_pos_x": -0.2,
+#     "block_pos_y": 0.15,
+#     "block_angle": 3*np.pi/4,
+#     "ee_goal_pos": [0.35, 0.0, 0.035]
+# }
+
+
 
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=12,
-                    sim_steps_per_control_step=5,
+                    planning_horizon=8,
+                    sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
                                 "u_max": jnp.array([0.4, 0.4])},
                     trace_sites=["ee_site"],
@@ -87,7 +111,7 @@ subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
 num_samples = 256
-num_randomizations = 1
+num_randomizations = 10
 
 data = {}
 path = get_data_path() / "pushT_sim" / args.algorithm 
@@ -119,9 +143,9 @@ elif args.algorithm == "cem":
         task,
         num_samples=num_samples,
         num_elites=12,
-        sigma_start=0.2,
-        sigma_min=0.05,
-        sigma_max=0.5,
+        sigma_start=sigma_start,
+        sigma_min=sigma_min,
+        sigma_max=sigma_max,
         alpha=0.1,
         num_randomizations=num_randomizations,
     )
@@ -133,10 +157,10 @@ elif args.algorithm == "mtp":
         task,
         num_samples=num_samples,
         M=3, # horizon via control points
-        N=64, # samples 
-        sigma_min=0.05,
-        sigma_max=0.5,
-        sigma_start=0.2,
+        N=64, # samples
+        sigma_min=sigma_min,
+        sigma_max=sigma_max,
+        sigma_start=sigma_start,
         num_elites=12,
         beta=0.25,
         alpha=0.1,
@@ -152,10 +176,10 @@ elif args.algorithm == "anmtp":
             task,
             num_samples=num_samples,
             M=3, # horizon via control points
-            N=64, # samples 
-            sigma_min=0.05,
-            sigma_max=0.5,
-            sigma_start=0.2,
+            N=64, # samples
+            sigma_min=sigma_min,
+            sigma_max=sigma_max,
+            sigma_start=sigma_start,
             num_elites=24,
             keep_elites=4,   # !experimental
             beta = 0.1,
