@@ -26,6 +26,7 @@ class MTPParams:
     spline: jax.Array = None
     last_a_idx: int = 0
     state_bins: jax.Array = None  # Placeholder for state bins
+    beta: float = None      # Placeholder for beta value
   
 
 
@@ -135,7 +136,8 @@ class MTP(SamplingBasedController):
         return MTPParams(rng=rng, 
                          spline=spline, 
                          mean=mean, 
-                         cov=cov)
+                         cov=cov,
+                         beta=self.beta)
 
     
     def sample_controls(

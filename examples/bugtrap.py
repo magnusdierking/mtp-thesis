@@ -40,7 +40,7 @@ elif args.algorithm == "mppi":
     print("Running MPPI")
     ctrl = MPPI(task, 
                 num_samples=128, 
-                noise_level=0.35, 
+                noise_level=0.65, 
                 temperature=0.01)
     # save_path = "./../data/headless_bugtrap_mppi"
     save_path = "./../data/test"
