@@ -325,12 +325,21 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             )
 
         # --- init ---
-        if hasattr(controller, 'beta'):
-            alpha = 0.25          
+        if hasattr(policy_params, 'beta'):
             sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
             ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
-            kw = {"beta_min": controller.beta_min, "beta_max": controller.beta_max}
-            sched = RatioEMAScheduler(alpha=alpha, **kw).init(np.array(ee_pos))
+
+            sensor_adr_block = mj_model.sensor_adr[controller.task.block_global_position_sensor]
+            block_pos = mj_data.sensordata[sensor_adr_block : sensor_adr_block + 3]
+
+            error = jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) # only x,y
+            max_error = error
+            print(f"Initial position error: {error:.4f} m")
+            # alpha = 0.25          
+            # sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
+            # ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
+            # kw = {"beta_min": controller.beta_min, "beta_max": controller.beta_max}
+            # sched = RatioEMAScheduler(alpha=alpha, **kw).init(np.array(ee_pos))
 
         step = 0 
         while viewer.is_running():
@@ -440,10 +449,23 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
             # ----- adaptive beta (single alpha) -----
             # x = jnp.array(mj_data.qpos)
-            if hasattr(controller, 'beta'):
-                beta = sched.update(np.array(ee_pos))
-                policy_params = controller.update_beta(float(beta), policy_params)
-                print(f"Updated beta to {float(beta):.3f}")
+            if hasattr(policy_params, 'beta'):
+                sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
+                ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
+
+                sensor_adr_block = mj_model.sensor_adr[controller.task.block_global_position_sensor]
+                block_pos = mj_data.sensordata[sensor_adr_block : sensor_adr_block + 3]
+
+                error = jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) # only x,y
+                max_error = max(max_error, error)
+                
+                new_beta = controller.beta_max * (error / max_error)
+                new_beta = jnp.clip(new_beta, controller.beta_min, controller.beta_max)
+                policy_params = controller.update_beta(float(new_beta), policy_params)
+                print(f"Initial position error: {error:.4f} m")
+                # beta = sched.update(np.array(ee_pos))
+                # policy_params = controller.update_beta(float(beta), policy_params)
+                # print(f"Updated beta to {float(beta):.3f}")
             # -------------------------------------------
 
             # Capture frame if recording
@@ -461,7 +483,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             rtr = step_dt / (time.time() - start_time)
             # Check for task success
             task_success |= controller.task.success(mj_data)
-            if hasattr(controller, 'beta'):
+            if hasattr(policy_params, 'beta'):
                 print(
                     f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, success: {task_success:.3f}, beta: {policy_params.beta:.3f}", 
                     end="\r",
