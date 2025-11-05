@@ -46,20 +46,20 @@
   <include file="fr3_vel_mjx.xml"/>
 
 
-  <option impratio="3"
+  <option impratio="6"
           solver="Newton"
-          jacobian="auto"
+          jacobian="dense"
           cone="pyramidal"
-          timestep="0.01" 
-          iterations="3"
-          ls_iterations="6">
+          timestep="0.015" 
+          iterations="5"
+          ls_iterations="8">
   <flag eulerdamp="disable" 
         warmstart="enable"/>
   </option>
   <custom>
-    <numeric data="64" name="max_contact_points"/>
-    <numeric name="maxhullverts"   data="64"/>
-    <numeric data="256" name="max_geom_pairs"/>
+    <numeric data="32" name="max_contact_points"/>
+    <numeric name="maxhullverts"   data="32"/>
+    <numeric data="128" name="max_geom_pairs"/>
   </custom>
 
 

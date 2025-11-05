@@ -1,13 +1,13 @@
 import argparse
 
 from hydrax.algs import MPPI, MTP, CEM
-from hydrax.algs.mtp.an_mtp_opt import AnMTP
-# from hydrax.algs.mtp.an_mtp_dr import AnMTP
+# from hydrax.algs.mtp.an_mtp_opt import AnMTP
+from hydrax.algs.mtp.an_mtp_dr import AnMTP
 
 from hydrax.utils.files import get_data_path
 from hydrax.simulation.deterministic import run_interactive
 # from hydrax.simulation.deterministic_dr import run_interactive
-from hydrax.simulation.deterministic_headless import run_headless_simulation
+from deterministic_dr import run_interactive
 
 from hydrax.tasks.pusht_franka import PushTFranka
 import jax
@@ -18,38 +18,35 @@ import numpy as np
 Run an interactive simulation of the push-T task with predictive sampling.
 """
 
-# ----- for short horizon test , 0.025 dt, 8 times 2 horizon,-----
-# seed = 100
-# update_cov = True
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": -0.1,
-#     "block_pos_y": 0.15,
-#     "block_angle": np.pi/4,
-#     "ee_goal_pos": [0.35, 0.0, 0.035]
-# }
+# for short horizon test
+seed = 100
+update_cov = True
+sigma_max = 0.75
+sigma_min = 0.05
+sigma_start = 0.2
+det_init = {
+    "block_pos_x": -0.1,
+    "block_pos_y": 0.1,
+    "block_angle": np.pi/4,
+    "ee_goal_pos": [0.35, 0.0, 0.035]
+}
 
-# seed = 200
+# very easy, but local minimum appears
+# TODO make this even easier, just a straight push
+# seed = 10
 # update_cov = False
 # sigma_max = 0.75
 # sigma_min = 0.05
 # sigma_start = 0.2
 # det_init = {
 #     "block_pos_x": 0.05,
-#     "block_pos_y": 0.15,
-#     "block_angle": 3*np.pi/4,
-#     "ee_goal_pos": [0.45, 0.1, 0.035]
+#     "block_pos_y": 0.05,
+#     "block_angle": np.pi/8,
+#     "ee_goal_pos": [0.55, 0.0, 0.035]
 # }
 
-
-
-
-
-# ----- for medium horizon test -----
-# very easy
-# seed = 10
+# harder, but local minimum appears
+# seed = 42
 # update_cov = True
 # sigma_max = 0.75
 # sigma_min = 0.05
@@ -57,45 +54,32 @@ Run an interactive simulation of the push-T task with predictive sampling.
 # det_init = {
 #     "block_pos_x": 0.1,
 #     "block_pos_y": 0.05,
-#     "block_angle": np.pi/8,
-#     "ee_goal_pos": [0.6, 0.0, 0.035]
+#     "block_angle": np.pi/6,
+#     "ee_goal_pos": [0.35, 0.0, 0.035]
 # }
 
-# harder, local minimum appears
-# seed = 42
+# very hard cna result in failure
+# seed = 445
 # update_cov = False
 # sigma_max = 0.75
 # sigma_min = 0.05
 # sigma_start = 0.2
 # det_init = {
-#     "block_pos_x": 0.2,
-#     "block_pos_y": 0.1,
-#     "block_angle": np.pi/3,
-#     "ee_goal_pos": [0.45, 0.1, 0.035]
+#     "block_pos_x": -0.2,
+#     "block_pos_y": 0.15,
+#     "block_angle": 3*np.pi/4,
+#     "ee_goal_pos": [0.35, 0.0, 0.035]
 # }
-
-# very hard cna result in failure
-seed = 445
-update_cov = False
-sigma_max = 0.75
-sigma_min = 0.05
-sigma_start = 0.2
-det_init = {
-    "block_pos_x": -0.1,
-    "block_pos_y": 0.1,
-    "block_angle": 3*np.pi/4,
-    "ee_goal_pos": [0.35, 0.0, 0.035]
-}
 
 
 
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=16,
-                    sim_steps_per_control_step=4,
-                    ctrl_limits={"u_min": jnp.array([-0.5, -0.5]), 
-                                "u_max": jnp.array([0.5, 0.5])},
+                    planning_horizon=8,
+                    sim_steps_per_control_step=2,
+                    ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
+                                "u_max": jnp.array([0.4, 0.4])},
                     trace_sites=["ee_site"],
                     actuation_type='velocity',
                     sampling_space="velocity",
@@ -126,9 +110,8 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 2048
-num_randomizations = 1
-
+num_samples = 256
+num_randomizations = 10
 
 data = {}
 path = get_data_path() / "pushT_sim" / args.algorithm 
@@ -203,10 +186,10 @@ elif args.algorithm == "anmtp":
             sigma_start=sigma_start,
             num_elites=12,
             keep_elites=1,   # !experimental
-            beta = 0.25,
+            beta = 0.1,
             beta_lr = 0.1,        # adaptation step size
-            beta_min = 0.0,
-            beta_max = 0.35,
+            beta_min = 0.15,
+            beta_max = 0.5,
             alpha=0.1,
             interpolation='bspline',
             shift = False,

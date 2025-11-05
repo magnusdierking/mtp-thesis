@@ -99,6 +99,11 @@ class PushTFranka(Task):
 
         self.det_init = det_init
 
+        self.dr_ranges = {
+            "body_mass": (0.05, 1.0),
+            "geom_friction": (0.5, 1.5),
+        }
+
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
         # Set the random seed for reproducibility
@@ -266,9 +271,9 @@ class PushTFranka(Task):
         return self.running_cost(state, jnp.zeros(self.model.nu))
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
-        # new_mass = self.model.body_mass.at[self.T_bid].set(jax.random.uniform(rng, (), minval=0.05, maxval=1))
-        new_mass = self.model.body_mass.at[self.T_bid].set(jax.random.uniform(rng, (), minval=0.05, maxval=1)) # for 
+        new_mass = self.model.body_mass.at[self.T_bid].set(self.model.body_mass[self.T_bid] * jax.random.uniform(rng, (), minval=1.0, maxval=1.0))
         return {"body_mass": new_mass}
+    
         # n_geoms = self.model.geom_friction.shape[0]
         # multiplier = jax.random.uniform(rng, (n_geoms,), minval=0.5, maxval=1.5)
         # new_frictions = self.model.geom_friction.at[:, 0].set(
