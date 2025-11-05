@@ -2,7 +2,7 @@ import argparse
 
 from hydrax.algs import MPPI, MTP, CEM
 # from hydrax.algs.mtp.an_mtp_opt import AnMTP
-from hydrax.algs.mtp.an_mtp_dr import AnMTP
+from an_mtp_dr import AnMTP
 
 from hydrax.utils.files import get_data_path
 from hydrax.simulation.deterministic import run_interactive
@@ -19,65 +19,40 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 # for short horizon test
-seed = 100
-update_cov = True
-sigma_max = 0.75
-sigma_min = 0.05
-sigma_start = 0.2
-det_init = {
-    "block_pos_x": -0.1,
-    "block_pos_y": 0.1,
-    "block_angle": np.pi/4,
-    "ee_goal_pos": [0.35, 0.0, 0.035]
-}
-
-# very easy, but local minimum appears
-# TODO make this even easier, just a straight push
-# seed = 10
-# update_cov = False
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": 0.05,
-#     "block_pos_y": 0.05,
-#     "block_angle": np.pi/8,
-#     "ee_goal_pos": [0.55, 0.0, 0.035]
-# }
-
-# harder, but local minimum appears
-# seed = 42
+# seed = 100
 # update_cov = True
 # sigma_max = 0.75
 # sigma_min = 0.05
 # sigma_start = 0.2
 # det_init = {
-#     "block_pos_x": 0.1,
-#     "block_pos_y": 0.05,
-#     "block_angle": np.pi/6,
+#     "block_pos_x": -0.1,
+#     "block_pos_y": 0.1,
+#     "block_angle": np.pi/4,
 #     "ee_goal_pos": [0.35, 0.0, 0.035]
 # }
 
-# very hard cna result in failure
-# seed = 445
-# update_cov = False
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": -0.2,
-#     "block_pos_y": 0.15,
-#     "block_angle": 3*np.pi/4,
-#     "ee_goal_pos": [0.35, 0.0, 0.035]
-# }
+
+
+# harder, but local minimum appears
+seed = 42
+update_cov = True
+sigma_max = 0.75
+sigma_min = 0.05
+sigma_start = 0.2
+det_init = {
+    "block_pos_x": 0.1,
+    "block_pos_y": 0.05,
+    "block_angle": np.pi/6,
+    "ee_goal_pos": [0.35, 0.0, 0.035]
+}
 
 
 
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=8,
-                    sim_steps_per_control_step=2,
+                    planning_horizon=12,
+                    sim_steps_per_control_step=4,
                     ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
                                 "u_max": jnp.array([0.4, 0.4])},
                     trace_sites=["ee_site"],
@@ -86,16 +61,6 @@ task = PushTFranka(ik_type = 'pinv',
                     det_init=det_init
                 )
 
-# position control
-# task = PushTFranka(ik_type = 'pinv',
-#                 planning_horizon=15,
-#                 sim_steps_per_control_step=5,
-#                 ctrl_limits={"u_min": jnp.array([0.35, 0.8]), 
-#                             "u_max": jnp.array([-0.35, 0.35])},
-#                 trace_sites=["ee_site"],
-#                 actuation_type='position',
-#                 sampling_space="position",
-#                 )
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
@@ -110,11 +75,11 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 256
-num_randomizations = 10
+num_samples = 128
+num_randomizations = 20
 
 data = {}
-path = get_data_path() / "pushT_sim" / args.algorithm 
+path = get_data_path() / "dr_sim" / args.algorithm 
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_update_cov_{update_cov}.csv"
@@ -192,10 +157,8 @@ elif args.algorithm == "anmtp":
             beta_max = 0.5,
             alpha=0.1,
             interpolation='bspline',
-            shift = False,
             num_randomizations=num_randomizations,
             seed=seed,
-            update_cov=update_cov,
         )
     error_log = "./../data/error_log_pushT/anmtp_{seed}.npy".format(seed=seed)
     

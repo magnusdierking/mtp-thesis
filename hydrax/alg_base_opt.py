@@ -90,8 +90,13 @@ class SamplingBasedController(ABC):
             rng = jax.random.key(seed)
             rng, subrng = jax.random.split(rng)
             subrngs = jax.random.split(subrng, self.num_randomizations)
-            randomizations = jax.vmap(self.task.domain_randomize_model)(subrngs)
+            masses = jnp.linspace(0.001, 0.5, self.num_randomizations)
+            randomizations = jax.vmap(self.task.domain_randomize_model)(subrngs, masses)
             self.model = self.task.model.tree_replace(randomizations)
+
+            # masses = jnp.linspace(0.05, 1.0, self.num_randomizations)
+            # randomizations = jax.vmap(self.task.domain_randomize_model)(subrngs, masses)
+            # self.model = self.task.model.tree_replace(randomizations)
 
             # Keep track of which elements of the model have randomization
             self.randomized_axes = jax.tree.map(lambda x: None, self.task.model)

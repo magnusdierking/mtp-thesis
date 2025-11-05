@@ -116,6 +116,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         f"second horizon."
     )
 
+    print("True mass of the Target object:", mj_model.body_mass[controller.task.T_bid])
+
     # Figure out how many sim steps to run before replanning
     task_success = False
     replan_period = 1.0 / frequency
@@ -301,7 +303,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             )
 
             # probs based on distances
-            z = distances / 0.008
+            z = distances / 0.0008
             exps = np.exp(z - np.max(z))  # for numerical stability
             probs = exps / np.sum(exps)
 
@@ -459,6 +461,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
                 "state_cost": float(rollouts.costs[0, 0]),
                 "success": task_success,
+                "domain_weights": np.array(controller.domain_weights).tolist() if hasattr(controller, 'domain_weights') else None,
             })
 
 
@@ -480,7 +483,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     # Save logs to a CSV file if specified
     if log_file:
         with open(log_file, "w", newline="") as csvfile:
-            fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "control", "running_cost", "state_cost", "success"]
+            fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "control", "running_cost", "state_cost", "success", "domain_weights"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for log in logs:

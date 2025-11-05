@@ -355,7 +355,7 @@ class AnMTP(SamplingBasedController):
 
         rng, subrng = jax.random.split(rng)
 
-        if ess < 0.9 * B:
+        if ess < 0.95 * B:
             # resample indices (with replacement) on the batch axis
             idx = jax.random.choice(subrng, B, shape=(B,), p=w).astype(jnp.int32)
 
@@ -364,7 +364,7 @@ class AnMTP(SamplingBasedController):
 
             # small perturbation
             rng, subrng = jax.random.split(rng)
-            noise = 0.05 * jax.random.normal(subrng, (B,))
+            noise = 0.1 * jax.random.normal(subrng, (B,))
             new_masses = jnp.clip(cur_masses + noise, 0.05, 1.0)
             new_weights = jnp.ones((B,), dtype=jnp.float32) / B  # reset to uniform
         else:

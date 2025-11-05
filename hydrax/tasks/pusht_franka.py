@@ -270,10 +270,11 @@ class PushTFranka(Task):
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         return self.running_cost(state, jnp.zeros(self.model.nu))
 
-    def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
-        new_mass = self.model.body_mass.at[self.T_bid].set(self.model.body_mass[self.T_bid] * jax.random.uniform(rng, (), minval=1.0, maxval=1.0))
-        return {"body_mass": new_mass}
-    
+    def domain_randomize_model(self, rng: jax.Array, masses: jax.Array) -> Dict[str, jax.Array]:
+
+        new_masses = self.model.body_mass.at[self.T_bid].set(masses)
+        return {"body_mass": new_masses}
+
         # n_geoms = self.model.geom_friction.shape[0]
         # multiplier = jax.random.uniform(rng, (n_geoms,), minval=0.5, maxval=1.5)
         # new_frictions = self.model.geom_friction.at[:, 0].set(
