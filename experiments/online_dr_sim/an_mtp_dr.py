@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
 
-from hydrax.alg_base_opt import SamplingBasedController, Trajectory
+from alg_base_opt_dr import SamplingBasedController, Trajectory
 from hydrax.risk import RiskStrategy, ExpectedCost
 from hydrax.task_base import Task
 from hydrax.algs.mtp.splines.akima import poly_akima, poly_interpolation
@@ -348,14 +348,14 @@ class AnMTP(SamplingBasedController):
         # normalize weights for ESS and sampling
         w = weights / (jnp.sum(weights) + 1e-12)
         ess = 1.0 / jnp.sum(w * w)
-        print("ESS:", ess)
+        # print("ESS:", ess)
 
         bid = self.task.T_bid
         B = self.num_randomizations
 
         rng, subrng = jax.random.split(rng)
 
-        if ess < 0.95 * B:
+        if ess < 0.9 * B:
             # resample indices (with replacement) on the batch axis
             idx = jax.random.choice(subrng, B, shape=(B,), p=w).astype(jnp.int32)
 
@@ -364,8 +364,8 @@ class AnMTP(SamplingBasedController):
 
             # small perturbation
             rng, subrng = jax.random.split(rng)
-            noise = 0.1 * jax.random.normal(subrng, (B,))
-            new_masses = jnp.clip(cur_masses + noise, 0.05, 1.0)
+            noise = 0.05 * jax.random.normal(subrng, (B,))
+            new_masses = jnp.clip(cur_masses + noise, 0.1, 0.75)
             new_weights = jnp.ones((B,), dtype=jnp.float32) / B  # reset to uniform
         else:
             new_masses = self.model.body_mass[:, bid]
@@ -381,4 +381,4 @@ class AnMTP(SamplingBasedController):
         
         self.risk_strategy.set_weights(self.domain_weights)
 
-        return ess < 0.9 * B  # whether resampling was done
+        return ess < 0.9 * B, new_masses  # whether resampling was done

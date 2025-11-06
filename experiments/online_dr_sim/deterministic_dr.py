@@ -17,6 +17,9 @@ from hydrax.utils.video import VideoRecorder
 from hydrax.algs.mtp.beta_scheduler import *
 import matplotlib.pyplot as plt
 
+from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
+
+
 """
 Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
@@ -27,6 +30,7 @@ def differential_IK(
     data: mujoco.MjData,
     body_id: str = "ee_frame",
     world_site_vel_desired: np.ndarray = np.zeros(2),
+    with_null_space: bool = True,
 ) -> np.ndarray:
     """
     Differential IK for all dofs in the model.
@@ -35,15 +39,46 @@ def differential_IK(
     jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
     jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
 
-    mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
+    bodyid = model.body("ee_frame").id
+    mujoco.mj_jacBody(model, data, jacp, jacr, bodyid)
+
+    actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
+    actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
+
+    # get current joint positions
+    qpos = data.qpos.copy()
+    qnow = qpos[jnp.array(actuator_joint_idxs)]
+    qhome = np.array([ 0.51199203,  0.1014329,  -0.36340348, -2.9813132,   0.50339095,  3.06692214, -1.92271156])
 
     # Build jacobian
-    J = np.vstack((jacp, jacr))  # (6, n)
-
-    # Compute dq with damped pseudo-inverse
-    J_pseudo_inv = J.T @ np.linalg.inv(J @ J.T + 1e-6 * np.eye(6))
+    J = np.vstack((jacp, jacr))[:,np.array(actuator_joint_idxs)]  # (6, n)
+    J_pinv = np.linalg.pinv(J)
     twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
-    dq = J_pseudo_inv @ twist
+
+    ee_position_sensor = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
+    )
+    sensor_adr_pos = model.sensor_adr[ee_position_sensor]
+    ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
+
+    ee_orientation_sensor = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_quat"
+        )
+    sensor_adr = model.sensor_adr[ee_orientation_sensor]
+    ee_quat = data.sensordata[sensor_adr : sensor_adr + 4]
+    ee_quat = np.array(ee_quat)
+    goal_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071])  # Assuming goal orientation is aligned with x-axis
+    goal_quat = np.array(goal_quat)
+    goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
+
+    temp = np.concatenate([world_site_vel_desired, np.array([0.035-ee_pos[2]])])
+    twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
+    dq = J_pinv @ twist_err
+
+    if with_null_space:
+        N = np.eye(J.shape[1]) - J_pinv @ J
+        kp_ori = 10.0
+        dq += N @ (kp_ori * (qhome - qnow))
 
     return dq
 
@@ -77,6 +112,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     record_video: bool = False,
     show_ui: bool = True,
     seed: int = 0,
+    online_dr: bool = False,
 ) -> None:
     """Run an interactive simulation with the MPC controller.
 
@@ -294,26 +330,27 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             if hasattr(controller, 'beta'):
                 controller.beta = float(policy_params.beta) # TODO
                 
-            # !update live plot
-            sites_of_interest = policy_params.predicted_state[..., 1]  # ignore end effector site
-            site_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
+            if online_dr:
+                # !update live plot
+                sites_of_interest = policy_params.predicted_state[..., 1]  # ignore end effector site
+                site_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
 
-            distances = np.linalg.norm(
-                sites_of_interest - np.array(mj_data.site_xpos[site_id]), axis=-1
-            )
+                distances = np.linalg.norm(
+                    sites_of_interest - np.array(mj_data.site_xpos[site_id]), axis=-1
+                )
+                # -------------- Compute Probabilities for DR --------------- #
+                # probs based on distances
+                z = distances / 0.001
+                exps = np.exp(z - np.max(z))  # for numerical stability
+                probs = exps / np.sum(exps)
 
-            # probs based on distances
-            z = distances / 0.0008
-            exps = np.exp(z - np.max(z))  # for numerical stability
-            probs = exps / np.sum(exps)
+                # --- update bar heights (left subplot) ---
+                for rect, h in zip(bars, probs):
+                    rect.set_height(h)
 
-            # --- update bar heights (left subplot) ---
-            for rect, h in zip(bars, probs):
-                rect.set_height(h)
-
-            ax_bar.set_xticklabels(
-                [f"{v:.2f}" for v in controller.model.body_mass[:, controller.task.T_bid]]
-            )
+                ax_bar.set_xticklabels(
+                    [f"{v:.2f}" for v in controller.model.body_mass[:, controller.task.T_bid]]
+                )
 
             ax_bar.relim()
             ax_bar.autoscale_view(scaley=True)
@@ -347,9 +384,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             plt.pause(0.01)  # yield to the GUI loop
             
             # update domain randomizations
-            updated = controller.update_domain_randomization_model(
+            updated, dr_samples = controller.update_domain_randomization_model(
                 jax.random.PRNGKey(step), jnp.array(probs)
             )
+            print(f"Updated DR model: {updated}, samples: {dr_samples}")
             if updated:
                 kde_samples.extend(np.asarray(controller.model.body_mass[:,controller.task.T_bid].tolist(), dtype=float).ravel())  
         
@@ -420,7 +458,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                         mj_data.xfrc_applied[:] = 0.0        # clears any body-space external wrenches
                         mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
                         # Apply the control to the simulation
-                    mj_data.ctrl[:] = np.array(u[np.array(controller.task.actuator_joint_idxs)])
+                    mj_data.ctrl[:] = np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
             
@@ -462,6 +500,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "state_cost": float(rollouts.costs[0, 0]),
                 "success": task_success,
                 "domain_weights": np.array(controller.domain_weights).tolist() if hasattr(controller, 'domain_weights') else None,
+                "dr_samples": dr_samples.tolist(), 
             })
 
 
@@ -483,7 +522,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     # Save logs to a CSV file if specified
     if log_file:
         with open(log_file, "w", newline="") as csvfile:
-            fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "control", "running_cost", "state_cost", "success", "domain_weights"]
+            fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "control", "running_cost", "state_cost", "success", "domain_weights", "dr_samples"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for log in logs:

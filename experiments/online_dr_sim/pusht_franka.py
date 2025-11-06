@@ -9,7 +9,7 @@ from hydrax.simulation.deterministic import run_interactive
 # from hydrax.simulation.deterministic_dr import run_interactive
 from deterministic_dr import run_interactive
 
-from hydrax.tasks.pusht_franka import PushTFranka
+from pusht_franka_dr import PushTFranka
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -18,44 +18,44 @@ import numpy as np
 Run an interactive simulation of the push-T task with predictive sampling.
 """
 
-# for short horizon test
-# seed = 100
-# update_cov = True
+# seed = 200
+# online_dr = False
+# aggregation = "expectation"
+# update_cov = False
 # sigma_max = 0.75
 # sigma_min = 0.05
 # sigma_start = 0.2
 # det_init = {
-#     "block_pos_x": -0.1,
-#     "block_pos_y": 0.1,
-#     "block_angle": np.pi/4,
-#     "ee_goal_pos": [0.35, 0.0, 0.035]
+#     "block_pos_x": 0.05,
+#     "block_pos_y": 0.15,
+#     "block_angle": 3*np.pi/4,
+#     "ee_goal_pos": [0.45, 0.1, 0.035]
 # }
 
 
-
-# harder, but local minimum appears
 seed = 42
-update_cov = True
+online_dr = True
+aggregation = "expectation"
+update_cov = False
 sigma_max = 0.75
 sigma_min = 0.05
 sigma_start = 0.2
 det_init = {
-    "block_pos_x": 0.1,
-    "block_pos_y": 0.05,
-    "block_angle": np.pi/6,
-    "ee_goal_pos": [0.35, 0.0, 0.035]
+    "block_pos_x": 0.2,
+    "block_pos_y": 0.1,
+    "block_angle": np.pi/3,
+    "ee_goal_pos": [0.45, 0.1, 0.035]
 }
-
 
 
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=12,
-                    sim_steps_per_control_step=4,
+                    planning_horizon=8,
+                    sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
                                 "u_max": jnp.array([0.4, 0.4])},
-                    trace_sites=["ee_site"],
+                    trace_sites=["ee_site", "T_1", "T_2"],
                     actuation_type='velocity',
                     sampling_space="velocity",
                     det_init=det_init
@@ -82,7 +82,7 @@ data = {}
 path = get_data_path() / "dr_sim" / args.algorithm 
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{seed}_update_cov_{update_cov}.csv"
+path = path / f"seed_{seed}_odr_{online_dr}_{aggregation}.csv"
 
 
 # Set the controller based on command-line arguments
@@ -151,10 +151,10 @@ elif args.algorithm == "anmtp":
             sigma_start=sigma_start,
             num_elites=12,
             keep_elites=1,   # !experimental
-            beta = 0.1,
+            beta = 0.45,
             beta_lr = 0.1,        # adaptation step size
-            beta_min = 0.15,
-            beta_max = 0.5,
+            beta_min = 0.25,
+            beta_max = 0.35,
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=num_randomizations,
@@ -171,16 +171,17 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=20,
+    frequency=10,
     show_traces=True,
     trace_width=0.55,
     max_traces=32,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,
-    max_step=300,
+    max_step=200,
     seed=seed,
     log_file=path.as_posix(),
+    online_dr=online_dr,
     )
 
 
