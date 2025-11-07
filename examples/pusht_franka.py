@@ -234,7 +234,7 @@ run_interactive(
     record_video=False,
     max_step=300,
     seed=seed,
-    log_file=path.as_posix(),
+    # log_file=path.as_posix(),
     )
 
 

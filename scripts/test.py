@@ -9,7 +9,8 @@ from scipy.spatial.transform import Rotation as R
 from hydrax.utils.utils import mujoco_to_scipy_quat
 
 
-xml_path = "./../hydrax/models/g1/scene.xml"
+# xml_path = "./../hydrax/models/g1/scene.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
@@ -19,6 +20,7 @@ model = mujoco.MjModel.from_xml_path(os.path.basename(xml_path))
 data = mujoco.MjData(model)
 
 # model.opt.gravity[:] = 0.0
+print(len(data.qpos))
 
 for i in range(model.njnt):
     name = model.joint(i).name
