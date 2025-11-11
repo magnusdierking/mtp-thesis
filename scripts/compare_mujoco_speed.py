@@ -25,6 +25,7 @@ def main():
     model_path = "/home/carvalho/Projects/ModelTensorPlanning/mtp-thesis/hydrax/models/fr3_pushT_vel/scene_mjx.xml"
     # model_path = "/home/carvalho/Projects/ModelTensorPlanning/mtp-thesis/hydrax/models/double_cart_pole/scene.xml"
     # model_path = "/home/carvalho/Projects/ModelTensorPlanning/mtp-thesis/mujoco_warp/benchmark/humanoid/humanoid.xml"
+    # model_path = "/home/carvalho/Projects/ModelTensorPlanning/mtp-thesis/mujoco_warp/benchmark/franka_emika_panda/scene.xml"
     # model_path = "/home/carvalho/Projects/ModelTensorPlanning/mtp-thesis/hydrax/models/bugtrap/scene.xml"
     
     steps = 100
