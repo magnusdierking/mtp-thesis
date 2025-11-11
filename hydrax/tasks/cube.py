@@ -15,7 +15,7 @@ class CubeRotation(Task):
     def __init__(
         self, planning_horizon: int = 3, sim_steps_per_control_step: int = 4
     ):
-        mj_model = mujoco.MjModel.from_xml_path( (get_root_path() / "hydrax" / "models" /  "cube" / "scene.xml").as_posix())
+        mj_model = mujoco.MjModel.from_xml_path( (get_root_path() / "models" /  "cube" / "scene.xml").as_posix())
 
         super().__init__(
             mj_model,
@@ -34,6 +34,9 @@ class CubeRotation(Task):
         self.delta = 0.015
         self.success_threshold = 0.03
         self.goal_orientation = jnp.array([1.0, 0.0, 0.0, 0.0])
+        
+        nbr_actuators = mj_model.nu
+        self.actuator_joint_idxs = np.arange(nbr_actuators).tolist()
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the target cube orientation, just for experiments."""
@@ -96,3 +99,9 @@ class CubeRotation(Task):
     ) -> Dict[str, jax.Array]:
         shift = 0.005 * jax.random.normal(rng, (self.model.nq,))
         return {"qpos": data.qpos + shift}
+
+    def make_control_mapper(self):
+        return None
+    
+    def make_gravity_compensator(self):
+        return None

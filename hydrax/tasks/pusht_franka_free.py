@@ -37,13 +37,9 @@ class PushTFranka(Task):
         """Load the MuJoCo model and set task parameters."""
         self.sampling_space = sampling_space
         self.actuation_type = actuation_type
-        if actuation_type == 'position':
+        if actuation_type == 'velocity':
             mj_model = mujoco.MjModel.from_xml_path(
-                (get_root_path() / "models" / "fr3_pushT_pos" / "scene_mjx.xml").as_posix()
-            )
-        elif actuation_type == 'velocity':
-            mj_model = mujoco.MjModel.from_xml_path(
-                (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx.xml").as_posix()
+                (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
             )
         else:
             raise ValueError("actuation_type must be 'position' or 'velocity'")
@@ -81,8 +77,9 @@ class PushTFranka(Task):
         self.T_bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
 
         # Get block joint indices
-        self.block_joint_names = ['T_x', 'T_y', 'T_z']
+        self.block_joint_names = ['T']
         self.block_joint_idxs = [mj_model.joint(name).id for name in self.block_joint_names]
+        print(self.block_joint_idxs)
         
         # Get actuator joint indices
         self.actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
@@ -121,10 +118,13 @@ class PushTFranka(Task):
         # Assuming the block's pose is at the beginning of qpos
         mj_data.qpos[0] = pos_x
         mj_data.qpos[1] = pos_y
-        mj_data.qpos[2] = angle
+
+        # make quaternion for rotation about z
+        quat = np.array([np.cos(angle/2), 0, 0, np.sin(angle/2)])  # [w, x, y, z]
+
+        # set position and orientation
+        mj_data.qpos[3:7] = quat
         
-        j_start = 3  # Adjust based on your model (e.g., 3 if floating base)
-        n_joints = 7
 
         # # Initial guess
         q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
@@ -183,7 +183,7 @@ class PushTFranka(Task):
             q += step_size * dq
 
             # Clamp to joint limits
-            for j in range(n_joints):
+            for j in range(len(self.actuator_joint_idxs)):
                 low, high = self.joint_limits[j]
                 q[j] = np.clip(q[j], low, high)
 

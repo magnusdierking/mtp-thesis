@@ -13,7 +13,7 @@
       </default>
 
       <default class="collision">
-        <geom group="3" contype="1" conaffinity="6"  
+        <geom group="3" contype="0" conaffinity="2"  
               mass="0" density="0"/>
       </default>
 

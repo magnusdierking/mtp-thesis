@@ -30,9 +30,7 @@
       </body>
 
       <body name="block" pos="0.4 0.0 0.026" quat="1 0 0 -1">
-        <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" damping="1"/>
-        <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" damping="1"/>
-        <joint name="T_z" axis="0 0 1" damping="0.01"/>
+        <joint name="T" type="free"/>
         <geom class="tblock" name="bottom" type="box" size=".025 0.052 0.025" pos="0.0 0.001 0.0" mass="0.0655"/>
           <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
           <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>
@@ -50,7 +48,7 @@
           solver="Newton"
           jacobian="dense"
           cone="pyramidal"
-          timestep="0.02" 
+          timestep="0.01" 
           iterations="5"
           ls_iterations="8">
   <flag eulerdamp="disable" 
@@ -68,8 +66,8 @@
   <worldbody>
 
     <body name="sphere_carrier" pos="0.45 0 0.035" quat="0 0.7071068 0.7071068 0"> 
-      <joint type="slide" axis="1 0 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             <!-- x -->
-      <joint type="slide" axis="0 1 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             <!-- y -->
+      <joint name="carrier_x" type="slide" axis="1 0 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             <!-- x -->
+      <joint name="carrier_y" type="slide" axis="0 1 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             <!-- y -->
       <!-- <joint type="hinge" axis="0 0 1" damping="0" frictionloss="0" armature="0" stiffness="0"/>             yaw -->
       <geom name="ee_sphere" type="sphere" size="0.015"
             friction="0 0.0 0.0"

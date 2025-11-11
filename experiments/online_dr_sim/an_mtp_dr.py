@@ -4,12 +4,12 @@ import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
 
-from hydrax.alg_base_opt import SamplingBasedController, Trajectory
+from alg_base_opt_dr import SamplingBasedController, Trajectory
 from hydrax.risk import RiskStrategy, ExpectedCost
 from hydrax.task_base import Task
-from .splines.akima import poly_akima, poly_interpolation
-from .splines.bsplines import compute_b_spline_matrix
-from .splines.linear import interpolate_linear
+from hydrax.algs.mtp.splines.akima import poly_akima, poly_interpolation
+from hydrax.algs.mtp.splines.bsplines import compute_b_spline_matrix
+from hydrax.algs.mtp.splines.linear import interpolate_linear
 
 
 @dataclass
@@ -60,6 +60,7 @@ class AnMTP(SamplingBasedController):
         risk_strategy: RiskStrategy | None = None,
         colorize_noise: bool = False,   # !experimental
         seed: int = 0,
+        update_cov: bool = True,
     ):
         # super().__init__(task, num_randomizations, risk_strategy, seed)
         # ! experimental
@@ -347,7 +348,7 @@ class AnMTP(SamplingBasedController):
         # normalize weights for ESS and sampling
         w = weights / (jnp.sum(weights) + 1e-12)
         ess = 1.0 / jnp.sum(w * w)
-        print("ESS:", ess)
+        # print("ESS:", ess)
 
         bid = self.task.T_bid
         B = self.num_randomizations
@@ -364,7 +365,7 @@ class AnMTP(SamplingBasedController):
             # small perturbation
             rng, subrng = jax.random.split(rng)
             noise = 0.05 * jax.random.normal(subrng, (B,))
-            new_masses = jnp.clip(cur_masses + noise, 0.05, 1.0)
+            new_masses = jnp.clip(cur_masses + noise, 0.1, 0.75)
             new_weights = jnp.ones((B,), dtype=jnp.float32) / B  # reset to uniform
         else:
             new_masses = self.model.body_mass[:, bid]
@@ -380,4 +381,4 @@ class AnMTP(SamplingBasedController):
         
         self.risk_strategy.set_weights(self.domain_weights)
 
-        return ess < 0.9 * B  # whether resampling was done
+        return ess < 0.9 * B, new_masses  # whether resampling was done

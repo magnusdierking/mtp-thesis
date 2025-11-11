@@ -61,6 +61,7 @@ class AnMTP(SamplingBasedController):
         shift: bool = False, # !experimental,
         seed: int = 0,
         beta_strategy: str = "task", # task, ratio, greedy
+        update_cov: bool = True,
     ):
         super().__init__(task, num_randomizations, risk_strategy, seed)
         assert degree >= 2, "degree must be at least 2."
@@ -97,6 +98,7 @@ class AnMTP(SamplingBasedController):
         self.temperature = temperature
         self.interpolation = interpolation
         self.alpha = alpha
+        self.update_cov = update_cov    
 
         control_dtype = jnp.float32
         self.aknots = jnp.linspace(1, self.M+1, self.M+1, dtype=control_dtype)
@@ -260,6 +262,16 @@ class AnMTP(SamplingBasedController):
 
         mean = jnp.sum(weighted_controls, axis=0)
         mean = mean + self.alpha * (params.mean - mean)
+        # cov update
+        if self.update_cov:
+            cov = jnp.sqrt(jnp.sum(w[:, None, None] * (controls - mean) ** 2, axis=0))
+            cov = cov + self.alpha * (params.cov - cov)
+            cov = jnp.clip(cov, self.sigma_min, self.sigma_max)
+        else:
+            cov = params.cov
+
+
+
         spline = rollouts.controls[next_idx]
 
         # --- adaptive beta from elites using mask logic with fixed shape ---

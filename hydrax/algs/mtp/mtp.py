@@ -26,6 +26,7 @@ class MTPParams:
     spline: jax.Array = None
     last_a_idx: int = 0
     state_bins: jax.Array = None  # Placeholder for state bins
+    # beta: float = None      # Placeholder for beta value
   
 
 
@@ -58,6 +59,7 @@ class MTP(SamplingBasedController):
         sample_weighting: str = 'cem-softmax',
         risk_strategy: RiskStrategy = None,
         seed: int = 0,
+        update_cov: bool = True,
     ):
         """Initialize the controller.
 
@@ -102,6 +104,8 @@ class MTP(SamplingBasedController):
         
         self.nbr_mtp_samples = int(self.num_samples * self.beta)
         self.nbr_mppi_samples = self.num_samples - self.nbr_mtp_samples - 1
+
+        self.update_cov = update_cov
         
         
     def start_clamped_knot_vector(self, num_ctrl_points, degree, dtype=jnp.float32):
@@ -135,7 +139,8 @@ class MTP(SamplingBasedController):
         return MTPParams(rng=rng, 
                          spline=spline, 
                          mean=mean, 
-                         cov=cov)
+                         cov=cov,)
+                        #  beta=self.beta)
 
     
     def sample_controls(
@@ -355,17 +360,16 @@ class MTP(SamplingBasedController):
             next_idx = jnp.argmin(costs)
         
         mean = jnp.sum(weighted_controls, axis=0)
-        # TODO - can we change this ?
-        cov = jnp.sqrt(jnp.sum(weights[:, None, None] * (controls - mean) ** 2, axis=0))
-        cov = jnp.clip(cov, self.sigma_min, self.sigma_max)
-        
         mean = mean + self.alpha * (params.mean - mean)
-        cov = cov + self.alpha * (params.cov - cov)
+        
+        if self.update_cov:
+            cov = jnp.sqrt(jnp.sum(weights[:, None, None] * (controls - mean) ** 2, axis=0))
+            cov = cov + self.alpha * (params.cov - cov)
+            cov = jnp.clip(cov, self.sigma_min, self.sigma_max)
+        else:
+            cov = params.cov
+
         spline = rollouts.controls[next_idx]  # use the best elite as control
-        # print rollouts shapes 
-        # jax.debug.print("costs: {}", costs)
-        # jax.debug.print("controls shape: {}", rollouts.controls.shape)
-        # jax.debug.print("rollout shapes: {}, {}, {}", (rollouts.controls.shape, rollouts.costs.shape, spline.shape))
 
         return params.replace(mean=mean, cov=cov, spline=spline)
         # return params.replace(mean=mean, spline=spline)

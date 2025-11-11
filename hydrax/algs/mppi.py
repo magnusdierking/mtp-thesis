@@ -46,6 +46,7 @@ class MPPI(SamplingBasedController):
         risk_strategy: RiskStrategy = None,
         colorize_noise: bool = False,   # !experimental
         seed: int = 0,
+        update_cov: bool = True,  
     ):
         """Initialize the controller.
 
@@ -68,6 +69,7 @@ class MPPI(SamplingBasedController):
         
         self.colorize_noise = colorize_noise
         self.alpha_noise = 3.0  # 0=white, 1=pink, 2=brown
+        self.update_cov = update_cov
 
     def init_params(self, seed: int = 0) -> MPPIParams:
         """Initialize the policy parameters."""

@@ -13,6 +13,7 @@ from hydrax.alg_base import SamplingBasedController
 import numpy as np
 import rclpy
 from scipy.spatial.transform import Rotation as R
+import jax.numpy as jnp
 
 from shape_msgs.msg import Mesh, MeshTriangle, SolidPrimitive
 from geometry_msgs.msg import PoseStamped, TransformStamped
@@ -56,29 +57,29 @@ class FR3_PushT(FrankaPandaServer):
         self.add_collision_primitive(
             id="table",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(2.0, 0.8, 0.1),
-            position=np.array([0.0, 0.0, -0.05]),
+            dimensions=(1.2, 0.9, 0.1),
+            position=np.array([0.4, 0.0, -0.05]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
         self.add_collision_primitive(
             id="wall x",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(0.1, 0.8, 0.4),
-            position=np.array([1.05, 0.0, 0.1]),
+            dimensions=(0.05, 1.0, 0.5),
+            position=np.array([1.025, 0.0, 0.15]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
         self.add_collision_primitive(
             id="wall y_neg",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(2.0, 0.1, 0.4),
-            position=np.array([0.0, -0.45, 0.1]),
+            dimensions=(1.2, 0.05, 0.5),
+            position=np.array([0.4, -0.475, 0.15]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
         self.add_collision_primitive(
             id="wall y_pos",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(2.0, 0.1, 0.4),
-            position=np.array([0.0, 0.45, 0.1]),
+            dimensions=(1.2, 0.05, 0.5),
+            position=np.array([0.4, 0.475, 0.15]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
      
@@ -91,10 +92,10 @@ class FR3_PushT(FrankaPandaServer):
         # # wait 
         # time.sleep(2.0)
         
-        self.init_pos = np.array([0.35, 0.0, 0.27])   # 0,26
+        self.init_pos = np.array([0.35, -0.2, 0.26])   # 0,26
         # add small noise: keep x small, increase variance in y
-        self.init_pos[0] += np.random.normal(0, 0.01)   # x
-        self.init_pos[1] += np.random.normal(0, 0.05)   # y (larger variance)
+        # self.init_pos[0] += np.random.normal(0, 0.01)   # x
+        # self.init_pos[1] += np.random.normal(0, 0.05)   # y (larger variance)
         self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
        
         self.init_rot = R.from_quat(self.init_quat).as_matrix()
@@ -104,6 +105,9 @@ class FR3_PushT(FrankaPandaServer):
         self.plan_and_move_to_pose(pose)
         
         time.sleep(2.0)
+
+        while not self._states_received():
+            rclpy.spin_once(self, timeout_sec=0.1)
         
         ####################################
         ##            T Object            ##    
@@ -152,14 +156,14 @@ class FR3_PushT(FrankaPandaServer):
         self.debug_data = debug_data
         self.viewer = viewer
 
-        self.create_timer(1.0 / 10.0, self._step_debug_sim)
+        self.create_timer(1.0 / 20.0, self._step_debug_sim)
         time.sleep(1.0)  # wait for viewer to initialize
 
         ####################################
         ##         Set up Timers          ##    
         ####################################
 
-        self.create_timer(1.0 / 20.0, self._update_state)
+        self.create_timer(1.0 / 50.0, self._update_state)
 
         # # SMPC update 
         # self.mpc_freq = 20  # Hz
@@ -187,10 +191,7 @@ class FR3_PushT(FrankaPandaServer):
         self.viewer.sync()
         
         # TODO - reset function to
-        # reset the robot to its home pose, then trigger input to
-        # send to init pose wiht small noise
-        # reset simulation
-        # wait and ask to start planning
+        self._update_T()
     
     
     def _publish_static_robot_tf(self):
@@ -220,11 +221,17 @@ class FR3_PushT(FrankaPandaServer):
 
         
     def _update_T(self):
-        try:
-            world_T_objReal = self.tf_buffer.lookup_transform(
-                "fr3_link0", "objectPushT", rclpy.time.Time())
-        except (LookupException, ConnectivityException, ExtrapolationException) as e:
-            self.get_logger().warn(f'TF lookup failed: {e}')
+        if not self.tf_buffer.can_transform("fr3_link0", "objectPushT",
+                                            rclpy.time.Time(),
+                                            rclpy.duration.Duration(seconds=0.01)):
+            return None
+        else:
+            world_T_objReal = self.tf_buffer.lookup_transform("fr3_link0", "objectPushT", rclpy.time.Time())
+        # try:
+        #     world_T_objReal = self.tf_buffer.lookup_transform(
+        #         "fr3_link0", "objectPushT", rclpy.time.Time())
+        # except (LookupException, ConnectivityException, ExtrapolationException) as e:
+        #     self.get_logger().warn(f'TF lookup failed: {e}')
             
         # optitrack gives center of markers, need to convert to simulation center
         lin = world_T_objReal.transform.translation
@@ -233,7 +240,7 @@ class FR3_PushT(FrankaPandaServer):
                          world_T_objReal.transform.rotation.y,
                          world_T_objReal.transform.rotation.z,
                          world_T_objReal.transform.rotation.w])
-        print(f"World transform (translation): {lin}")
+        # print(f"World transform (translation): {lin}")
     
         return lin, quat
 
@@ -244,23 +251,12 @@ class FR3_PushT(FrankaPandaServer):
         self.debug_data.qpos[0] = -lin_t[1] # x in block, -y in robot
         self.debug_data.qpos[1] = lin_t[0] -0.44 # y in block, x in robot, offset from spawn
         self.debug_data.qpos[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) - np.pi 
-        print(f"Object yaw: {self.debug_data.qpos[2]*180.0/np.pi} deg")
+        # print(f"Object yaw: {self.debug_data.qpos[2]*180.0/np.pi} deg")
+
         self.debug_data.qpos[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
         self.debug_data.qvel[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
-        # TODO angle
         
-        
-        # with self._lock:
-        #     dq[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
-        #     q[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
-        
-        # TODO update T 
-        # ...
-        
-        # self.mjx_data = self.mjx_data.replace(
-        #     qpos=q,
-        #     qvel=dq,
-        # )
+
         
     def _send_command(self):
         
@@ -311,7 +307,14 @@ if __name__ == '__main__':
     
     rclpy.init()
 
-    task = PushTFranka(
+    task = PushTFranka(ik_type = 'pinv',
+        planning_horizon=8,
+        sim_steps_per_control_step=2,
+        ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
+                    "u_max": jnp.array([0.4, 0.4])},
+        trace_sites=["ee_site", "T_1", "T_2"],
+        actuation_type='velocity',
+        sampling_space="velocity",
     )
 
     import mujoco
@@ -371,7 +374,7 @@ if __name__ == '__main__':
     with mujoco.viewer.launch_passive(model, data) as v:
         controller = FR3_PushT(
             ctrl=ctrl,
-            robot_ip="10.90.90.144",
+            robot_ip="10.90.90.77",
             seed=seed,
             debug_model=model,
             debug_data=data,

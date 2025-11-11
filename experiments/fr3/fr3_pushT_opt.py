@@ -35,33 +35,35 @@ class FR3_PushT(FrankaPandaServer):
     def __init__(self, ctrl: SamplingBasedController, robot_ip: str, seed: int):
         super().__init__(robot_ip, None)
 
-        # --- Safety primitives (MoveIt) ---
+        ####################################
+        ##    MoveIt Safety Constraints   ##    
+        ####################################
         self.add_collision_primitive(
             id="table",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(2.0, 0.8, 0.1),
-            position=np.array([0.0, 0.0, -0.05]),
+            dimensions=(1.2, 0.9, 0.1),
+            position=np.array([0.4, 0.0, -0.05]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
         self.add_collision_primitive(
             id="wall x",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(0.1, 0.8, 0.4),
-            position=np.array([1.05, 0.0, 0.1]),
+            dimensions=(0.05, 1.0, 0.5),
+            position=np.array([1.025, 0.0, 0.15]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
         self.add_collision_primitive(
             id="wall y_neg",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(2.0, 0.1, 0.4),
-            position=np.array([0.0, -0.45, 0.1]),
+            dimensions=(1.2, 0.05, 0.5),
+            position=np.array([0.4, -0.475, 0.15]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
         self.add_collision_primitive(
             id="wall y_pos",
             primitive_type=SolidPrimitive.BOX,
-            dimensions=(2.0, 0.1, 0.4),
-            position=np.array([0.0, 0.45, 0.1]),
+            dimensions=(1.2, 0.05, 0.5),
+            position=np.array([0.4, 0.475, 0.15]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
 
@@ -73,9 +75,9 @@ class FR3_PushT(FrankaPandaServer):
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         # --- Go to initial pose (blocking call outside timers) ---
-        init_pos = np.array([0.4, 0.0, 0.28])
-        init_pos[0] += np.random.normal(0, 0.01)
-        init_pos[1] += np.random.normal(0, 0.05)
+        init_pos = np.array([0.35, -0.2, 0.26])
+        # init_pos[0] += np.random.normal(0, 0.01)
+        # init_pos[1] += np.random.normal(0, 0.05)
         init_quat = np.array([1.0, 0.0, 0.0, 0.0])
         pose = np.eye(4); pose[:3,:3] = R.from_quat(init_quat).as_matrix(); pose[:3,3] = init_pos
         self.plan_and_move_to_pose(pose)
@@ -87,10 +89,7 @@ class FR3_PushT(FrankaPandaServer):
 
         # --- Controller / JAX ---
         self.ctrl = ctrl
-        model_f32 = mjx.convert_model(ctrl.task.model, dtype=jnp.float32)
-        self.mjx_data = mjx.forward(model_f32, mjx.make_data(model_f32))
-        ctrl.task.model = model_f32  # keep everything consistent
-        # self.mjx_data = mjx.forward(ctrl.task.model, mjx.make_data(ctrl.task.model))
+        self.mjx_data = mjx.forward(ctrl.task.model, mjx.make_data(ctrl.task.model))
         self.policy_params = ctrl.init_params(seed)
         self.get_logger().info(
             f"Backend: {jax.default_backend()} | Horizon {ctrl.task.planning_horizon} "
@@ -100,14 +99,15 @@ class FR3_PushT(FrankaPandaServer):
         # Precompile optimize -> returns new params (donate only params)
         self.get_logger().info("Jitting controller (optimize + get_action)... this may take a while.")
         t0 = time.time()
-        # self._jit_optimize = jax.jit(lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,))
-        # self._executable = self._jit_optimize.lower(self.mjx_data, self.policy_params).compile()
+
+
         self._jit_optimize = jax.jit(
                                 lambda d, p: ctrl.optimize(d, p)[0],
-                                donate_argnums=(1,), # doante both
+                                donate_argnums=(1,), # doante 
                             )
         self._executable = self._jit_optimize.lower(self.mjx_data, self.policy_params).compile()
         self._get_action = ctrl.get_action
+
         t1 = time.time()
         self.get_logger().info(f"JIT compile finished in {t1 - t0:.2f} s")
 
@@ -130,13 +130,13 @@ class FR3_PushT(FrankaPandaServer):
         # Logging
         self._servo_tick = 0
         self._planner_tick = 0
-        self._log_every = 10   # log every N iterations
+        self._log_every = 100   # log every N iterations
         self._last_servo_time = time.time()
         self._last_plan_time = time.time()
     
 
         # --- Timers & threading ---
-        self.mpc_freq = 3.0     # Hz (planner)
+        self.mpc_freq = 10.0     # Hz (planner)
         self.servo_freq = 50.0  # Hz (publisher)
 
         self.servo_group   = ReentrantCallbackGroup()
@@ -188,29 +188,7 @@ class FR3_PushT(FrankaPandaServer):
         self._tmp_quat[:] = (rq.x, rq.y, rq.z, rq.w)
         return self._tmp_lin, self._tmp_quat
 
-    # def _update_state(self):
-    #     tvals = self._get_T_pose()
-    #     if tvals is None:
-    #         return False
-    #     lin_t, quat_t = tvals
-    #     self._q_buf[:] = self.mjx_data.qpos
-    #     self._dq_buf[:] = self.mjx_data.qvel
-    #     # map object pose
-    #     self._q_buf[0] = -lin_t[1]
-    #     self._q_buf[1] =  lin_t[0] - 0.44
-    #     self._q_buf[2] = math.atan2(2*(quat_t[3]*quat_t[2] + quat_t[0]*quat_t[1]),
-    #                                 1 - 2*(quat_t[1]*quat_t[1] + quat_t[2]*quat_t[2])) - math.pi
-    #     # robot joints
-    #     with self._lock:
-    #         js = self._current_joint_state
-    #         if js is None:
-    #             return False
-    #         s, e = self._idx_robot_start, self._idx_robot_end
-    #         self._q_buf[s:e]  = js.position
-    #         self._dq_buf[s:e] = js.velocity
-    #     # update mjx data (host arrays are copied to device inside executable)
-    #     self.mjx_data = self.mjx_data.replace(qpos=self._q_buf, qvel=self._dq_buf)
-    #     return True
+
     def _update_state(self):
         tvals = self._get_T_pose()
         if tvals is None:
@@ -252,9 +230,7 @@ class FR3_PushT(FrankaPandaServer):
         fut.add_done_callback(self._on_plan_done)
 
     def _do_plan(self, mjx_data, params):
-        # Compute next params (compiled, no ROS calls)
         new_params = self._executable(mjx_data, params)
-        # Compute action (cheap)
         action = self._get_action(new_params, 0.0)
         return new_params, np.asarray(action, dtype=np.float32)
 
@@ -315,8 +291,8 @@ if __name__ == '__main__':
 
     # Task + controller
     task = PushTFranka(ik_type = 'pinv',
-                       planning_horizon=12,
-                       sim_steps_per_control_step=4,
+                       planning_horizon=10,
+                       sim_steps_per_control_step=2,
                        ctrl_limits={"u_min": jnp.array([-0.35, -0.35]), 
                                     "u_max": jnp.array([0.35, 0.35])},
                        trace_sites=[],
@@ -324,8 +300,8 @@ if __name__ == '__main__':
     seed = 42
     if args.algorithm == "mppi":
         ctrl = MPPI(task, 
-                    num_samples=256, 
-                    noise_level=0.3, 
+                    num_samples=512, 
+                    noise_level=0.2, 
                     temperature=0.1,
                     num_randomizations=5, 
                     seed=seed)
