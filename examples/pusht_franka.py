@@ -126,7 +126,7 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 2048
+num_samples = 128
 num_randomizations = 1
 
 

@@ -7,11 +7,11 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="0.8 0.05 0.002" 
-            solref="0.003 1.0" 
+      <geom friction="0.9 0.01 0.05" 
+            solref="0.01 1.0" 
             margin="0.005"
-            solimp="0.9 0.99 0.005"
-            condim="3"
+            solimp="0.9 0.95 0.001"
+            condim="6"
             contype="2" 
             conaffinity="5"/>  
     </default>
@@ -29,9 +29,9 @@
         <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
       </body>
 
-      <body name="block" pos="0.4 0.0 0.026" quat="1 0 0 -1">
+      <body name="block" pos="0.5 0.0 0.036" quat="1 0 0 -1">
         <joint name="T" type="free"/>
-        <geom class="tblock" name="bottom" type="box" size=".025 0.052 0.025" pos="0.0 0.001 0.0" mass="0.0655"/>
+        <geom class="tblock" name="bottom" type="box" size=".025 0.05 0.025" pos="0.0 0.0 0.0" mass="0.0655"/>
           <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
           <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>
         <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"  mass="0.07855"/>
@@ -41,14 +41,14 @@
 
 
   <!-- Robot model -->
-  <include file="fr3_vel_mjx.xml"/>
+  <include file="fr3_vel_mjx_free.xml"/>
 
 
   <option impratio="6"
           solver="Newton"
           jacobian="dense"
-          cone="pyramidal"
-          timestep="0.01" 
+          cone="elliptic"
+          timestep="0.02" 
           iterations="5"
           ls_iterations="8">
   <flag eulerdamp="disable" 
@@ -102,7 +102,7 @@
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="0 0 0.05"
-          material="groundplane" friction="8 0.05 0.002" condim="3"
+          material="groundplane" friction="1.0 0.01 0.05" condim="6"
           contype="4" conaffinity="3"/>  <!-- 3 = 1|2 (robot | objects) -->
   </worldbody>
 </mujoco>

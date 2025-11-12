@@ -11,6 +11,8 @@ from hydrax.algs.mtp.splines.akima import poly_akima, poly_interpolation
 from hydrax.algs.mtp.splines.bsplines import compute_b_spline_matrix
 from hydrax.algs.mtp.splines.linear import interpolate_linear
 
+from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
+
 
 @dataclass
 class AnMTPParams:
@@ -142,7 +144,7 @@ class AnMTP(SamplingBasedController):
         spline = jnp.zeros((T, U), dtype=jnp.float32)
         elites = jnp.zeros((self.keep_elites, T, U), dtype=jnp.float32) # ! experimental
         predicted_state = jnp.zeros((self.num_randomizations, len(self.task.trace_site_ids), 3), dtype=jnp.float32) # ! experimental
-        # domain_weights = jnp.ones((self.num_randomizations,), dtype=jnp.float32) / self.num_randomizations # ! experimental
+        domain_weights = jnp.ones((self.num_randomizations,), dtype=jnp.float32) / self.num_randomizations # ! experimental
         mean = jnp.zeros((T, U), dtype=jnp.float32)
         cov = jnp.full_like(mean, self.sigma_start)
         beta = jnp.array(self.beta, dtype=jnp.float32)
@@ -152,6 +154,7 @@ class AnMTP(SamplingBasedController):
                            cov=cov, 
                            beta=beta, 
                            elites=elites, 
+                           domain_weights=domain_weights,
                            predicted_state=predicted_state)
 
     # ----------------------
@@ -293,34 +296,6 @@ class AnMTP(SamplingBasedController):
     def update_beta(self, beta: float):
         self.beta = float(jnp.clip(beta, self.beta_min, self.beta_max))
         
-        
-    # ----------------------
-    # Experimental
-    def colorize_time_series(self, noise, remove_dc=True, eps=1e-8):
-        """
-        noise: (B, T, D) white ~ N(0,1)
-        Returns colored noise with approx unit variance per (B,D) trajectory.
-        alpha=0 -> white, 1 -> pink (1/f), 2 -> brown (1/f^2)
-        """
-        B, T, D = noise.shape
-
-        # reshape to (B*D, T) to FFT each series independently
-        x = noise.reshape(B * D, T)
-
-        # FFT -> apply magnitude shaping -> IFFT
-        Xf = jnp.fft.rfft(x, axis=-1)                           # (B*D, T_r)
-        freqs = jnp.fft.rfftfreq(T)                             # (T_r,)
-        H = (1.0 / jnp.maximum(freqs, eps)) ** (self.alpha_noise / 2.0)    # magnitude shaping
-        if remove_dc:
-            H = H.at[0].set(0.0)
-        Yf = Xf * H[None, :]                                    # broadcast
-        y = jnp.fft.irfft(Yf, n=T, axis=-1)                     # (B*D, T)
-
-        # de-mean and unit-std per series (robust for finite T)
-        y = y - y.mean(axis=-1, keepdims=True)
-        y = y / (y.std(axis=-1, keepdims=True) + eps)
-
-        return y.reshape(B, T, D)
 
     # def update_domain_randomization_model(self, rng: jax.Array, weights: jax.Array) -> None:
     #     rng, subrng = jax.random.split(rng)
@@ -344,41 +319,44 @@ class AnMTP(SamplingBasedController):
     #     else:
     #         new_masses = self.model.body_mass[:, self.task.T_bid]
     #         self.model = self.model.body_mass.at[:, self.task.T_bid].set(new_masses)
-    def update_domain_randomization_model(self, rng: jax.Array, weights: jax.Array) -> bool:
-        # normalize weights for ESS and sampling
-        w = weights / (jnp.sum(weights) + 1e-12)
-        ess = 1.0 / jnp.sum(w * w)
-        # print("ESS:", ess)
+    # def update_domain_randomization_model(self, dr_samples: jax.Array, weights: jax.Array) -> bool:
+    #     # normalize weights for ESS and sampling
+    #     w = weights / (jnp.sum(weights) + 1e-12)
+    #     ess = 1.0 / jnp.sum(w * w)
+    #     # print("ESS:", ess)
 
-        bid = self.task.T_bid
-        B = self.num_randomizations
+    #     bid = self.task.T_bid
+    #     B = self.num_randomizations
 
-        rng, subrng = jax.random.split(rng)
+    #     rng, subrng = jax.random.split(rng)
 
-        if ess < 0.9 * B:
-            # resample indices (with replacement) on the batch axis
-            idx = jax.random.choice(subrng, B, shape=(B,), p=w).astype(jnp.int32)
+    #     if ess < 0.9 * B:
+    #         # resample indices (with replacement) on the batch axis
+    #         idx = jax.random.choice(subrng, B, shape=(B,), p=w).astype(jnp.int32)
 
-            # gather current masses for that body across the chosen instances
-            cur_masses = self.model.body_mass[idx, bid]  # shape (B,)
+    #         # gather current masses for that body across the chosen instances
+    #         cur_masses = self.model.body_mass[idx, bid]  # shape (B,)
 
-            # small perturbation
-            rng, subrng = jax.random.split(rng)
-            noise = 0.05 * jax.random.normal(subrng, (B,))
-            new_masses = jnp.clip(cur_masses + noise, 0.1, 0.75)
-            new_weights = jnp.ones((B,), dtype=jnp.float32) / B  # reset to uniform
-        else:
-            new_masses = self.model.body_mass[:, bid]
-            new_weights = w  # keep current weights
-        # update domain weights
-        self.domain_weights = new_weights
+    #         # small perturbation
+    #         rng, subrng = jax.random.split(rng)
+    #         noise = 0.05 * jax.random.normal(subrng, (B,))
+    #         new_masses = jnp.clip(cur_masses + noise, 0.1, 0.75)
+    #         new_weights = jnp.ones((B,), dtype=jnp.float32) / B  # reset to uniform
+    #     else:
+    #         new_masses = self.model.body_mass[:, bid]
+    #         new_weights = w  # keep current weights
+    #     # update domain weights
+    #     self.domain_weights = new_weights
 
-        # write back into the body_mass array
-        new_body_mass = self.model.body_mass.at[:, bid].set(new_masses)
+    #     # write back into the body_mass array
+    #     new_body_mass = self.model.body_mass.at[:, bid].set(new_masses)
 
-        # IMPORTANT: replace the field on the model, don't assign the array to the model
-        self.model = self.model.tree_replace({"body_mass": new_body_mass})
+    #     # IMPORTANT: replace the field on the model, don't assign the array to the model
+    #     self.model = self.model.tree_replace({"body_mass": new_body_mass})
         
-        self.risk_strategy.set_weights(self.domain_weights)
+    #     self.risk_strategy.set_weights(self.domain_weights)
 
-        return ess < 0.9 * B, new_masses  # whether resampling was done
+    #     return ess < 0.9 * B, new_masses  # whether resampling was done
+    
+    
+    

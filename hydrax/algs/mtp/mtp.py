@@ -14,6 +14,7 @@ from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
 from .splines.akima import poly_akima, poly_interpolation
 from .splines.bsplines import compute_b_spline_matrix
+from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
 
 
 @dataclass
@@ -24,9 +25,7 @@ class MTPParams:
     mean: jax.Array = None
     cov: jax.Array = None
     spline: jax.Array = None
-    last_a_idx: int = 0
-    state_bins: jax.Array = None  # Placeholder for state bins
-    # beta: float = None      # Placeholder for beta value
+    elites: jax.Array = None   # (num_elites, T, U), optional
   
 
 
@@ -60,6 +59,12 @@ class MTP(SamplingBasedController):
         risk_strategy: RiskStrategy = None,
         seed: int = 0,
         update_cov: bool = True,
+        colorize_noise: bool = False,   # !experimental
+        alpha_noise: float = 3.0,  # !experimental
+        shift: bool = False, # !experimental,
+        planning_freq: int = 1, # !experimental
+        keep_elites: int = 1,   #!experimental
+        default_zero_controls: bool = False, #!experimental
     ):
         """Initialize the controller.
 
@@ -86,8 +91,14 @@ class MTP(SamplingBasedController):
         self.sigma_start = sigma_start
         control_dtype = jnp.float32#getattr(self.task.u_min, "dtype", jnp.float32)
         self.aknots = jnp.linspace(1, self.M+1, self.M+1, dtype=control_dtype)
-        # self.bknots = jnp.arange(self.M + self.degree + 1)
-        # B spline matrix including the current spline as control point
+        if keep_elites > num_elites:
+            print(f"Warning: keep_elites ({keep_elites}) > num_elites ({num_elites}). Setting keep_elites = num_elites.")
+            self.keep_elites = num_elites
+        elif keep_elites < 1:
+            print(f"Warning: keep_elites ({keep_elites}) < 1. Setting keep_elites = 1.")
+            self.keep_elites = 1
+        else:
+            self.keep_elites = keep_elites
         self.bknots = self.start_clamped_knot_vector((self.M + 1), self.degree, dtype=control_dtype)
         self.bmat = jnp.asarray(
             compute_b_spline_matrix(
@@ -104,6 +115,14 @@ class MTP(SamplingBasedController):
         
         self.nbr_mtp_samples = int(self.num_samples * self.beta)
         self.nbr_mppi_samples = self.num_samples - self.nbr_mtp_samples - 1
+        
+        self.colorize_noise = colorize_noise
+        self.alpha_noise = alpha_noise
+        # shift
+        self.shift = shift
+        self.last_a_idx = int(self.task.dt * planning_freq)
+        
+        self.default_zero_controls = default_zero_controls
 
         self.update_cov = update_cov
         
@@ -133,14 +152,14 @@ class MTP(SamplingBasedController):
         )
         mean = jnp.zeros((self.task.planning_horizon, self.task.nu)) + self.sigma_start *noise
         spline = mean.copy()
-        # mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
+        elites = spline[None, ...].repeat(self.keep_elites, axis=0)
         cov = jnp.full_like(mean, self.sigma_start)
         
         return MTPParams(rng=rng, 
                          spline=spline, 
                          mean=mean, 
+                         elites=elites,
                          cov=cov,)
-                        #  beta=self.beta)
 
     
     def sample_controls(
@@ -150,6 +169,13 @@ class MTP(SamplingBasedController):
         """Sample a control sequence."""
         T = self.task.planning_horizon
         U = self.task.nu
+        
+        if self.shift:
+            params = params.replace(
+                mean=shift_tensor(params.mean, self.last_a_idx+1),
+                spline=shift_tensor(params.spline, self.last_a_idx+1),
+                elites=shift_tensor(params.elites, self.last_a_idx+1),
+            )
         
 
         rng = params.rng
@@ -183,7 +209,7 @@ class MTP(SamplingBasedController):
           
             # add last_a_index of spline as first control point
             # !! Double Check
-            init_sample = jnp.repeat(params.spline[params.last_a_idx][None, None, :], self.nbr_mtp_samples, axis=0)
+            init_sample = jnp.repeat(params.spline[self.last_a_idx][None, None, :], self.nbr_mtp_samples, axis=0)
             control_points = jnp.concatenate(
                 [init_sample, control_points], axis=1
             )
@@ -238,97 +264,17 @@ class MTP(SamplingBasedController):
                     self.task.nu,
                 ),
             )
-            # mppi_controls = params.mean + params.cov * noise
             mppi_controls = params.mean + self.sigma_start * noise
-            
             out = out.at[1+self.nbr_mtp_samples:1+self.nbr_mtp_samples+self.nbr_mppi_samples].set(mppi_controls)
-            # controls = jnp.concatenate([controls, mppi_controls], axis=0)
-
+        if self.keep_elites > 0 and params.elites is not None:
+            out = out.at[:self.keep_elites].set(params.elites)
+        # default zero controls
+        if self.default_zero_controls:
+            out = out.at[-1, ...].set(jnp.zeros((self.task.planning_horizon, self.task.nu)))
+        # clip
+        out = jnp.clip(out, self.task.u_min, self.task.u_max)
         return out, params.replace(rng=rng)
-    
-    # def sample_controls2(self, params: MTPParams) -> Tuple[jax.Array, MTPParams]:
-    #     rng = params.rng
-    #     T, U = self.task.planning_horizon, self.task.nu
-    #     R = self.num_samples
-    #     B = int(self.num_samples * self.beta)   # MTP batch
-    #     R_mppi = R - B - 1                      # -1 for deterministic previous spline
 
-    #     # Preallocate the full output once: (R, T, U)
-    #     out = jnp.empty((R, T, U), dtype=jnp.float32)
-
-    #     # Slot 0: deterministic previous spline
-    #     out = out.at[0].set(params.spline)
-
-    #     # ----- MTP branch (B batches) -----
-    #     if B > 0:
-    #         rng, cp_key, pick_key = jax.random.split(rng, 3)
-
-    #         # Base control-point graph: (M, N, U) in task space bounds
-    #         control_points_base = jax.random.uniform(
-    #             cp_key, (self.M, self.N, U),
-    #             minval=self.task.u_min, maxval=self.task.u_max
-    #         )
-
-    #         # Pick per layer (B, M) indices in [0, N-1]
-    #         layer_indices = jax.random.randint(pick_key, (B, self.M), 0, self.N)
-
-    #         # Vectorized selection: (B, M, U)
-    #         cp_base = control_points_base[None, ...]             # (1, M, N, U)
-    #         idx = layer_indices[..., None, None]                 # (B, M, 1, 1)
-    #         idx = jnp.broadcast_to(idx, (B, self.M, 1, U))       # (B, M, 1, U)
-    #         chosen = jnp.take_along_axis(cp_base, idx, axis=2).squeeze(2)  # (B, M, U)
-
-    #         # Prepend the last applied control from the previous spline: (B, 1, U)
-    #         init_cp = params.spline[params.last_a_idx]           # (U,)
-    #         init_cp = jnp.broadcast_to(init_cp, (B, U))          # (B, U)
-    #         chosen = jnp.concatenate([init_cp[:, None, :], chosen], axis=1)  # (B, M+1, U)
-
-    #         # Produce dense horizon controls (B, T, U) without concatenations
-    #         if self.interpolation == 'bspline':
-    #             # bmat is (T, M+1); einsum -> (B, T, U)
-    #             mtp_controls = jnp.einsum("tm,bmu->btu", self.bmat, chosen)
-
-    #         elif self.interpolation == 'akima':
-    #             # Interpolate in chunks, then fill tail in-place
-    #             num_interp = T // (self.M - 1)
-    #             remain     = T - num_interp * (self.M - 1)
-
-    #             A = jax.vmap(poly_akima, in_axes=(None, 0))(self.aknots, chosen)   # (B, M-1, 4, U)
-    #             interp = poly_interpolation(A, num_interp)                         # (B, T - remain, U)
-
-    #             mtp_controls = jnp.empty((B, T, U), dtype=interp.dtype)
-    #             mtp_controls = mtp_controls.at[:, :T-remain].set(interp)
-    #             tail = jnp.repeat(chosen[:, -1:, :], remain, axis=1)               # (B, remain, U)
-    #             mtp_controls = mtp_controls.at[:, T-remain:].set(tail)
-
-    #         elif self.interpolation == 'linear':
-    #             num_interp = T // (self.M - 1)
-    #             remain     = T - num_interp * (self.M - 1)
-
-    #             interp = jax.vmap(interpolate_path, in_axes=(0, None))(chosen, num_interp)  # (B, T-remain, U)
-    #             mtp_controls = jnp.empty((B, T, U), dtype=interp.dtype)
-    #             mtp_controls = mtp_controls.at[:, :T-remain].set(interp)
-    #             tail = jnp.repeat(chosen[:, -1:, :], remain, axis=1)
-    #             mtp_controls = mtp_controls.at[:, T-remain:].set(tail)
-
-    #         else:
-    #             raise ValueError(f"Invalid interpolation: {self.interpolation}")
-
-    #         # Store MTP block in a single write
-    #         out = out.at[1:1+B].set(mtp_controls)
-
-    #     # ----- MPPI branch (R_mppi batches) -----
-    #     if R_mppi > 0:
-    #         rng, noise_key = jax.random.split(rng)
-    #         noise = jax.random.normal(noise_key, (R_mppi, T, U))
-    #         mppi_controls = params.mean + params.cov * noise
-    #         out = out.at[1+B:1+B+R_mppi].set(mppi_controls)
-
-    #     # Clip once (vectorized)
-    #     out = jnp.clip(out, self.task.u_min, self.task.u_max)
-    #     return out, params.replace(rng=rng)
-
-    
    
     def update_params(
         self, params: MTPParams, rollouts: Trajectory
@@ -370,15 +316,14 @@ class MTP(SamplingBasedController):
             cov = params.cov
 
         spline = rollouts.controls[next_idx]  # use the best elite as control
+        new_elites = rollouts.controls[elite_indices[:self.keep_elites]]
 
-        return params.replace(mean=mean, cov=cov, spline=spline)
-        # return params.replace(mean=mean, spline=spline)
+        return params.replace(mean=mean, cov=cov, spline=spline, elites=new_elites)
+
 
     def get_action(self, params: MTPParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""
-        idx_float = t / self.task.dt  # zero order hold
+        idx_float = t / self.task.dt 
         idx = jnp.floor(idx_float).astype(jnp.int32)
-        params = params.replace(last_a_idx=idx)
         action = params.spline[idx]
-        # action = params.mean[idx]  # Use mean action
         return action

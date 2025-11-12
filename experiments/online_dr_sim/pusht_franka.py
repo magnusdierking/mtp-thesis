@@ -5,36 +5,40 @@ from hydrax.algs import MPPI, MTP, CEM
 from an_mtp_dr import AnMTP
 
 from hydrax.utils.files import get_data_path
-from hydrax.simulation.deterministic import run_interactive
-# from hydrax.simulation.deterministic_dr import run_interactive
-from deterministic_dr import run_interactive
+from deterministic_dr_new import run_interactive
 
 from pusht_franka_dr import PushTFranka
 import jax
 import jax.numpy as jnp
 import numpy as np
 
+from domain_adaptation import UniformDomainRandomization, EvolutionaryDomainRandomization
+
 """
 Run an interactive simulation of the push-T task with predictive sampling.
 """
 
-# seed = 200
-# online_dr = False
-# aggregation = "expectation"
+num_samples = 64
+num_randomizations = 10
+
+# very hard cna result in failure
+# online_dr = True
+# seed = 445
 # update_cov = False
+# aggregation = "expectation"
 # sigma_max = 0.75
 # sigma_min = 0.05
 # sigma_start = 0.2
 # det_init = {
-#     "block_pos_x": 0.05,
-#     "block_pos_y": 0.15,
+#     "block_pos_x": -0.1,
+#     "block_pos_y": 0.1,
 #     "block_angle": 3*np.pi/4,
-#     "ee_goal_pos": [0.45, 0.1, 0.035]
+#     "ee_goal_pos": [0.35, 0.0, 0.035]
 # }
 
 
 seed = 42
-online_dr = False
+online_dr = True
 aggregation = "expectation"
 update_cov = False
 sigma_max = 0.75
@@ -62,6 +66,7 @@ task = PushTFranka(ik_type = 'pinv',
                 )
 
 
+
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
     description="Run an interactive simulation of the walker task."
@@ -75,8 +80,6 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 128
-num_randomizations = 20
 
 data = {}
 path = get_data_path() / "dr_sim" / args.algorithm 
@@ -166,6 +169,31 @@ elif args.algorithm == "anmtp":
 mj_model, mj_data = task.reset(seed=seed)
 
 # Run the interactive simulation
+# dr_strategy = UniformDomainRandomization(
+#     seed=seed,
+#     task=task,
+#     controller=ctrl,
+#     randomized_fields={
+#         "body_mass": (0.001, 0.5, task.T_bid),  # randomize mass of the block
+#         # "geom_friction": (jnp.array([0.5, 1e-03, 0.5e-04]), jnp.array([1.5, 10e-03, 2e-04]), task.T_bid),  # friction
+#     },
+#     num_randomizations=num_randomizations
+# )
+
+dr_strategy = EvolutionaryDomainRandomization(
+    seed=seed,
+    task=task,
+    controller=ctrl,
+    randomized_fields={
+        "body_mass": (0.1, 1.75, task.T_bid),  # randomize mass of the block
+        # "geom_friction": (jnp.array([0.5, 1e-03, 0.5e-04]), jnp.array([1.5, 10e-03, 2e-04]), task.T_bid),  # friction
+    },
+    num_randomizations=num_randomizations,
+    mutation_rate=0.1
+)
+
+
+
 
 run_interactive(
     ctrl,
@@ -182,6 +210,7 @@ run_interactive(
     seed=seed,
     log_file=path.as_posix(),
     online_dr=online_dr,
+    dr_strategy = dr_strategy,
     )
 
 

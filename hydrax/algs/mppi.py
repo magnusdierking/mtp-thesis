@@ -7,6 +7,8 @@ from flax.struct import dataclass
 # for state bins
 #from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
 from hydrax.alg_base_opt import SamplingBasedController, Trajectory
+from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
+
 
 
 from hydrax.risk import RiskStrategy
@@ -21,9 +23,8 @@ class MPPIParams:
         mean: The mean of the control distribution, μ = [u₀, u₁, ..., ].
         rng: The pseudo-random number generator key.
     """
-
-    mean: jax.Array
     rng: jax.Array
+    mean: jax.Array
 
 
 class MPPI(SamplingBasedController):
@@ -45,6 +46,10 @@ class MPPI(SamplingBasedController):
         alpha: float = 0.0,
         risk_strategy: RiskStrategy = None,
         colorize_noise: bool = False,   # !experimental
+        alpha_noise: float = 3.0,  # !experimental
+        shift: bool = False, # !experimental
+        planning_freq: int = 1, # !experimental
+        default_zero_controls: bool = False, #!experimental
         seed: int = 0,
         update_cov: bool = True,  
     ):
@@ -66,10 +71,17 @@ class MPPI(SamplingBasedController):
         self.num_samples = num_samples
         self.temperature = temperature
         self.alpha = alpha
-        
-        self.colorize_noise = colorize_noise
-        self.alpha_noise = 3.0  # 0=white, 1=pink, 2=brown
         self.update_cov = update_cov
+        
+        # colored noise
+        self.colorize_noise = colorize_noise
+        self.alpha_noise = alpha_noise
+        # shift
+        self.shift = shift
+        self.last_a_idx = int(self.task.dt * planning_freq)
+        
+        self.default_zero_controls = default_zero_controls
+        
 
     def init_params(self, seed: int = 0) -> MPPIParams:
         """Initialize the policy parameters."""
@@ -81,6 +93,11 @@ class MPPI(SamplingBasedController):
         self, params: MPPIParams
     ) -> Tuple[jax.Array, MPPIParams]:
         """Sample a control sequence."""
+        if self.shift:
+            params = params.replace(
+                mean=shift_tensor(params.mean, self.last_a_idx+1),
+                spline=shift_tensor(params.spline, self.last_a_idx+1),
+            )
         rng, sample_rng = jax.random.split(params.rng)
         noise = jax.random.normal(
             sample_rng,
@@ -90,9 +107,16 @@ class MPPI(SamplingBasedController):
                 self.task.nu,
             ),
         )
+        # colorize noise
         if self.colorize_noise:
-            noise = self.colorize_time_series(noise) # !experimental
+            noise = self.colorize_time_series(noise, remove_dc=True, alpha=self.alpha_noise) # !experimental
         controls = params.mean + self.noise_level * noise
+        
+        # default zero controls
+        if self.default_zero_controls:
+            controls = controls.at[0, ...].set(jnp.zeros((self.task.planning_horizon, self.task.nu)))
+        # clip
+        controls = jnp.clip(controls, self.task.u_min, self.task.u_max)
         return controls, params.replace(rng=rng)
 
     def update_params(
@@ -108,34 +132,8 @@ class MPPI(SamplingBasedController):
 
     def get_action(self, params: MPPIParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""
-        idx_float = t / self.task.dt  # zero order hold
+        idx_float = t / self.task.dt 
         idx = jnp.floor(idx_float).astype(jnp.int32)
-        return params.mean[idx]
+        action = params.mean[idx]
+        return action
     
-    # ----------------------
-    # Experimental
-    def colorize_time_series(self, noise, remove_dc=True, eps=1e-8):
-        """
-        noise: (B, T, D) white ~ N(0,1)
-        Returns colored noise with approx unit variance per (B,D) trajectory.
-        alpha=0 -> white, 1 -> pink (1/f), 2 -> brown (1/f^2)
-        """
-        B, T, D = noise.shape
-
-        # reshape to (B*D, T) to FFT each series independently
-        x = noise.reshape(B * D, T)
-
-        # FFT -> apply magnitude shaping -> IFFT
-        Xf = jnp.fft.rfft(x, axis=-1)                           # (B*D, T_r)
-        freqs = jnp.fft.rfftfreq(T)                             # (T_r,)
-        H = (1.0 / jnp.maximum(freqs, eps)) ** (self.alpha_noise / 2.0)    # magnitude shaping
-        if remove_dc:
-            H = H.at[0].set(0.0)
-        Yf = Xf * H[None, :]                                    # broadcast
-        y = jnp.fft.irfft(Yf, n=T, axis=-1)                     # (B*D, T)
-
-        # de-mean and unit-std per series (robust for finite T)
-        y = y - y.mean(axis=-1, keepdims=True)
-        y = y / (y.std(axis=-1, keepdims=True) + eps)
-
-        return y.reshape(B, T, D)

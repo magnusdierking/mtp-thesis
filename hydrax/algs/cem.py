@@ -5,7 +5,8 @@ import jax.numpy as jnp
 from flax.struct import dataclass
 
 from hydrax.alg_base_opt import SamplingBasedController, Trajectory
-# from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
+from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
+
 
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
@@ -20,10 +21,10 @@ class CEMParams:
         cov: The (diagonal) covariance of the control distribution.
         rng: The pseudo-random number generator key.
     """
-
+    rng: jax.Array
     mean: jax.Array
     cov: jax.Array
-    rng: jax.Array
+    elites: jax.Array = None   # (num_elites, T, U), optional
 
 
 class CEM(SamplingBasedController):
@@ -42,6 +43,12 @@ class CEM(SamplingBasedController):
         risk_strategy: RiskStrategy = None,
         seed: int = 0,
         update_cov: bool = True,
+        colorize_noise: bool = False,   # !experimental
+        alpha_noise: float = 3.0,  # !experimental
+        shift: bool = False, # !experimental,
+        planning_freq: int = 1, # !experimental
+        keep_elites: int = 1,   #!experimental
+        default_zero_controls: bool = False, #!experimental
     ):
         """Initialize the controller.
 
@@ -64,16 +71,38 @@ class CEM(SamplingBasedController):
         self.num_elites = num_elites
         self.alpha = alpha
         self.update_cov = update_cov
+        
+        self.colorize_noise = colorize_noise
+        self.alpha_noise = alpha_noise
+        # shift
+        self.shift = shift
+        self.last_a_idx = int(self.task.dt * planning_freq)
+        
+        if keep_elites > num_elites:
+            print(f"Warning: keep_elites ({keep_elites}) > num_elites ({num_elites}). Setting keep_elites = num_elites.")
+            self.keep_elites = num_elites
+        elif keep_elites < 1:
+            print(f"Warning: keep_elites ({keep_elites}) < 1. Setting keep_elites = 1.")
+            self.keep_elites = 1
+        else:
+            self.keep_elites = keep_elites
+        self.default_zero_controls = default_zero_controls
 
     def init_params(self, seed: int = 0) -> CEMParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
         mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
         cov = jnp.full_like(mean, self.sigma_start)
-        return CEMParams(mean=mean, cov=cov, rng=rng)
+        elites = mean[None, ...].repeat(self.keep_elites, axis=0)
+        return CEMParams(mean=mean, cov=cov, rng=rng, elites=elites)
 
     def sample_controls(self, params: CEMParams) -> Tuple[jax.Array, CEMParams]:
         """Sample a control sequence."""
+        if self.shift:
+            params = params.replace(
+                mean=shift_tensor(params.mean, self.last_a_idx+1),
+                cov=shift_tensor(params.cov, self.last_a_idx+1) if self.update_cov else params.cov,
+            )
         rng, sample_rng = jax.random.split(params.rng)
         noise = jax.random.normal(
             sample_rng,
@@ -83,7 +112,18 @@ class CEM(SamplingBasedController):
                 self.task.nu,
             ),
         )
+        # colorize noise
+        if self.colorize_noise:
+            noise = self.colorize_time_series(noise, remove_dc=True, alpha=self.alpha_noise) # !experimental
         controls = params.mean + params.cov * noise
+        # infuse elites from previous iteration
+        if self.keep_elites > 0 and params.elites is not None:
+            controls = controls.at[:self.keep_elites].set(params.elites)
+        # default zero controls
+        if self.default_zero_controls:
+            controls = controls.at[self.keep_elites, ...].set(jnp.zeros((self.task.planning_horizon, self.task.nu)))
+        # clipping
+        controls = jnp.clip(controls, self.task.u_min, self.task.u_max)
         return controls, params.replace(rng=rng)
 
     def update_params(
@@ -106,11 +146,12 @@ class CEM(SamplingBasedController):
         if self.update_cov:
             cov = jnp.std(rollouts.controls[elites], axis=0)
             cov = jnp.clip(cov, a_min=self.sigma_min, a_max=self.sigma_max)
-
-        return params.replace(mean=mean, cov=cov)
+        new_elites = rollouts.controls[elites[:self.keep_elites]]
+        return params.replace(mean=mean, cov=cov, elites=new_elites)
 
     def get_action(self, params: CEMParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""
-        idx_float = t / self.task.dt  # zero order hold
+        idx_float = t / self.task.dt 
         idx = jnp.floor(idx_float).astype(jnp.int32)
-        return params.mean[idx]
+        action = params.mean[idx]
+        return action

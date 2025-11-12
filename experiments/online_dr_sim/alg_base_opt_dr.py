@@ -90,8 +90,10 @@ class SamplingBasedController(ABC):
             rng = jax.random.key(seed)
             rng, subrng = jax.random.split(rng)
             subrngs = jax.random.split(subrng, self.num_randomizations)
-            masses = jnp.linspace(0.1, 0.75, self.num_randomizations)
+            #! --- custom uniform init for DR test cases ---
+            masses = jnp.linspace(0.1, 1.75, self.num_randomizations)
             randomizations = jax.vmap(self.task.domain_randomize_model)(subrngs, masses)
+            print("Initial randomizations:", randomizations)
             self.model = self.task.model.tree_replace(randomizations)
 
             # masses = jnp.linspace(0.05, 1.0, self.num_randomizations)
@@ -103,7 +105,34 @@ class SamplingBasedController(ABC):
             self.randomized_axes = self.randomized_axes.tree_replace(
                 {key: 0 for key in randomizations.keys()}
             )
+            
+            
+            
+    # def update_domain_randomization_model(self, dr_samples: jax.Array, randomized_fields: dict) -> None:
+    #     """Update the domain randomization model with new samples.
+    #     """
+    #     randomizations = {}
+    #     for i, field in enumerate(randomized_fields.keys()):
+    #         randomizations[field] = dr_samples[:, i]
 
+    #     self.model = self.model.tree_replace(randomizations)
+
+
+    def update_domain_randomization_model(self, new_randomizations: dict) -> None:
+        """Update the domain randomization model with new samples.
+        """
+        # checks
+        for field in new_randomizations.keys():
+            model_field = getattr(self.task.model, field, None)
+            if model_field is None:
+                raise ValueError(f"Unknown field '{field}' in randomizations.")
+            if len(new_randomizations[field]) != self.num_randomizations:
+                raise ValueError(f"Shape mismatch for field '{field}': "
+                                 f"expected {self.num_randomizations}, "
+                                 f"got {new_randomizations[field].shape}.")
+        self.model = self.model.tree_replace(new_randomizations)
+
+        
     @jax.named_call
     def optimize(self, state: mjx.Data, params: Any) -> Tuple[Any, Trajectory]:
         """Advance the controller by one planning iteration.

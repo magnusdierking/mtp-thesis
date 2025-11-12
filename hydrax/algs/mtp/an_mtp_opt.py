@@ -13,7 +13,7 @@ from hydrax.task_base import Task
 from .splines.akima import poly_akima, poly_interpolation
 from .splines.bsplines import compute_b_spline_matrix
 from .splines.linear import interpolate_linear
-
+from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
 
 @dataclass
 class AnMTPParams:
@@ -23,7 +23,6 @@ class AnMTPParams:
     spline: jax.Array = None   # (T, U)
     elites: jax.Array = None   # (num_elites, T, U), optional
     beta: jax.Array = None     # scalar jax array, updated inside jit
-    last_a_idx: int = 0
 
 
 class AnMTP(SamplingBasedController):
@@ -42,7 +41,6 @@ class AnMTP(SamplingBasedController):
         N: int = 50,
         degree: int = 2,
         num_elites: int = 5,
-        keep_elites: int = 1,  
         sigma_start: float = 0.5,
         sigma_min: float = 0.1,
         sigma_max: float = 1.0,
@@ -59,6 +57,9 @@ class AnMTP(SamplingBasedController):
         risk_strategy: RiskStrategy | None = None,
         colorize_noise: bool = False,   # !experimental
         shift: bool = False, # !experimental,
+        planning_freq: int = 1, # !experimental
+        keep_elites: int = 1,   #!experimental
+        default_zero_controls: bool = False, #!experimental
         seed: int = 0,
         beta_strategy: str = "task", # task, ratio, greedy
         update_cov: bool = True,
@@ -115,7 +116,11 @@ class AnMTP(SamplingBasedController):
         # Experimental
         self.colorize_noise = colorize_noise
         self.alpha_noise = 1.0  # 0=white, 1=pink, 2=brown
+        # shift
         self.shift = shift
+        self.last_a_idx = int(self.task.dt * planning_freq)
+        
+        self.default_zero_controls = default_zero_controls
         # ----------------------
 
     def _start_clamped_knot_vector(self, num_ctrl_points: int, degree: int, *, dtype=jnp.float32) -> jax.Array:
@@ -160,16 +165,11 @@ class AnMTP(SamplingBasedController):
         
         # shift mean, spline, elites according to rolled out actions index
         if self.shift:
-            idx = params.last_a_idx
-            def _shift(arr):
-                # arr: (T,U)
-                shifted = jnp.roll(arr, -idx, axis=0)
-                shifted = shifted.at[-idx:, :].set(arr[-1,:])  # hold last value
-                return shifted
             params = params.replace(
-                mean=_shift(params.mean),
-                spline=_shift(params.spline),
-                elites=_shift(params.elites),
+                mean=shift_tensor(params.mean, self.last_a_idx+1),
+                spline=shift_tensor(params.spline, self.last_a_idx+1),
+                elites=shift_tensor(params.elites, self.last_a_idx+1),
+                cov=shift_tensor(params.cov, self.last_a_idx+1) if self.update_cov else params.cov,
             )
 
         # Always fill the whole (R, T, U):
@@ -227,12 +227,16 @@ class AnMTP(SamplingBasedController):
         mixed_tail = jnp.where(mask, mtp_controls, mppi_controls)  # (S,T,U)
 
         out = out.at[self.keep_elites:].set(mixed_tail)
+        # set elites
+        if self.keep_elites > 0 and params.elites is not None:
+            out = out.at[:self.keep_elites].set(params.elites)
+        if self.default_zero_controls:
+            out = out.at[-1, ...].set(jnp.zeros((self.task.planning_horizon, self.task.nu)))
         out = jnp.clip(out, self.task.u_min, self.task.u_max)
         return out, params.replace(rng=rng)
 
     # ----------------------
     # Parameter updates (+ adaptive beta)
-    # ----------------------
     # ----------------------
     def update_params(self, params: AnMTPParams, rollouts: Trajectory) -> AnMTPParams:
         # Aggregate over time per sample
@@ -269,12 +273,11 @@ class AnMTP(SamplingBasedController):
             cov = jnp.clip(cov, self.sigma_min, self.sigma_max)
         else:
             cov = params.cov
-
-
-
         spline = rollouts.controls[next_idx]
 
-        # --- adaptive beta from elites using mask logic with fixed shape ---
+        # ----------------------
+        # Beta updates
+        # ----------------------
         K = jnp.floor(params.beta * S).astype(jnp.int32)
         # Tail indices for elites that are not the deterministic slot 0
         tail_idx = jnp.clip(elite_idx - 1, 0, S - 1)
@@ -305,16 +308,15 @@ class AnMTP(SamplingBasedController):
                 self.beta_decay * params.beta,
             )
         new_beta = jnp.clip(new_beta, self.beta_min, self.beta_max)
+        new_elites = rollouts.controls[elite_idx[:self.keep_elites]]
 
-        return params.replace(mean=mean, spline=spline, beta=new_beta)
+        return params.replace(mean=mean, spline=spline, beta=new_beta, new_elites=new_elites, cov=cov)
 
     # ----------------------
     # Action extraction
     # ----------------------
     def get_action(self, params: AnMTPParams, t: float) -> jax.Array:
         idx = jnp.floor(t / self.task.dt).astype(jnp.int32)
-        # store index so the next sampling step can prepend the last applied action
-        params = params.replace(last_a_idx=idx)
         return params.spline[idx]
 
     # Optional manual override
@@ -322,30 +324,3 @@ class AnMTP(SamplingBasedController):
         # self.beta = float(jnp.clip(beta, self.beta_min, self.beta_max))
         return params.replace(beta=beta)
 
-    # ----------------------
-    # Experimental
-    def colorize_time_series(self, noise, remove_dc=True, eps=1e-8):
-        """
-        noise: (B, T, D) white ~ N(0,1)
-        Returns colored noise with approx unit variance per (B,D) trajectory.
-        alpha=0 -> white, 1 -> pink (1/f), 2 -> brown (1/f^2)
-        """
-        B, T, D = noise.shape
-
-        # reshape to (B*D, T) to FFT each series independently
-        x = noise.reshape(B * D, T)
-
-        # FFT -> apply magnitude shaping -> IFFT
-        Xf = jnp.fft.rfft(x, axis=-1)                           # (B*D, T_r)
-        freqs = jnp.fft.rfftfreq(T)                             # (T_r,)
-        H = (1.0 / jnp.maximum(freqs, eps)) ** (self.alpha_noise / 2.0)    # magnitude shaping
-        if remove_dc:
-            H = H.at[0].set(0.0)
-        Yf = Xf * H[None, :]                                    # broadcast
-        y = jnp.fft.irfft(Yf, n=T, axis=-1)                     # (B*D, T)
-
-        # de-mean and unit-std per series (robust for finite T)
-        y = y - y.mean(axis=-1, keepdims=True)
-        y = y / (y.std(axis=-1, keepdims=True) + eps)
-
-        return y.reshape(B, T, D)

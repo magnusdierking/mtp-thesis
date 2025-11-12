@@ -272,7 +272,7 @@ class PushTFranka(Task):
     
 
 
-    def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
+    def domain_randomize_model(self, rng: jax.Array, randomizations: dict = None) -> Dict[str, jax.Array]:
         n_geoms = self.model.body_mass.shape[0]
         multiplier = jax.random.uniform(rng, minval=0.9, maxval=1.1)
         new_masses = self.model.body_mass.at[self.T_bid].set(
@@ -281,6 +281,7 @@ class PushTFranka(Task):
 
         return {"body_mass": new_masses}
         
+    
 
 
     def success(self, state):

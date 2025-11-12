@@ -119,3 +119,26 @@ class ConditionalValueAtRisk(RiskStrategy):
         """Take the expected cost in the tail beyond the (1 - α) quantile."""
         quant = jnp.quantile(costs, 1.0 - self.alpha, axis=0)
         return jnp.mean(costs, where=costs >= quant, axis=0)
+
+class InverseValueAtRisk(RiskStrategy):
+    """Take the cost value at the α quantile."""
+
+    def __init__(self, alpha: float):
+        """Set the quantile level α."""
+        self.alpha = alpha
+
+    def combine_costs(self, costs: jax.Array) -> jax.Array:
+        """Take the cost value at the α quantile."""
+        return jnp.quantile(costs, self.alpha, axis=0)
+     
+class InverseConditionalValueAtRisk(RiskStrategy):
+    """Take the expected cost in the head below the (1 - α) quantile."""
+
+    def __init__(self, alpha: float):
+        """Set the quantile level α."""
+        self.alpha = alpha
+
+    def combine_costs(self, costs: jax.Array) -> jax.Array:
+        """Take the expected cost in the head below the (1 - α) quantile."""
+        quant = jnp.quantile(costs, 1.0 - self.alpha, axis=0)
+        return jnp.mean(costs, where=costs <= quant, axis=0)

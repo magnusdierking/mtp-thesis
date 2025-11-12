@@ -1,3 +1,4 @@
+from pyexpat import model
 import time
 from typing import Dict
 import os 
@@ -31,6 +32,7 @@ class PushTFranka(Task):
         trace_sites=["ee_site", "T_1", "T_2"],
         actuation_type: str = 'velocity',
         sampling_space: str = 'velocity',
+        block_type: str = 'free', # 'free' or 'joint'
         ik_type: str = 'pinv',
         det_init: dict = {},
     ):
@@ -42,9 +44,14 @@ class PushTFranka(Task):
                 (get_root_path() / "models" / "fr3_pushT_pos" / "scene_mjx.xml").as_posix()
             )
         elif actuation_type == 'velocity':
-            mj_model = mujoco.MjModel.from_xml_path(
-                (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx.xml").as_posix()
-            )
+            if block_type == 'joint':
+                mj_model = mujoco.MjModel.from_xml_path(
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx.xml").as_posix()
+                )
+            else:
+                mj_model = mujoco.MjModel.from_xml_path(
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
+                )
         else:
             raise ValueError("actuation_type must be 'position' or 'velocity'")
         
@@ -79,30 +86,28 @@ class PushTFranka(Task):
         )
         
         self.T_bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
+        self.block_type = block_type
 
         # Get block joint indices
-        self.block_joint_names = ['T_x', 'T_y', 'T_z']
+        self.block_joint_names = ['T_x', 'T_y', 'T_z'] if block_type == 'joint' else ["T"]
         self.block_joint_idxs = [mj_model.joint(name).id for name in self.block_joint_names]
         
         # Get actuator joint indices
         self.actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
-        self.actuator_joint_idxs = [mj_model.joint(name).id for name in self.actuator_joint_names]
-        
-        self.joint_limits = self.mj_model.jnt_range[self.actuator_joint_idxs]
+        self.actuator_joint_ids = [mj_model.joint(name).id for name in self.actuator_joint_names]
+        self.actuator_joint_idxs = self.mj_model.jnt_qposadr[self.actuator_joint_ids]
+        self.dof_adr  = self.mj_model.jnt_dofadr[self.actuator_joint_ids]
+
+        self.joint_limits = self.mj_model.jnt_range[self.actuator_joint_ids]
         
         # special to this task
         self.ee_body_id = self.mj_model.body("ee_frame").id
         self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, 0.0])  # [w, x, y, z]
         # initial end effector
         self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-        self.goal_pos_ee = jnp.array([0.45, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
+        self.goal_pos_ee = jnp.array([0.3, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
 
         self.det_init = det_init
-
-        self.dr_ranges = {
-            "body_mass": (0.05, 1.0),
-            "geom_friction": (0.5, 1.5),
-        }
 
     def reset(self, seed: int = 0) -> None:
         """Randomize the initial pose of the T-shaped block."""
@@ -119,12 +124,10 @@ class PushTFranka(Task):
 
 
         # Assuming the block's pose is at the beginning of qpos
-        mj_data.qpos[0] = pos_x
-        mj_data.qpos[1] = pos_y
-        mj_data.qpos[2] = angle
-        
-        j_start = 3  # Adjust based on your model (e.g., 3 if floating base)
-        n_joints = 7
+        if self.block_type == 'joint':
+            mj_data.qpos[0] = pos_x
+            mj_data.qpos[1] = pos_y
+            mj_data.qpos[2] = angle
 
         # # Initial guess
         q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
@@ -171,11 +174,11 @@ class PushTFranka(Task):
             mujoco.mj_jacBody(self.mj_model, mj_data, J_pos, J_rot, self.ee_body_id)
 
             # Slice columns corresponding to actuated joints
-            J = np.vstack([J_pos[:, self.actuator_joint_idxs], J_rot[:, self.actuator_joint_idxs]])  # shape (6, n_joints)
+            J = np.vstack([J_pos[:, self.dof_adr], J_rot[:, self.dof_adr]])  # shape (6, n_joints)
 
             # Solve damped least squares: dq = (JᵀJ + λ²I)⁻¹ Jᵀ e
             JTJ = J.T @ J
-            H = JTJ + damping * np.eye(len(self.actuator_joint_idxs))
+            H = JTJ + damping * np.eye(len(self.dof_adr))
             g = J.T @ err
             dq = np.linalg.solve(H, g)
 
@@ -183,9 +186,7 @@ class PushTFranka(Task):
             q += step_size * dq
 
             # Clamp to joint limits
-            for j in range(n_joints):
-                low, high = self.joint_limits[j]
-                q[j] = np.clip(q[j], low, high)
+            q = np.clip(q, self.joint_limits[:, 0], self.joint_limits[:, 1])
 
         else:
             print(f"IK did not converge. {err}, {np.linalg.norm(err)}")
