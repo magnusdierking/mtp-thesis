@@ -91,9 +91,9 @@ class SamplingBasedController(ABC):
             rng, subrng = jax.random.split(rng)
             subrngs = jax.random.split(subrng, self.num_randomizations)
             #! --- custom uniform init for DR test cases ---
-            masses = jnp.linspace(0.1, 1.75, self.num_randomizations)
+            masses = jnp.multiply(jnp.ones(self.num_randomizations), 0.144) #jnp.linspace(0.1, 1.75, self.num_randomizations)
             randomizations = jax.vmap(self.task.domain_randomize_model)(subrngs, masses)
-            print("Initial randomizations:", randomizations)
+            # print("Initial randomizations:", randomizations)
             self.model = self.task.model.tree_replace(randomizations)
 
             # masses = jnp.linspace(0.05, 1.0, self.num_randomizations)

@@ -18,8 +18,9 @@ from domain_adaptation import UniformDomainRandomization, EvolutionaryDomainRand
 Run an interactive simulation of the push-T task with predictive sampling.
 """
 
-num_samples = 64
-num_randomizations = 10
+
+num_samples = 128
+num_randomizations = 20
 
 # very hard cna result in failure
 # online_dr = True
@@ -45,24 +46,25 @@ sigma_max = 0.75
 sigma_min = 0.05
 sigma_start = 0.2
 det_init = {
-    "block_pos_x": 0.2,
-    "block_pos_y": 0.1,
+    "block_pos_x": 0.4,
+    "block_pos_y": 0.15,
     "block_angle": np.pi/3,
-    "ee_goal_pos": [0.45, 0.1, 0.035]
+    "ee_goal_pos": [0.4, 0.0, 0.035]
 }
 
 
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=8,
-                    sim_steps_per_control_step=2,
+                    planning_horizon=10,
+                    sim_steps_per_control_step=3,
                     ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
                                 "u_max": jnp.array([0.4, 0.4])},
                     trace_sites=["ee_site", "T_1", "T_2"],
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    det_init=det_init
+                    det_init=det_init,
+                    block_type = 'joint',
                 )
 
 
@@ -154,7 +156,7 @@ elif args.algorithm == "anmtp":
             sigma_start=sigma_start,
             num_elites=12,
             keep_elites=1,   # !experimental
-            beta = 0.45,
+            beta = 0.3,
             beta_lr = 0.1,        # adaptation step size
             beta_min = 0.25,
             beta_max = 0.35,
@@ -185,8 +187,12 @@ dr_strategy = EvolutionaryDomainRandomization(
     task=task,
     controller=ctrl,
     randomized_fields={
-        "body_mass": (0.1, 1.75, task.T_bid),  # randomize mass of the block
+        # "body_mass": (0.1, 1.75, task.T_bid),  # randomize mass of the block
         # "geom_friction": (jnp.array([0.5, 1e-03, 0.5e-04]), jnp.array([1.5, 10e-03, 2e-04]), task.T_bid),  # friction
+    },
+    randomized_joints = {
+        "dof_damping": (0.01, 2.0, ["T_x", "T_y"]),  # randomize damping of T
+        # "dof_frictionloss": (0.0, 1.0, ["T_x", "T_y"]),  # randomize frictionloss of T
     },
     num_randomizations=num_randomizations,
     mutation_rate=0.1

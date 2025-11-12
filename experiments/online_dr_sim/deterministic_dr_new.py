@@ -72,7 +72,7 @@ def differential_IK(
     ee_quat = np.array(ee_quat)
     goal_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071])  # Assuming goal orientation is aligned with x-axis
     goal_quat = np.array(goal_quat)
-    goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
+    goal_vec = 10 * quat_error_body(goal_quat, ee_quat)                                   # (3,)
 
     temp = np.concatenate([world_site_vel_desired, np.array([0.035-ee_pos[2]])])
     twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
@@ -348,12 +348,14 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     sites_of_interest[...,2] - np.array(mj_data.site_xpos[site_id2]), axis=-1
                 )
                 distances = (distance_1 + distance_2)
-                print("Distances:", distances)
+               
 
                 randomizations = dr_strategy.get_current_randomizations()
-                print("Current randomizations:", randomizations)
+               
+
                 updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances, randomizations)
                 # print("New weights:", new_weights)
+                print("New randomizations:", new_randomizations)
                 controller.update_domain_randomization_model(new_randomizations)
                 policy_params = policy_params.replace(domain_weights=jnp.array(new_weights))
                 
@@ -364,15 +366,15 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 # probs = exps / np.sum(exps)
                  # !update live plot
                 # --- update bar heights (left subplot) ---
-                temperature = 0.01  # adjust temperature as needed
+                temperature = 0.1  # adjust temperature as needed
                 scaled_distances = -distances / temperature
                 exps = np.exp(scaled_distances - np.max(scaled_distances))  # for numerical stability
                 probs = exps / np.sum(exps)
                 for rect, h in zip(bars, probs):
                     rect.set_height(h)
-                print(np.array(new_randomizations["body_mass"]).shape)
+                # print(np.array(new_randomizations["body_mass"]).shape)
                 ax_bar.set_xticklabels(
-                    [f"{v:.2f}" for v in np.array(new_randomizations["body_mass"])[:,controller.task.T_bid].tolist()]
+                    [f"{v:.2f}" for v in np.array(new_randomizations["dof_damping"])[:,controller.task.T_bid].tolist()]
                 )
 
                 ax_bar.relim()
@@ -382,7 +384,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 # Only build a KDE once we have at least 2 samples
                 if len(kde_samples) >= 2:
                     samples_array = np.fromiter(kde_samples, dtype=float)
-                    print("KDE samples array shape:", samples_array.shape)
+                    # print("KDE samples array shape:", samples_array.shape)
 
                     # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
                     kde = gaussian_kde(samples_array, bw_method='scott')

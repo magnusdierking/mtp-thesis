@@ -10,7 +10,7 @@ from hydrax.utils.utils import mujoco_to_scipy_quat
 
 
 # xml_path = "./../hydrax/models/g1/scene.xml"
-xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
@@ -25,9 +25,11 @@ print(len(data.qpos))
 for i in range(model.njnt):
     name = model.joint(i).name
     print(f"Joint {i}: {name}")
+    # print damping, stiffness, frictionloss
+    print(f"  Damping: {model.joint(i).damping}, Stiffness: {model.joint(i).stiffness}, Frictionloss: {model.joint(i).frictionloss}")
 for i in range(model.nu):
     name = mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
-    print(f"Control input {i}: {name}")
+
 for i in range(model.nsite):
     name = model.site(i).name
     print(f"Site {i}: {name}")
@@ -119,6 +121,6 @@ with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
         # data.ctrl[0] = 0.01 #q
         mujoco.mj_step(model, data)
-        print("EE pos:", data.xpos[ee_body_id])
-        print("EE quat:", data.xquat[ee_body_id])
+        # print("EE pos:", data.xpos[ee_body_id])
+        # print("EE quat:", data.xquat[ee_body_id])
         v.sync()

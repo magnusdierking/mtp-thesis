@@ -7,8 +7,8 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="0.9 0.01 0.05" 
-            solref="0.01 1.0" 
+      <geom friction="0.9 0.01 0.002" 
+            solref="0.002 1.0" 
             margin="0.005"
             solimp="0.9 0.95 0.001"
             condim="6"
@@ -47,11 +47,11 @@
   <option impratio="6"
           solver="Newton"
           jacobian="dense"
-          cone="elliptic"
+          cone="pyramidal"
           timestep="0.02" 
-          iterations="5"
-          ls_iterations="8">
-  <flag eulerdamp="disable" 
+          iterations="8"
+          ls_iterations="10">
+  <flag eulerdamp="enable" 
         warmstart="enable"/>
   </option>
   <custom>
@@ -102,7 +102,7 @@
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="0 0 0.05"
-          material="groundplane" friction="1.0 0.01 0.05" condim="6"
+          material="groundplane" friction="1.0 0.01 0.002" condim="3"
           contype="4" conaffinity="3"/>  <!-- 3 = 1|2 (robot | objects) -->
   </worldbody>
 </mujoco>

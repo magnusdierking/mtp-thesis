@@ -21,6 +21,21 @@ from scipy.spatial.transform import Rotation as R
 
 from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
 
+import math
+
+def euler_to_quaternion(roll, pitch, yaw):
+    cy = math.cos(yaw * 0.5)
+    sy = math.sin(yaw * 0.5)
+    cp = math.cos(pitch * 0.5)
+    sp = math.sin(pitch * 0.5)
+    cr = math.cos(roll * 0.5)
+    sr = math.sin(roll * 0.5)
+
+    w = cr * cp * cy + sr * sp * sy
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+    return (x, y, z, w)
 
 class PushTFranka(Task):
     """Push a T-shaped block to a desired pose."""
@@ -124,10 +139,13 @@ class PushTFranka(Task):
 
 
         # Assuming the block's pose is at the beginning of qpos
+        mj_data.qpos[0] = pos_x
+        mj_data.qpos[1] = pos_y
         if self.block_type == 'joint':
-            mj_data.qpos[0] = pos_x
-            mj_data.qpos[1] = pos_y
             mj_data.qpos[2] = angle
+        else:
+            quat = euler_to_quaternion(0, 0, angle)  # roll, pitch, yaw
+            mj_data.qpos[3:7] = np.array([quat[3], quat[0], quat[1], quat[2]])  # w, x, y, z
 
         # # Initial guess
         q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
@@ -413,7 +431,7 @@ class PushTFranka(Task):
             qpos = data.qpos
             # Jacobian (6 x nv) restricted to actuated joints
             J_full = fk_jac(qpos)                      # (6, nv_total)
-            J = J_full[:, self.actuator_joint_idxs]    # (6, n_act)
+            J = J_full[:, self.dof_adr]    # (6, n_act)
             
         
             J_lin = J[:3, :]    # (3, n_act)
@@ -427,7 +445,7 @@ class PushTFranka(Task):
             ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
 
             goal_quat = jnp.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071]) # Assuming goal orientation is aligned with x-axis
-            e_rot = quat_error_body(goal_quat, ee_quat)                                   # (3,)
+            e_rot = 10 * quat_error_body(goal_quat, ee_quat)                                   # (3,)
 
             # Commanded planar twist + corrective twist
             twist_cmd = jnp.concatenate([control_xy, jnp.zeros(4)])     # [vx, vy, 0, 0, 0, 0]
@@ -439,13 +457,13 @@ class PushTFranka(Task):
             # rotational correction via nullspace
             N = jnp.eye(J.shape[1]) - jnp.linalg.pinv(J) @ J
             # twist = twist_cmd + N @ (kp_ori * J_ang.T @ e_rot)
-            qnow = qpos[jnp.array(self.actuator_joint_idxs)]
+            qnow = qpos[jnp.array(self.dof_adr )]
             qhome = jnp.array([ 0.51199203,  0.1014329,  -0.36340348, -2.9813132,   0.50339095,  3.06692214, -1.92271156])
 
             dq = jnp.linalg.pinv(J) @ twist_err + N @ (kp_ori * (qhome - qnow))
 
             if self.sampling_space == 'position':
-                return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
+                return qpos[self.dof_adr] + self.mj_model.opt.timestep * dq
             elif self.sampling_space == 'velocity':
                 return dq
 

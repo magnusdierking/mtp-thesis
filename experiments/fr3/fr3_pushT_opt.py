@@ -75,7 +75,7 @@ class FR3_PushT(FrankaPandaServer):
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         # --- Go to initial pose (blocking call outside timers) ---
-        init_pos = np.array([0.35, -0.2, 0.26])
+        init_pos = np.array([0.35, -0.18, 0.26])
         # init_pos[0] += np.random.normal(0, 0.01)
         # init_pos[1] += np.random.normal(0, 0.05)
         init_quat = np.array([1.0, 0.0, 0.0, 0.0])
@@ -153,9 +153,9 @@ class FR3_PushT(FrankaPandaServer):
         self.create_timer(1.0/self.servo_freq, self._send_command, callback_group=self.servo_group)
 
         # Planner trigger: submits work to thread pool (non-blocking)
+        self._planning = False
         self.create_timer(1.0/self.mpc_freq, self._plan_trigger, callback_group=self.planner_group)
         self._plan_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        self._planning = False
 
     # ---------- Static TF ----------
     def _publish_static_robot_tf(self):
@@ -222,8 +222,12 @@ class FR3_PushT(FrankaPandaServer):
     # ---------- Planner (non-blocking) ----------
     def _plan_trigger(self):
         if self._planning:
+            logger = self.get_logger()
+            logger.warning("[Planner] Still planning from last iteration, skipping this cycle.")
             return
         if not self._update_state():
+            logger = self.get_logger()
+            logger.warning("[Planner] State update failed, skipping this cycle.")
             return
         self._planning = True
         fut = self._plan_pool.submit(self._do_plan, self.mjx_data, self.policy_params)
