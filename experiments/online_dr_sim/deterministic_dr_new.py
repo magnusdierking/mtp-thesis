@@ -187,6 +187,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     print(f"Time to jit: {time.time() - st:.3f} seconds") 
     
     policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+    print("Sites in rollouts:", rollouts.trace_sites.shape)
     
     num_traces = min(rollouts.controls.shape[1], max_traces)
 
@@ -222,50 +223,51 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         renderer = mujoco.Renderer(mj_model, height=height, width=width)
         
     # !LIVE PLOT SETUP ------------------------------------------------#
-    from scipy.stats import gaussian_kde
-    from collections import deque
-    plt.ion()
-    fig, (ax_bar, ax_kde) = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+    if online_dr:
+        from scipy.stats import gaussian_kde
+        from collections import deque
+        plt.ion()
+        fig, (ax_bar, ax_kde) = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
 
-    # --- BAR CHART (left) ---
-    values = np.arange(controller.num_randomizations)
-    probs = np.ones(controller.num_randomizations) / controller.num_randomizations
+        # --- BAR CHART (left) ---
+        values = np.arange(controller.num_randomizations)
+        probs = np.ones(controller.num_randomizations) / controller.num_randomizations
 
-    bars = ax_bar.bar(values, probs, width=0.8, align="center", edgecolor="k")
-    ax_bar.set_xticks(values)
-    ax_bar.set_xticklabels([f"{v:.2f}" for v in probs])
-    ax_bar.set_xlabel("Outcome")
-    ax_bar.set_ylabel("Probability")
-    ax_bar.set_title("Discrete Distribution")
+        bars = ax_bar.bar(values, probs, width=0.8, align="center", edgecolor="k")
+        ax_bar.set_xticks(values)
+        ax_bar.set_xticklabels([f"{v:.2f}" for v in probs])
+        ax_bar.set_xlabel("Outcome")
+        ax_bar.set_ylabel("Probability")
+        ax_bar.set_title("Discrete Distribution")
 
-    # --- KDE PLOT (right) ---
-    # a rolling buffer of samples to build the KDE from (set maxlen=None to keep all)
-    kde_samples = deque(maxlen=3)  # adjust if you want a rolling window
-    kde_samples.extend(np.asarray(controller.model.body_mass[:,controller.task.T_bid].tolist(), dtype=float).ravel()) 
+        # --- KDE PLOT (right) ---
+        # a rolling buffer of samples to build the KDE from (set maxlen=None to keep all)
+        kde_samples = deque(maxlen=3)  # adjust if you want a rolling window
+        kde_samples.extend(np.asarray(controller.model.body_mass[:,controller.task.T_bid].tolist(), dtype=float).ravel()) 
 
-    # initialize an empty line for the KDE
-    samples_array = np.fromiter(kde_samples, dtype=float)
+        # initialize an empty line for the KDE
+        samples_array = np.fromiter(kde_samples, dtype=float)
 
-    # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
-    kde = gaussian_kde(samples_array, bw_method='scott')
+        # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
+        kde = gaussian_kde(samples_array, bw_method='scott')
 
-    # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-    s_min, s_max = 0.0, 2.0
-    pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
-    x_kde = np.linspace(s_min - pad, s_max + pad, 512)
-    y_kde = kde(x_kde)
-    kde_line, = ax_kde.plot([], [], lw=2)
+        # Grid for evaluation — pad a bit beyond min/max to avoid clipping
+        s_min, s_max = 0.0, 2.0
+        pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
+        x_kde = np.linspace(s_min - pad, s_max + pad, 512)
+        y_kde = kde(x_kde)
+        kde_line, = ax_kde.plot([], [], lw=2)
 
-    # Update the line
-    kde_line.set_data(x_kde, y_kde)
-    ax_kde.set_xlim(0.0, 2.0)
-    ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
-    # kde_line, = ax_kde.plot([], [], lw=2)
-    ax_kde.set_xlabel("Sample value")
-    ax_kde.set_ylabel("Density")
-    ax_kde.set_title("KDE (updates with new samples)")
+        # Update the line
+        kde_line.set_data(x_kde, y_kde)
+        ax_kde.set_xlim(0.0, 2.0)
+        ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
+        # kde_line, = ax_kde.plot([], [], lw=2)
+        ax_kde.set_xlabel("Sample value")
+        ax_kde.set_ylabel("Density")
+        ax_kde.set_title("KDE (updates with new samples)")
 
-    plt.show(block=False)
+        plt.show(block=False)
     #!---------------------------------------------------------------------------------------#
 
     # Start the simulation
@@ -279,7 +281,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         if show_traces:
             num_trace_sites = len(controller.task.trace_site_ids)
             for i in range(
-                num_trace_sites * num_traces * controller.task.planning_horizon
+                num_trace_sites * num_traces * controller.num_randomizations * controller.task.planning_horizon
             ):
                 mujoco.mjv_initGeom(
                     viewer.user_scn.geoms[i],
@@ -416,19 +418,24 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 # !-------------------------------------------
             
             # Visualize the rollouts
+            colors = plt.cm.viridis(np.linspace(0, 1, controller.num_randomizations))
             if show_traces:
                 ii = 0
                 for k in range(num_trace_sites):
                     for i in range(num_traces):
-                        for j in range(controller.task.planning_horizon):
-                            mujoco.mjv_connector(
-                                viewer.user_scn.geoms[ii],
-                                mujoco.mjtGeom.mjGEOM_LINE,
-                                trace_width,
-                                rollouts.trace_sites[0, i, j, k],        # ! 
-                                rollouts.trace_sites[0, i, j + 1, k],    # !
-                            )
-                            ii += 1
+                        for d, color in enumerate(colors): # num_randomizations
+                            for j in range(controller.task.planning_horizon):
+                                geom =viewer.user_scn.geoms[ii]
+                                mujoco.mjv_connector(
+                                    geom,
+                                    mujoco.mjtGeom.mjGEOM_LINE,
+                                    trace_width,
+                                    rollouts.trace_sites[d, i, j, k],        # ! randomizations x rollouts x horizon x sites
+                                    rollouts.trace_sites[d, i, j + 1, k],    # !
+                                )
+                                if k > 0:
+                                    geom.rgba = np.array(color.tolist())
+                                ii += 1
 
             # Update the ghost reference
             if reference is not None:
@@ -483,10 +490,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
                 
-                
-            # ! TODO update domain randomization parameters 
-            # IDEA - do this here in order to incorporate wights into update and then update DR
-            
+
             # Capture frame if recording
             if record_video and recorder.is_recording:
                 renderer.update_scene(mj_data, viewer.cam)
