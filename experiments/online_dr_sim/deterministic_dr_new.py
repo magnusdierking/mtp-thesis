@@ -226,6 +226,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     if online_dr:
         from scipy.stats import gaussian_kde
         from collections import deque
+
+        new_randomizations = dr_strategy.get_current_randomizations()
+        samples = new_randomizations["dof_damping"][:, 2] # should be torsional
         plt.ion()
         fig, (ax_bar, ax_kde) = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
 
@@ -240,19 +243,11 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         ax_bar.set_ylabel("Probability")
         ax_bar.set_title("Discrete Distribution")
 
-        # --- KDE PLOT (right) ---
-        # a rolling buffer of samples to build the KDE from (set maxlen=None to keep all)
-        kde_samples = deque(maxlen=3)  # adjust if you want a rolling window
-        kde_samples.extend(np.asarray(controller.model.body_mass[:,controller.task.T_bid].tolist(), dtype=float).ravel()) 
-
-        # initialize an empty line for the KDE
-        samples_array = np.fromiter(kde_samples, dtype=float)
-
         # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
-        kde = gaussian_kde(samples_array, bw_method='scott')
+        kde = gaussian_kde(samples, bw_method='scott')
 
         # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-        s_min, s_max = 0.0, 2.0
+        s_min, s_max = 0.0, 3.0
         pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
         x_kde = np.linspace(s_min - pad, s_max + pad, 512)
         y_kde = kde(x_kde)
@@ -260,7 +255,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
         # Update the line
         kde_line.set_data(x_kde, y_kde)
-        ax_kde.set_xlim(0.0, 2.0)
+        ax_kde.set_xlim(0.0, 3.0)
         ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
         # kde_line, = ax_kde.plot([], [], lw=2)
         ax_kde.set_xlabel("Sample value")
@@ -354,67 +349,28 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
                 randomizations = dr_strategy.get_current_randomizations()
                
-
-                updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances, randomizations)
-                # print("New weights:", new_weights)
-                print("New randomizations:", new_randomizations)
+                # ! -----------------------
+                updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances)
+                samples = new_randomizations["dof_damping"][:, 2] # should be torsional
                 controller.update_domain_randomization_model(new_randomizations)
                 policy_params = policy_params.replace(domain_weights=jnp.array(new_weights))
                 
-                # -------------- Compute Probabilities for DR --------------- #
-                # probs based on distances
-                # z = distances / 0.001
-                # exps = np.exp(z - np.max(z))  # for numerical stability
-                # probs = exps / np.sum(exps)
-                 # !update live plot
-                # --- update bar heights (left subplot) ---
-                temperature = 0.1  # adjust temperature as needed
-                scaled_distances = -distances / temperature
-                exps = np.exp(scaled_distances - np.max(scaled_distances))  # for numerical stability
-                probs = exps / np.sum(exps)
-                for rect, h in zip(bars, probs):
-                    rect.set_height(h)
-                # print(np.array(new_randomizations["body_mass"]).shape)
-                ax_bar.set_xticklabels(
-                    [f"{v:.2f}" for v in np.array(new_randomizations["dof_damping"])[:,controller.task.T_bid].tolist()]
-                )
 
-                ax_bar.relim()
-                ax_bar.autoscale_view(scaley=True)
+                kde = gaussian_kde(samples, bw_method='scott')
 
+                # Grid for evaluation — pad a bit beyond min/max to avoid clipping
+                s_min, s_max = 0.0, 3.0
+                pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
+                x_kde = np.linspace(s_min - pad, s_max + pad, 512)
+                y_kde = kde(x_kde)
 
-                # Only build a KDE once we have at least 2 samples
-                if len(kde_samples) >= 2:
-                    samples_array = np.fromiter(kde_samples, dtype=float)
-                    # print("KDE samples array shape:", samples_array.shape)
-
-                    # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
-                    kde = gaussian_kde(samples_array, bw_method='scott')
-
-                    # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-                    s_min, s_max = 0.0, 2.0
-                    pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
-                    x_kde = np.linspace(s_min - pad, s_max + pad, 512)
-                    y_kde = kde(x_kde)
-
-                    # Update the line
-                    kde_line.set_data(x_kde, y_kde)
-                    ax_kde.set_xlim(0.0, 1.75)
-                    ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
-                else:
-                    # Not enough samples yet — clear the line
-                    kde_line.set_data([], [])
-                    ax_kde.set_ylim(0, 1)
-
-                # ----------------------------------------------------------------------- #
+                # Update the line
+                kde_line.set_data(x_kde, y_kde)
+                ax_kde.set_xlim(0.0, 3.00)
+                ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
 
                 fig.canvas.draw_idle()
                 plt.pause(0.01)  # yield to the GUI loop
-                
-                # print(f"Updated DR model: {updated}, samples: {new_randomizations}")
-                if updated:
-                    kde_samples.extend(np.asarray(controller.model.body_mass[:,controller.task.T_bid].tolist(), dtype=float).ravel())  
-            
                 # !-------------------------------------------
             
             # Visualize the rollouts

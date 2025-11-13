@@ -206,7 +206,7 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
                  num_randomizations: int,
                  mutation_rate: float = 0.05, # standard deviation of gaussian noise added to elites
                  elite_fraction: float = 0.5, # fraction of top performers to consider as elites
-                 epsilon: float = 0.65        # fraction of new individuals created via mutation
+                 epsilon: float = 0.85        # fraction of new individuals created via mutation
                  ):
         super().__init__(seed, task, controller, randomized_bodies, randomized_joints, num_randomizations)
         
@@ -247,7 +247,18 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
     
     
     def get_updated_randomizations(self, signal: np.ndarray) -> Tuple[bool, dict, jnp.ndarray]:
+        # check if signal is informative
+        min_max_scaled = (signal - jnp.min(signal)) / (jnp.max(signal) - jnp.min(signal) + 1e-8)
+        relative_variation = jnp.std(min_max_scaled) / (jnp.mean(min_max_scaled) + 1e-8)
+
+        print("Relative variation in signal:", relative_variation)
+        if relative_variation < 0.75:
+            print("Signal not informative enough, skipping update.")
+            weights = jnp.ones(self.num_randomizations) / self.num_randomizations
+            return tuple((False, self.current_randomizations, weights))
         
+        
+  
         dr_list = [] 
         # extract randomized values
         for field, values in self.current_randomizations.items():

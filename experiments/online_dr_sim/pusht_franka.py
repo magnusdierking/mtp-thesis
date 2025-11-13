@@ -89,13 +89,6 @@ subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
 
-data = {}
-path = get_data_path() / "dr_sim" / args.algorithm 
-if not path.exists():       
-    path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{seed}_odr_{online_dr}_{aggregation}.csv"
-
-
 # Set the controller based on command-line arguments
 if args.algorithm is None: 
     args.algorithm = "mtp"  # Default to MTP
@@ -192,9 +185,13 @@ dr_strategy = EvolutionaryDomainRandomization(
         # "dof_frictionloss": (0.0, 1.0, ["T_x", "T_y"]),  # randomize frictionloss of T
     },
     num_randomizations=num_randomizations,
-    elite_fraction=0.3,
+    elite_fraction=0.2,
 )
 
+path = get_data_path() / "dr_sim" / args.algorithm 
+if not path.exists():       
+    path.mkdir(parents=True, exist_ok=True)
+path = path / f"seed_{seed}_odr_{online_dr}_test.csv"
 
 print(dr_strategy.randomized_idxs)
 print("+"*10)
@@ -203,29 +200,31 @@ print("+"*10)
 
 ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
 
+# ----------------
+# Test update of randomizations
 # fake signal according to gaussian density around 1
-mu = 1   # mean
-sigma = 0.5   # standard deviation
-new_randomizations = dr_strategy.get_current_randomizations()
-x = new_randomizations["dof_damping"][:, 0]
-fake_signal = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu)/sigma)**2)
-fake_signal = np.linalg.norm(fake_signal[...,None], axis=1) # lower is better
-fake_signal = np.max(fake_signal) - fake_signal  # invert to make lower better
-# plot
-import matplotlib.pyplot as plt
-plt.plot(x, fake_signal)
-plt.title("Fake performance signal")
-plt.show()
+# mu = 1   # mean
+# sigma = 0.5   # standard deviation
+# new_randomizations = dr_strategy.get_current_randomizations()
+# x = new_randomizations["dof_damping"][:, 0]
+# fake_signal = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu)/sigma)**2)
+# fake_signal = np.linalg.norm(fake_signal[...,None], axis=1) # lower is better
+# fake_signal = np.max(fake_signal) - fake_signal  # invert to make lower better
+# # plot
+# import matplotlib.pyplot as plt
+# plt.plot(x, fake_signal)
+# plt.title("Fake performance signal")
+# plt.show()
 
 
-updated, new_randomizations, weights = dr_strategy.get_updated_randomizations(fake_signal)
-print("New randomizations:", new_randomizations)
+# updated, new_randomizations, weights = dr_strategy.get_updated_randomizations(fake_signal)
+# print("New randomizations:", new_randomizations)
 
-samples = new_randomizations["dof_damping"][:, 0]
-# density plot
-plt.hist(samples, bins=10, density=True)
-plt.title("Damping samples density")
-plt.show()
+# samples = new_randomizations["dof_damping"][:, 0]
+# # density plot
+# plt.hist(samples, bins=10, density=True)
+# plt.title("Damping samples density")
+# plt.show()
 
 
 
@@ -243,7 +242,7 @@ run_interactive(
     max_step=200,
     seed=seed,
     log_file=path.as_posix(),
-    online_dr=False,
+    online_dr=online_dr,
     dr_strategy = dr_strategy,
     )
 
