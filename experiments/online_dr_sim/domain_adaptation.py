@@ -323,14 +323,15 @@ class BayesianDomainRandomization(AdaptiveDomainRandomizationStrategy):
             signal as likelihood
             last mean as prior
         """
-        likelihood = np.exp(-signal)  # higher likelihood for lower signal
-        likelihood = likelihood / np.sum(likelihood)  # normalize
+        likelihood = signal
+        # likelihood = np.exp(-signal)  # higher likelihood for lower signal
+        # likelihood = likelihood / np.sum(likelihood)  # normalize
         
         prior = multivariate_normal.pdf(dr_array, mean=self.mean, cov=self.cov)  # shape (num_randomizations,)
         prior = prior / np.sum(prior)  # normalize
         
         posterior = likelihood * prior  
-        
+        # mean and cov per element
         new_mean = np.sum(dr_array * posterior[:, None], axis=0)  # shape (total_num_randomized_params,)
         diff = dr_array - new_mean[None, :]  # shape (num_randomizations, total_num_randomized_params)
         new_cov = np.sum(likelihood[:, None] * (diff ** 2), axis=0)  # shape (total_num_randomized_params,)
@@ -344,8 +345,11 @@ class BayesianDomainRandomization(AdaptiveDomainRandomizationStrategy):
         
     
     def get_updated_randomizations(self, signal: np.ndarray) -> Tuple[bool, dict, jnp.ndarray]:
-        
-        dr_list = [] 
+        if np.sum(signal) != 1.0:
+            print("Signal needs to be a probability distribution summing to 1, skipping update.")
+            return False, self.current_randomizations, jnp.ones(self.num_randomizations) / self.num_randomizations
+
+        dr_list = []
         # extract randomized values
         for field, values in self.current_randomizations.items():
             if field not in self.randomized_idxs:
@@ -361,6 +365,7 @@ class BayesianDomainRandomization(AdaptiveDomainRandomizationStrategy):
         
         self._update_randomization_model(new_dr)
         
+        # TODO new weights as likelihood under new gaussian ?
         weights = jnp.ones(self.num_randomizations) / self.num_randomizations
         
         return tuple((True, self.current_randomizations, weights))

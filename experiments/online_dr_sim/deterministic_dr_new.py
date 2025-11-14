@@ -226,6 +226,14 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     if online_dr:
         from scipy.stats import gaussian_kde
         from collections import deque
+        
+        site_id1 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
+        site_id2 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_2")
+        site_id3 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
+        
+        old_observation1 = np.array(mj_data.site_xpos[site_id1])
+        old_observation2 = np.array(mj_data.site_xpos[site_id2])
+        old_observation3 = np.array(mj_data.site_xpos[site_id3])
 
         new_randomizations = dr_strategy.get_current_randomizations()
         samples = new_randomizations["dof_damping"][:, 2] # should be torsional
@@ -332,46 +340,64 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             if online_dr:
                 # ! get error signal
                 sites_of_interest = policy_params.predicted_state#[..., 1]  # ignore end effector site
-                # print("Sites of interest shape:", sites_of_interest.shape)
-                site_id1 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
-                site_id2 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_2")
-
-                # TODO work with pose error instead
-                distance_1 = np.linalg.norm(
-                    sites_of_interest[...,1] - np.array(mj_data.site_xpos[site_id1]), axis=-1
-                )
-               
-                distance_2 = np.linalg.norm(
-                    sites_of_interest[...,2] - np.array(mj_data.site_xpos[site_id2]), axis=-1
-                )
-                distances = (distance_1 + distance_2)
-               
-
-                randomizations = dr_strategy.get_current_randomizations()
-               
-                # ! -----------------------
-                updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances)
-                samples = new_randomizations["dof_damping"][:, 2] # should be torsional
-                controller.update_domain_randomization_model(new_randomizations)
-                policy_params = policy_params.replace(domain_weights=jnp.array(new_weights))
                 
+                new_observation1 = np.array(mj_data.site_xpos[site_id1])
+                new_observation2 = np.array(mj_data.site_xpos[site_id2])
+                new_observation3 = np.array(mj_data.site_xpos[site_id3])
+                
+                # check if any change in observation
+                if np.allclose(new_observation1, old_observation1) and np.allclose(new_observation2, old_observation2):
+                    # no change, skip update
+                    print("No change in T observation, skipping DR update.")
+                    continue
+                else:
+                    old_observation1 = new_observation1
+                    old_observation2 = new_observation2
 
-                kde = gaussian_kde(samples, bw_method='scott')
+                    # TODO work with pose error instead
+                    distance_1 = np.linalg.norm(
+                        sites_of_interest[...,1] - new_observation1, axis=-1
+                    )
+                
+                    distance_2 = np.linalg.norm(
+                        sites_of_interest[...,2] - new_observation2, axis=-1
+                    )
+                    distance_3 = np.linalg.norm(
+                        sites_of_interest[...,0] - new_observation3, axis=-1
+                    )
+                    
+                    distances = (distance_1 + distance_2 + distance_3) / 3.0  # average distance error
+                    distances = np.exp(-distances)  # higher likelihood for lower distance 
+                    distances = distances / np.sum(distances)  # normalize
 
-                # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-                s_min, s_max = 0.0, 3.0
-                pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
-                x_kde = np.linspace(s_min - pad, s_max + pad, 512)
-                y_kde = kde(x_kde)
+                    # randomizations = dr_strategy.get_current_randomizations()
+                
+                    # ! -----------------------
+                    updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances)
+                    samples = new_randomizations["dof_damping"][:, 2] # should be torsional
+                    controller.update_domain_randomization_model(new_randomizations)
+                    policy_params = policy_params.replace(domain_weights=jnp.array(new_weights))
+                    
+                    # update bars with distances as probabilities
+                    for bar, p in zip(bars, distances):
+                        bar.set_height(p)
 
-                # Update the line
-                kde_line.set_data(x_kde, y_kde)
-                ax_kde.set_xlim(0.0, 3.00)
-                ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
+                    kde = gaussian_kde(samples, bw_method='scott')
 
-                fig.canvas.draw_idle()
-                plt.pause(0.01)  # yield to the GUI loop
-                # !-------------------------------------------
+                    # Grid for evaluation — pad a bit beyond min/max to avoid clipping
+                    s_min, s_max = 0.0, 3.0
+                    pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
+                    x_kde = np.linspace(s_min - pad, s_max + pad, 512)
+                    y_kde = kde(x_kde)
+
+                    # Update the line
+                    kde_line.set_data(x_kde, y_kde)
+                    ax_kde.set_xlim(0.0, 3.00)
+                    ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
+
+                    fig.canvas.draw_idle()
+                    plt.pause(0.01)  # yield to the GUI loop
+                    # !-------------------------------------------
             
             # Visualize the rollouts
             colors = plt.cm.viridis(np.linspace(0, 1, controller.num_randomizations))
