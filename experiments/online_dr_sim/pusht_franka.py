@@ -20,7 +20,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 
 
 num_samples = 128
-num_randomizations = 20
+num_randomizations = 30
 
 # very hard cna result in failure
 # online_dr = True
@@ -40,7 +40,6 @@ num_randomizations = 20
 
 seed = 42
 online_dr = True
-aggregation = "expectation"
 update_cov = False
 sigma_max = 0.75
 sigma_min = 0.05
@@ -49,7 +48,7 @@ det_init = {
     "block_pos_x": 0.1,
     "block_pos_y": 0.15,
     "block_angle": np.pi/3,
-    "ee_goal_pos": [0.4, -0.05, 0.035]
+    "ee_goal_pos": [0.5, -0.0, 0.035]
 }
 # det_init = {
 #     "block_pos_x": 0.4,
@@ -63,7 +62,7 @@ det_init = {
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
                     planning_horizon=10,
-                    sim_steps_per_control_step=3,
+                    sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
                                 "u_max": jnp.array([0.4, 0.4])},
                     trace_sites=["ee_site", "T_1", "T_2"],
@@ -75,18 +74,45 @@ task = PushTFranka(ik_type = 'pinv',
 
 
 
-# Parse command-line arguments
+
 parser = argparse.ArgumentParser(
-    description="Run an interactive simulation of the walker task."
+    description="Run an interactive simulation of the push t task."
 )
-subparsers = parser.add_subparsers(
-    dest="algorithm", help="Sampling algorithm (choose one)"
+
+# Algorithm subparser group
+algorithm_subparsers = parser.add_subparsers(
+    dest="algorithm", required=True, help="Sampling algorithm (choose one)"
 )
-subparsers.add_parser("mppi", help="Model Predictive Path Integral Control")
-subparsers.add_parser("cem", help="Cross Entropy Method")
-subparsers.add_parser("mtp", help="MTP")
-subparsers.add_parser("anmtp", help="Annealed MTP")
+algorithm_subparsers.add_parser("mppi")
+algorithm_subparsers.add_parser("cem")
+algorithm_subparsers.add_parser("mtp")
+algorithm_subparsers.add_parser("anmtp")
+
+# Domain randomization argument (normal argument, not subparser)
+parser.add_argument(
+    "--dr",
+    choices=["uniform", "evolutionary", "bayesian"],
+    help="Domain randomization strategy"
+)
+parser.add_argument(
+    "--risk",
+    choices=["average", "expectation", "icvar"],
+    help="risk aggregation method for domain randomization"
+)
+
 args = parser.parse_args()
+print(args)
+
+if args.risk is None: 
+    args.risk = "average"  # Default to MTP
+    aggregation = "average"
+elif args.risk == "average":
+    aggregation = "average"
+elif args.risk == "expectation":
+    aggregation = "expectation"
+elif args.risk == "icvar":
+    aggregation = "icvar"
+
 
 
 # Set the controller based on command-line arguments
@@ -169,29 +195,76 @@ elif args.algorithm == "anmtp":
 # Define the model used for simulation
 mj_model, mj_data = task.reset(seed=seed)
 
-dr_strategy = EvolutionaryDomainRandomization(
-    seed=seed,
-    task=task,
-    controller=ctrl,
-    randomized_bodies={},#{"block": {"field": "body_mass", "min": 0.1, "max": 1.75}},
-        # "body_mass": (0.1, 1.75, task.T_bid),  # randomize mass of the block
-        # "geom_friction": (jnp.array([0.5, 1e-03, 0.5e-04]), jnp.array([1.5, 10e-03, 2e-04]), task.T_bid),  # friction
-    randomized_joints = {
-        "T_x": {"field": "dof_damping", "min": 0.01, "max": 3.0},
-        # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-        "T_y": {"field": "dof_damping", "min": 0.01, "max": 3.0},
-        "T_z": {"field": "dof_damping", "min": 0.01, "max": 3.0},
-        # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-        # "dof_frictionloss": (0.0, 1.0, ["T_x", "T_y"]),  # randomize frictionloss of T
-    },
-    num_randomizations=num_randomizations,
-    elite_fraction=0.2,
-)
+if args.dr is None:
+    online_dr = False
+    print("No online domain randomization.")
+    dr_strategy = None
+elif args.dr == "uniform":
+    print("Using Uniform Domain Randomization.")
+    dr_strategy = BayesianDomainRandomization(
+        seed=seed,
+        task=task,
+        controller=ctrl,
+        randomized_bodies={},#{"block": {"field": "body_mass", "min": 0.1, "max": 1.75}},
+            # "body_mass": (0.1, 1.75, task.T_bid),  # randomize mass of the block
+            # "geom_friction": (jnp.array([0.5, 1e-03, 0.5e-04]), jnp.array([1.5, 10e-03, 2e-04]), task.T_bid),  # friction
+        randomized_joints = {
+            "T_x": {"field": "dof_damping", "min": 0.1, "max": 2.0},
+            "T_y": {"field": "dof_damping", "min": 0.1, "max": 2.0},
+            "T_z": {"field": "dof_damping", "min": 0.1, "max": 2.0},
+            # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
+            # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
+            # "T_z": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
+            # "dof_frictionloss": (0.0, 1.0, ["T_x", "T_y"]),  # randomize frictionloss of T
+        },
+        num_randomizations=num_randomizations,
+    )
+elif args.dr == "evolutionary":
+    print("Using Evolutionary Domain Randomization.")
+    dr_strategy = EvolutionaryDomainRandomization(
+        seed=seed,
+        task=task,
+        controller=ctrl,
+        randomized_bodies={},#{"block": {"field": "body_mass", "min": 0.1, "max": 1.75}},
+            # "body_mass": (0.1, 1.75, task.T_bid),  # randomize mass of the block
+            # "geom_friction": (jnp.array([0.5, 1e-03, 0.5e-04]), jnp.array([1.5, 10e-03, 2e-04]), task.T_bid),  # friction
+        randomized_joints = {
+            # "T_x": {"field": "dof_damping", "min": 0.01, "max": 3.0},
+            # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
+            # "T_y": {"field": "dof_damping", "min": 0.01, "max": 3.0},
+            "T_z": {"field": "dof_damping", "min": 0.01, "max": 3.0},
+            # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
+            # "dof_frictionloss": (0.0, 1.0, ["T_x", "T_y"]),  # randomize frictionloss of T
+        },
+        num_randomizations=num_randomizations,
+        elite_fraction=0.1,
+    )
+elif args.dr == "bayesian":
+    print("Using Bayesian Domain Randomization.")
+    dr_strategy = BayesianDomainRandomization(
+        seed=seed,
+        task=task,
+        controller=ctrl,
+        randomized_bodies={},#{"block": {"field": "body_mass", "min": 0.1, "max": 1.75}},
+            # "body_mass": (0.1, 1.75, task.T_bid),  # randomize mass of the block
+            # "geom_friction": (jnp.array([0.5, 1e-03, 0.5e-04]), jnp.array([1.5, 10e-03, 2e-04]), task.T_bid),  # friction
+        randomized_joints = {
+            "T_x": {"field": "dof_damping", "min": 0.01, "max": 3.0},
+            # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
+            "T_y": {"field": "dof_damping", "min": 0.01, "max": 3.0},
+            "T_z": {"field": "dof_damping", "min": 0.01, "max": 3.0},
+            # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
+            # "dof_frictionloss": (0.0, 1.0, ["T_x", "T_y"]),  # randomize frictionloss of T
+        },
+        num_randomizations=num_randomizations,
+    )
 
-path = get_data_path() / "dr_sim" / args.algorithm 
+
+
+path = get_data_path() / "dr_sim"  
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{seed}_odr_{online_dr}_test.csv"
+path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{aggregation}"
 
 print(dr_strategy.randomized_idxs)
 print("+"*10)
@@ -202,7 +275,7 @@ ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
 
 # ----------------
 # Test update of randomizations
-# fake signal according to gaussian density around 1
+# # fake signal according to gaussian density around 1
 # mu = 1   # mean
 # sigma = 0.5   # standard deviation
 # new_randomizations = dr_strategy.get_current_randomizations()
@@ -226,6 +299,7 @@ ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
 # plt.title("Damping samples density")
 # plt.show()
 
+# exit()
 
 
 run_interactive(

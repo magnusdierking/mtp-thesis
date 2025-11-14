@@ -30,9 +30,9 @@
       </body>
 
       <body name="block" pos="0.4 0.0 0.026" quat="1 0 0 -1">
-        <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" damping="1"/>
-        <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" damping="1"/>
-        <joint name="T_z" axis="0 0 1" damping="0.01"/>
+        <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" damping="0.6"/>
+        <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" damping="0.6"/>
+        <joint name="T_z" axis="0 0 1" damping="0.3"/>
         <geom class="tblock" name="bottom" type="box" size=".025 0.052 0.025" pos="0.0 0.001 0.0" mass="0.0655"/>
           <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
           <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>

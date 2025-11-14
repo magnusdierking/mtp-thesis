@@ -11,6 +11,8 @@ from scipy.stats import multivariate_normal
 from alg_base_opt_dr import SamplingBasedController
 from flax.struct import dataclass
 from hydrax.task_base import Task
+import os
+from collections import deque
 
 
 class AdaptiveDomainRandomizationStrategy(ABC):
@@ -204,15 +206,18 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
                  randomized_bodies: dict,
                  randomized_joints: dict,
                  num_randomizations: int,
-                 mutation_rate: float = 0.05, # standard deviation of gaussian noise added to elites
+                 mutation_rate: float = 0.02, # standard deviation of gaussian noise added to elites
                  elite_fraction: float = 0.5, # fraction of top performers to consider as elites
-                 epsilon: float = 0.85        # fraction of new individuals created via mutation
+                 epsilon: float = 0.85        # fraction of new individuals created via mutation, else uniform sampling
                  ):
         super().__init__(seed, task, controller, randomized_bodies, randomized_joints, num_randomizations)
         
         self.num_elites = max(1, int(elite_fraction * num_randomizations))
         self.mutation_rate = mutation_rate
         self.num_mutations = int((epsilon) * num_randomizations)
+
+        # elites memory queue
+        self.elite_queue = deque(maxlen=int(self.num_elites * 2))
         
         # extract min and max for easy clippitn
         max_bounds = []
@@ -232,31 +237,40 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
         # get elite indives
         elite_indices = jnp.argsort(signal)[:self.num_elites]
         elite_dr = dr_array[elite_indices, ...]  # shape (num_elites, total_num_randomized_params)
-        # sample from elites (uniform) to get num_mutations
-        elite_dr = elite_dr[self.rng.choice(self.num_elites, self.num_mutations, replace=True), ...]
-        # add noise to elites to create new individuals
-        elite_dr = elite_dr + self.mutation_rate * np.random.randn(self.num_mutations)[...,None] * jnp.ones_like(elite_dr) # same across all elites
         new_dr = np.empty_like(dr_array)
-        new_dr[:self.num_mutations,...] = elite_dr
+
+        if len(self.elite_queue) >= int(self.num_mutations / 2):
+            # replace half of mutations with samples from elite queue
+            queue_samples = np.array(self.rng.choice(len(self.elite_queue), int(self.num_mutations / 2), replace=False))
+            for i in range(int(self.num_mutations / 2)):
+                new_dr[i, ...] = queue_samples[i]
+        
+        # other half is subsampled from current elites
+        new_dr[int(self.num_mutations / 2):self.num_mutations, ...] = elite_dr[self.rng.choice(self.num_elites, int(self.num_mutations / 2)+1, replace=True), ...]
+
+        noise = self.mutation_rate * np.random.randn(int(self.num_mutations), elite_dr.shape[1])
+        new_dr[:int(self.num_mutations), ...] += noise
         
         # fill rest with uniform samples
         for i in range(self.num_mutations, self.num_randomizations):
             # uniform sample
             new_dr[i,...] = self.rng.uniform(self.min_bounds, self.max_bounds)
+
+        self.elite_queue.extend(elite_dr[:int(self.num_elites / 2), ...])  # add half of elites to queue
         return new_dr
     
     
     def get_updated_randomizations(self, signal: np.ndarray) -> Tuple[bool, dict, jnp.ndarray]:
         # check if signal is informative
-        min_max_scaled = (signal - jnp.min(signal)) / (jnp.max(signal) - jnp.min(signal) + 1e-8)
-        relative_variation = jnp.std(min_max_scaled) / (jnp.mean(min_max_scaled) + 1e-8)
+        # min_max_scaled = (signal - jnp.min(signal)) / (jnp.max(signal) - jnp.min(signal) + 1e-8)
+        # relative_variation = jnp.std(min_max_scaled) / (jnp.mean(min_max_scaled) + 1e-8)
 
-        print("Relative variation in signal:", relative_variation)
-        if relative_variation < 0.75:
-            print("Signal not informative enough, skipping update.")
-            weights = jnp.ones(self.num_randomizations) / self.num_randomizations
-            return tuple((False, self.current_randomizations, weights))
-        
+        # print("Relative variation in signal:", relative_variation)
+        # if relative_variation < 0.75:
+        #     print("Signal not informative enough, skipping update.")
+        #     weights = jnp.ones(self.num_randomizations) / self.num_randomizations
+        #     return tuple((False, self.current_randomizations, weights))
+        # clip the signal to avoid extreme values
         
   
         dr_list = [] 

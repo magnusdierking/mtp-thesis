@@ -1,6 +1,7 @@
 import time
 from typing import Sequence
 import csv
+import pickle
 from xml.parsers.expat import model
 
 from hydrax.algs.mtp.beta_scheduler import RatioEMAScheduler
@@ -349,7 +350,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 if np.allclose(new_observation1, old_observation1) and np.allclose(new_observation2, old_observation2):
                     # no change, skip update
                     print("No change in T observation, skipping DR update.")
-                    continue
+                    
                 else:
                     old_observation1 = new_observation1
                     old_observation2 = new_observation2
@@ -367,21 +368,28 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     )
                     
                     distances = (distance_1 + distance_2 + distance_3) / 3.0  # average distance error
-                    distances = np.exp(-distances)  # higher likelihood for lower distance 
-                    distances = distances / np.sum(distances)  # normalize
+                    print(f"DR raw distances: {distances}")
+                    # sclae distances to [0, 1]
+                    distances = 1 + (distances - np.min(distances)) / (np.max(distances) - np.min(distances) + 1e-12)
+                    # log sclain
+                    distances = np.log(distances)
+                    print(f"DR distances: {distances}")
+
 
                     # randomizations = dr_strategy.get_current_randomizations()
                 
                     # ! -----------------------
                     updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances)
-                    samples = new_randomizations["dof_damping"][:, 2] # should be torsional
+                    samples = new_randomizations["dof_damping"][:, 0] # should be torsional
                     controller.update_domain_randomization_model(new_randomizations)
                     policy_params = policy_params.replace(domain_weights=jnp.array(new_weights))
                     
                     # update bars with distances as probabilities
                     for bar, p in zip(bars, distances):
                         bar.set_height(p)
-
+                        # relable
+                    ax_bar.set_xticklabels([f"{p:.2f}" for p in distances])
+                  
                     kde = gaussian_kde(samples, bw_method='scott')
 
                     # Grid for evaluation — pad a bit beyond min/max to avoid clipping
@@ -499,6 +507,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # Check for task success
             task_success |= controller.task.success(mj_data)
 
+            
             # Log data for the current step
             logs.append({
                 "step": step,
@@ -511,7 +520,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "state_cost": float(rollouts.costs[0, 0]),
                 "success": task_success,
                 "domain_weights": np.array(controller.domain_weights).tolist() if hasattr(controller, 'domain_weights') else None,
-                "dr_samples": new_randomizations if online_dr else None, 
+                "dr_samples": (
+                    {k: np.asarray(v).tolist() for k, v in new_randomizations.items()}
+                    if online_dr else None
+                ), 
             })
 
 
@@ -532,7 +544,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
     # Save logs to a CSV file if specified
     if log_file:
-        with open(log_file, "w", newline="") as csvfile:
+        with open(log_file + ".pkl", "wb") as f:
+            pickle.dump(logs, f)
+
+        with open(log_file + ".csv", "w", newline="") as csvfile:
             fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "control", "running_cost", "state_cost", "success", "domain_weights", "dr_samples"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
