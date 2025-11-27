@@ -12,6 +12,16 @@ class RiskStrategy(ABC):
     the worst-case cost over all randomizations, while a risk-seeking strategy
     might take the best-case cost.
     """
+    def __init__(self, weights: jax.Array = None):
+        """Initialize the risk strategy with optional weights."""
+        if weights is not None:
+            self.weights = weights 
+        else:
+            self.weights = None
+
+    def set_weights(self, weights: jax.Array):
+        """Set the weights for the expectation."""
+        self.weights = weights 
 
     @abstractmethod
     def combine_costs(self, costs: jax.Array) -> jax.Array:
@@ -35,12 +45,6 @@ class ExpectedCost(RiskStrategy):
     def __init__(self, weights: jax.Array):
         """Set the weights for the expectation."""
         self.weights = weights / jnp.sum(weights)
-        
-    def set_weights(self, weights: jax.Array):
-        """Set the weights for the expectation."""
-        assert jnp.all(weights >= 0), "Weights must be non-negative"
-        # assert jnp.sum(weights) == 1.0, "Weights must sum to a 1"
-        self.weights = weights 
 
     def combine_costs(self, costs: jax.Array) -> jax.Array:
         """Take the average cost over all randomizations."""

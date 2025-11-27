@@ -1,4 +1,5 @@
 # This module contains utility functions for extending algorithms (MPPI, CEM, MTP)
+import math
 import jax
 import jax.numpy as jnp
 from functools import partial
@@ -37,3 +38,84 @@ def shift_tensor(tensor: jax.Array, amount: int) -> jax.Array:
     shifted = jnp.roll(tensor, -amount, axis=0)
     shifted = shifted.at[-amount:, :].set(tensor[-1, :])  # hold last value
     return shifted
+
+
+
+
+def savgol_coeffs(window_length: int,
+                  polyorder: int,
+                  deriv: int = 0,
+                  delta: float = 1.0) -> jnp.ndarray:
+    """Compute 1D Savitzky–Golay coefficients."""
+    if window_length % 2 != 1:
+        raise ValueError("window_length must be odd")
+    if window_length <= polyorder:
+        raise ValueError("window_length must be > polyorder")
+    if deriv < 0:
+        raise ValueError("deriv must be >= 0")
+
+    half = window_length // 2
+
+    # positions: [-half, ..., 0, ..., +half]
+    x = jnp.arange(-half, half + 1, dtype=jnp.float32)
+
+    # Vandermonde: A[i, j] = x_i ** j
+    powers = jnp.arange(polyorder + 1, dtype=jnp.float32)
+    A = x[:, None] ** powers[None, :]  # (window_length, polyorder+1)
+
+    ATA = A.T @ A
+    ATA_inv = jnp.linalg.pinv(ATA)
+    B = ATA_inv @ A.T  # (polyorder+1, window_length)
+
+    scale = math.factorial(deriv) / (delta ** deriv)
+    coeffs = B[deriv] * scale  # (window_length,)
+
+    return coeffs
+
+
+
+def make_savgol_filter(window_length: int,
+                       polyorder: int,
+                       deriv: int = 0,
+                       delta: float = 1.0,
+                       axis: int = -1):
+    """
+    Returns a JIT-compiled function f(x) -> filtered_x
+
+    - x can have any shape
+    - Filtering is applied along `axis`
+    """
+    coeffs = savgol_coeffs(window_length, polyorder, deriv, delta)
+    coeffs = coeffs[::-1]  # for convolution
+    half = window_length // 2
+
+    @jax.jit
+    def apply(x: jnp.ndarray) -> jnp.ndarray:
+        # Normalize axis to be positive
+        ax = axis if axis >= 0 else x.ndim + axis
+
+        # Move the target axis to the last position
+        x_moved = jnp.moveaxis(x, ax, -1)  # shape (..., T)
+
+        # Build pad_width: pad only last axis (time)
+        pad_width = ((0, 0),) * (x_moved.ndim - 1) + ((half, half),)
+        x_pad = jnp.pad(x_moved, pad_width=pad_width, mode="reflect")
+
+        leading_shape = x_pad.shape[:-1]
+        T_pad = x_pad.shape[-1]
+
+        flat = x_pad.reshape(-1, T_pad)  # (batch_flat, T_pad)
+
+        def filter_1d(row):
+            return jnp.convolve(row, coeffs, mode="valid")  # length T
+
+        flat_out = jax.vmap(filter_1d, in_axes=0)(flat)  # (batch_flat, T)
+        T = flat_out.shape[-1]
+
+        out_moved = flat_out.reshape(*leading_shape, T)
+
+        # Move axis back to original position
+        out = jnp.moveaxis(out_moved, -1, ax)
+        return out
+
+    return apply

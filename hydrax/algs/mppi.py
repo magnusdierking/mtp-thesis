@@ -7,7 +7,7 @@ from flax.struct import dataclass
 # for state bins
 #from hydrax.alg_base_visuals import SamplingBasedController, Trajectory
 from hydrax.alg_base_opt import SamplingBasedController, Trajectory
-from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
+from hydrax.algs.alg_extension_utils import colorize_time_series, make_savgol_filter, shift_tensor, savgol_coeffs
 
 
 
@@ -50,6 +50,7 @@ class MPPI(SamplingBasedController):
         shift: bool = False, # !experimental
         planning_freq: int = 1, # !experimental
         default_zero_controls: bool = False, #!experimental
+        savgol_filter: bool = False, # !experimental
         seed: int = 0,
         update_cov: bool = True,  
     ):
@@ -82,6 +83,9 @@ class MPPI(SamplingBasedController):
         
         self.default_zero_controls = default_zero_controls
         
+        self.savgol_filter = savgol_filter  
+        if savgol_filter:
+            self.savgol_filter_fn = make_savgol_filter(window_length=7, polyorder=3)
 
     def init_params(self, seed: int = 0) -> MPPIParams:
         """Initialize the policy parameters."""
@@ -109,14 +113,18 @@ class MPPI(SamplingBasedController):
         )
         # colorize noise
         if self.colorize_noise:
-            noise = self.colorize_time_series(noise, remove_dc=True, alpha=self.alpha_noise) # !experimental
+            noise = colorize_time_series(noise, remove_dc=True, alpha_noise=self.alpha_noise) # !experimental
         controls = params.mean + self.noise_level * noise
         
         # default zero controls
         if self.default_zero_controls:
             controls = controls.at[0, ...].set(jnp.zeros((self.task.planning_horizon, self.task.nu)))
+        
+        if self.savgol_filter:
+            controls = self.savgol_filter_fn(controls)
         # clip
         controls = jnp.clip(controls, self.task.u_min, self.task.u_max)
+        # smoothen controls via 
         return controls, params.replace(rng=rng)
 
     def update_params(

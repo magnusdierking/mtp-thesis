@@ -6,11 +6,72 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 import time
+from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
 from hydrax.utils.utils import mujoco_to_scipy_quat
 
 
+def differential_IK(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    body_id: str = "ee_frame",
+    world_site_vel_desired: np.ndarray = np.zeros(2),
+    with_null_space: bool = True,
+) -> np.ndarray:
+    """
+    Differential IK for all dofs in the model.
+    """
+    # Geometric Jacobians at body_id
+    jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
+    jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
+
+    bodyid = model.body("ee_frame").id
+    mujoco.mj_jacBody(model, data, jacp, jacr, bodyid)
+
+    actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
+    actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
+    actuator_jids = model.jnt_qposadr[actuator_joint_idxs]
+    dof_adr  = model.jnt_dofadr[actuator_joint_idxs]    
+
+    # get current joint positions
+    qpos = data.qpos.copy()
+    qnow = qpos[np.array(actuator_jids)]
+    qhome = np.array([ 0.51199203,  0.1014329,  -0.36340348, -2.9813132,   0.50339095,  3.06692214, -1.92271156])
+
+    # Build jacobian
+    J = np.vstack((jacp, jacr))[:,np.array(dof_adr)]  # (6, n)
+    J_pinv = np.linalg.pinv(J)
+    twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
+
+    ee_position_sensor = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
+    )
+    sensor_adr_pos = model.sensor_adr[ee_position_sensor]
+    ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
+
+    ee_orientation_sensor = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_quat"
+        )
+    sensor_adr = model.sensor_adr[ee_orientation_sensor]
+    ee_quat = data.sensordata[sensor_adr : sensor_adr + 4]
+    ee_quat = np.array(ee_quat)
+    goal_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071])  # Assuming goal orientation is aligned with x-axis
+    goal_quat = np.array(goal_quat)
+    goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
+
+    temp = np.concatenate([world_site_vel_desired, np.array([0.035-ee_pos[2]])])
+    twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
+    dq = J_pinv @ twist_err
+
+    if with_null_space:
+        N = np.eye(J.shape[1]) - J_pinv @ J
+        kp_ori = 10.0
+        dq += N @ (kp_ori * (qhome - qnow))
+
+    return dq
+
+
 # xml_path = "./../hydrax/models/g1/scene.xml"
-xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
@@ -25,15 +86,25 @@ print(len(data.qpos))
 for i in range(model.njnt):
     name = model.joint(i).name
     print(f"Joint {i}: {name}")
-    # print damping, stiffness, frictionloss
-    print(f"  Damping: {model.joint(i).damping}, Stiffness: {model.joint(i).stiffness}, Frictionloss: {model.joint(i).frictionloss}")
-for i in range(model.nu):
-    name = mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
+    # joint index
+    print(f"  Joint index: {model.joint(i).id}")
+    # qpos address
+    print(f"  qpos address: {model.jnt_qposadr[i]}")
+#     # print damping, stiffness, frictionloss
+#     print(f"  Damping: {model.joint(i).damping}, Stiffness: {model.joint(i).stiffness}, Frictionloss: {model.joint(i).frictionloss}")
+# for i in range(model.nu):
+#     name = mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
 
 for i in range(model.nsite):
     name = model.site(i).name
     print(f"Site {i}: {name}")
     
+# actuatros
+print("Number of actuators:", model.nu)
+    # for i in range(model.ngeom):
+    # name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i)
+    # print(i, name)
+
     
     
 
@@ -51,7 +122,7 @@ print("Actuator joint ids:", actuator_jids)
 
 ee_body_id = model.body("ee_frame").id
 goal_quat_ee = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-goal_pos_ee = np.array([0.6, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
+goal_pos_ee = np.array([0.7, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
 joint_limits = model.jnt_range[actuator_joint_idxs]
 
 # IK loop parameters
@@ -116,11 +187,26 @@ else:
 data.qpos[actuator_jids] = q  # Set the robot's joint positions
     
 
-    
+step = 0
+scale = 0.8
+scaled = False
+
+
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
         # data.ctrl[0] = 0.01 #q
         mujoco.mj_step(model, data)
-        # print("EE pos:", data.xpos[ee_body_id])
-        # print("EE quat:", data.xquat[ee_body_id])
+        # sinusoidal control
+        velocity_x = - 0.5 * np.sin(0.01 * step)
+        velocity_y = 0.001#0.02 * np.sin(0.01 * step)
+        dq = differential_IK(
+            model,
+            data,
+            body_id="ee_frame",
+            world_site_vel_desired=np.array([velocity_x, velocity_y]),
+            with_null_space=True,
+        )
+        data.qvel[np.array(dof_adr)] = dq
+        step += 1
+        
         v.sync()

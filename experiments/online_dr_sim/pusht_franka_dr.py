@@ -273,7 +273,7 @@ class PushTFranka(Task):
         # orientation_cost = jnp.norm(orientation_err)
         orientation_cost = jnp.sum(jnp.square(orientation_err))
         
-        total_goal_err = 20 * position_cost + orientation_cost
+        total_goal_err = 10 * position_cost + 5 * orientation_cost
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
@@ -281,7 +281,7 @@ class PushTFranka(Task):
         
         # TODO velocity error for the T ?
         control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
-        error = total_goal_err + 0.05 * ee_block_distance_cost # + 0.05 * control_cost 
+        error = total_goal_err + 0.02 * ee_block_distance_cost # was 0.05 ee
         
         return error 
                                                                               
@@ -353,7 +353,10 @@ class PushTFranka(Task):
 
         # FK -> [x, y, rotvec(3)]
         def fk_fn(qpos):
-            d = data0.replace(qpos=qpos)
+            # zero velocity
+            qvel = jnp.zeros_like(data0.qvel)
+            ctrl = jnp.zeros_like(data0.ctrl)
+            d = data0.replace(qpos=qpos, qvel=qvel, ctrl=ctrl)
             d = mjx.forward(model, d)
             pos = d.xpos[body_id]                    # (3,)
             # jax.debug.print("Quaternion: {q}", q=d.xquat[body_id])
@@ -430,8 +433,11 @@ class PushTFranka(Task):
             """
             qpos = data.qpos
             # Jacobian (6 x nv) restricted to actuated joints
-            J_full = fk_jac(qpos)                      # (6, nv_total)
-            J = J_full[:, self.dof_adr]    # (6, n_act)
+            J_full = fk_jac(qpos)                      # (6, len(qpos)), here len(qpos)=16
+            # jax.debug.print("Full Jacobian: {J}", J=J_full.shape) #(6, 16)
+            # jax.debug.print("DOF adr: {dof}", dof=self.actuator_joint_idxs)
+            J = J_full[:, self.actuator_joint_idxs]    # (6, n_act), (6, 7)
+            # jax.debug.print("Actuated Jacobian: {J}", J=J.shape)
             
         
             J_lin = J[:3, :]    # (3, n_act)
@@ -445,11 +451,12 @@ class PushTFranka(Task):
             ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
 
             goal_quat = jnp.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071]) # Assuming goal orientation is aligned with x-axis
-            e_rot = 10 * quat_error_body(goal_quat, ee_quat)                                   # (3,)
+            e_rot = quat_error_body(goal_quat, ee_quat)                                   # (3,)
 
             # Commanded planar twist + corrective twist
             twist_cmd = jnp.concatenate([control_xy, jnp.zeros(4)])     # [vx, vy, 0, 0, 0, 0]
-            temp = jnp.concatenate([control_xy, jnp.array([0.035-ee_pos[2]])])
+            temp = jnp.concatenate([control_xy, jnp.array([0.035-ee_pos[2]])]) #!
+            # temp = jnp.concatenate([control_xy, jnp.array([0.0])])
             twist_err = jnp.concatenate([temp, e_rot])                 # [ex, ey, ez, ewx, ewy, ewz]
             twist = twist_cmd # twist_err
 
@@ -457,13 +464,13 @@ class PushTFranka(Task):
             # rotational correction via nullspace
             N = jnp.eye(J.shape[1]) - jnp.linalg.pinv(J) @ J
             # twist = twist_cmd + N @ (kp_ori * J_ang.T @ e_rot)
-            qnow = qpos[jnp.array(self.dof_adr )]
+            qnow = qpos[jnp.array(self.actuator_joint_idxs )]
             qhome = jnp.array([ 0.51199203,  0.1014329,  -0.36340348, -2.9813132,   0.50339095,  3.06692214, -1.92271156])
 
             dq = jnp.linalg.pinv(J) @ twist_err + N @ (kp_ori * (qhome - qnow))
 
             if self.sampling_space == 'position':
-                return qpos[self.dof_adr] + self.mj_model.opt.timestep * dq
+                return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
             elif self.sampling_space == 'velocity':
                 return dq
 

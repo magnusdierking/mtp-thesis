@@ -7,10 +7,10 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="0.9 0.01 0.002" 
+      <geom friction="1.2 0.005 0.005" 
             solref="0.002 1.0" 
-            margin="0.005"
-            solimp="0.9 0.95 0.001"
+            margin="0.001"
+            solimp="0.8 0.95 0.001 0.5 2"
             condim="6"
             contype="2" 
             conaffinity="5"/>  
@@ -44,13 +44,14 @@
   <include file="fr3_vel_mjx_free.xml"/>
 
 
-  <option impratio="6"
+  <option impratio="1"
           solver="Newton"
           jacobian="dense"
           cone="pyramidal"
           timestep="0.02" 
-          iterations="8"
-          ls_iterations="10">
+          iterations="5"
+          ls_iterations="8"
+          ls_tolerance="0.01">
   <flag eulerdamp="enable" 
         warmstart="enable"/>
   </option>
@@ -79,8 +80,8 @@
   <!-- Equality constraint for end effector -->
   <equality>
     <connect site1="ee_site" site2="sphere_site"
-             solref="0.003 1.0" 
-             solimp="0.9 0.99 0.005"/>
+             solref="0.001 1.0" 
+             solimp="0.9 0.99 0.001"/>
   </equality>
 
   <sensor>
@@ -102,7 +103,7 @@
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="0 0 0.05"
-          material="groundplane" friction="1.0 0.01 0.002" condim="3"
+          material="groundplane" friction="1.2 0.005 0.005" condim="6"
           contype="4" conaffinity="3"/>  <!-- 3 = 1|2 (robot | objects) -->
   </worldbody>
 </mujoco>

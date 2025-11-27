@@ -45,32 +45,39 @@ class AdaptiveDomainRandomizationStrategy(ABC):
         # {field: Array,}
         self.randomized_idxs = self._convert_randomizations_to_idxs(self.randomized_bodies, self.randomized_joints)
         # uniform init
+        print(self.randomized_idxs) 
         self.current_randomizations = self.get_uniform_randomizations()
         
         
     def _convert_randomizations_to_idxs(self, randomized_bodies: dict, randomized_joints: dict):
         randomized_fields = {}
+        # TODO catch shape missmatches here
         for body_name, body_info in randomized_bodies.items():
-            body_id = mujoco.mj_name2id(self.task.mj_model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            body_id = mujoco.mj_name2id(self.task.mj_model, mujoco.mjtObj.mjOBJ_GEOM, body_name)
             if body_id == -1:
                 raise ValueError(f"Body name {body_name} not found in model.")
             field = body_info["field"]
-            if field not in ["body_mass"]:
-                print(f"Warning: Randomization of field {field} not implemented yet.")
+            if field not in ["body_mass", "geom_friction", "geom_solref", "geom_solimp"]:
+                raise ValueError(f"Body field {field} not supported for randomization.")
             min_val = body_info["min"]
             max_val = body_info["max"]
+            internal_idxs = body_info["internal_idx"]
             
             # check if field exists in randomized_fields    
             if field not in randomized_fields:
                 randomized_fields[field] = {}
                 randomized_fields[field]["idxs"] = [body_id]
-                randomized_fields[field]["min"] = [min_val]
-                randomized_fields[field]["max"] = [max_val]
+                randomized_fields[field]["internal_idx"] = internal_idxs
+                randomized_fields[field]["min"] = min_val
+                randomized_fields[field]["max"] = max_val
             else:
                 randomized_fields[field]["idxs"].append(body_id)
-                randomized_fields[field]["min"].append(min_val)
-                randomized_fields[field]["max"].append(max_val)
-                
+                # INTERNAL IDS HAVE TO BE THE SAME FOR ALL BODIES
+                assert randomized_fields[field]["internal_idx"] == internal_idxs, "Internal idxs for different bodies must be the same."
+                randomized_fields[field]["min"].extend(min_val)
+                randomized_fields[field]["max"].extend(max_val)
+
+
         for joint_name, joint_info in randomized_joints.items():
             joint_id = mujoco.mj_name2id(self.task.mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
             joint_idxs = self._dof_ids_from_joint_id(joint_id)
@@ -103,12 +110,29 @@ class AdaptiveDomainRandomizationStrategy(ABC):
         for field, info in self.randomized_idxs.items():
             min_vals = jnp.array(info["min"])
             max_vals = jnp.array(info["max"])
+            idxs = jnp.array(info["idxs"]) if "idxs" in info else None
+            internal_idxs = jnp.array(info["internal_idx"]) if "internal_idx" in info else None
             model_field = getattr(self.controller.model, field)
-            if model_field.ndim == 1:
-                model_field = jnp.tile(model_field, (self.num_randomizations,1))
-                
-            random_vals = jnp.arange(self.num_randomizations).reshape(-1,1) / (self.num_randomizations - 1) * (max_vals - min_vals) + min_vals
-            new_model_field = model_field.at[:, jnp.array(info["idxs"])].set(random_vals)
+            
+            if field == "geom_friction" or field == "geom_solref" or field == "geom_solimp":
+                # print(model_field.shape)
+                if model_field.shape[0] != self.num_randomizations or model_field.ndim == 2:
+
+                    model_field = jnp.tile(model_field[None,...], (self.num_randomizations, 1, 1))  # create batch dimension
+
+                    # print(model_field.shape)
+                    # print(model_field[:, idxs[:, None], internal_idxs[None, :]].shape)
+
+                    model_field = model_field.at[:, idxs[:, None], internal_idxs[None, :]].set(
+                            jnp.linspace(min_vals, max_vals, self.num_randomizations).reshape(self.num_randomizations, -1, len(internal_idxs))
+                        )
+                    # print(model_field.shape)
+                    new_model_field = model_field
+            else:
+                if model_field.shape[0] == 1 or model_field.ndim == 1:
+                    model_field = jnp.tile(model_field, (self.num_randomizations,1)) # create batch dimension
+                random_vals = jnp.arange(self.num_randomizations).reshape(-1,1) / (self.num_randomizations - 1) * (max_vals - min_vals) + min_vals
+                new_model_field = model_field.at[:, idxs].set(random_vals)
             randomizations[field] = new_model_field
 
         return randomizations
@@ -137,15 +161,23 @@ class AdaptiveDomainRandomizationStrategy(ABC):
         current_index = 0
         for field, info in self.randomized_idxs.items():
             idxs = info["idxs"] 
-            idxs = [i for i in range(current_index, current_index + len(idxs))]
-            
-            new_field_values = dr_array[:, idxs]  # shape (num_randomizations, num_field_params)
             model_field = getattr(self.controller.model, field)
-            if model_field.ndim == 1:
-                model_field = jnp.tile(model_field, (self.num_randomizations,1))
-            new_model_field = model_field.at[:, jnp.array(idxs)].set(new_field_values)
-            self.current_randomizations[field] = new_model_field
-            current_index += len(info["idxs"])
+            if field == "geom_friction" or field == "geom_solref" or field == "geom_solimp":
+                idxs = np.array(idxs)
+                internal_idxs = np.array(self.randomized_idxs[field]["internal_idx"])
+                new_field_values = dr_array[:, current_index:current_index + len(internal_idxs), None]
+                new_model_field = model_field.at[:, idxs[...,None], internal_idxs[:, None]].set(new_field_values)
+                self.current_randomizations[field] = new_model_field
+                current_index += len(internal_idxs)
+            else:    
+                idxs = [i for i in range(current_index, current_index + len(idxs))]
+                
+                new_field_values = dr_array[:, idxs]  # shape (num_randomizations, num_field_params)
+                if model_field.ndim == 1:
+                    model_field = jnp.tile(model_field, (self.num_randomizations,1))
+                new_model_field = model_field.at[:, jnp.array(idxs)].set(new_field_values)
+                self.current_randomizations[field] = new_model_field
+                current_index += len(info["idxs"])
 
 
         
@@ -206,7 +238,7 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
                  randomized_bodies: dict,
                  randomized_joints: dict,
                  num_randomizations: int,
-                 mutation_rate: float = 0.02, # standard deviation of gaussian noise added to elites
+                 mutation_rate: float = 0.05, # standard deviation of gaussian noise added to elites
                  elite_fraction: float = 0.5, # fraction of top performers to consider as elites
                  epsilon: float = 0.85        # fraction of new individuals created via mutation, else uniform sampling
                  ):
@@ -234,6 +266,7 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
         dr_array (num_randomizations, total_num_randomized_params)
         signal: (num_randomizations,) lower is better
         """
+        
         # get elite indives
         elite_indices = jnp.argsort(signal)[:self.num_elites]
         elite_dr = dr_array[elite_indices, ...]  # shape (num_elites, total_num_randomized_params)
@@ -246,19 +279,45 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
                 new_dr[i, ...] = queue_samples[i]
         
         # other half is subsampled from current elites
-        new_dr[int(self.num_mutations / 2):self.num_mutations, ...] = elite_dr[self.rng.choice(self.num_elites, int(self.num_mutations / 2)+1, replace=True), ...]
+        new_dr[int(self.num_mutations / 2):self.num_mutations, ...] = elite_dr[self.rng.choice(self.num_elites, int(self.num_mutations / 2), replace=True), ...]
 
         noise = self.mutation_rate * np.random.randn(int(self.num_mutations), elite_dr.shape[1])
+ 
         new_dr[:int(self.num_mutations), ...] += noise
+        # clip to bounds
+        new_dr[:int(self.num_mutations), ...] = np.clip(new_dr[:int(self.num_mutations), ...], self.min_bounds, self.max_bounds)
         
         # fill rest with uniform samples
         for i in range(self.num_mutations, self.num_randomizations):
             # uniform sample
+            
             new_dr[i,...] = self.rng.uniform(self.min_bounds, self.max_bounds)
 
         self.elite_queue.extend(elite_dr[:int(self.num_elites / 2), ...])  # add half of elites to queue
         return new_dr
     
+    def _extract_randomized_values(self) -> np.ndarray:
+        
+        dr_list = [] 
+        # extract randomized values
+        for field, values in self.current_randomizations.items():
+            if field not in self.randomized_idxs:
+                raise ValueError(f"Field {field} not in randomized_idxs.")
+            idxs = np.array(self.randomized_idxs[field]["idxs"])
+            
+            if field == "geom_friction" or field == "geom_solref" or field == "geom_solimp":
+                internal_idxs = np.array(self.randomized_idxs[field]["internal_idx"])
+                # field_values = values[..., idxs[...,None], internal_idxs[...,None]]  # shape (num_randomizations, num_idxs, num_internal_idxs)
+                field_values = values[:, idxs, :]  # shape (num_randomizations, num_idxs, num_internal_idxs)
+                field_values = field_values[..., internal_idxs]
+            else:
+                field_values = values[..., idxs]  # shape (num_randomizations, num_idxs)
+            field_values = np.array(field_values).reshape(self.num_randomizations, -1)
+            dr_list.append(field_values)
+            print(f"Extracted field {field} with shape {field_values.shape}")
+        return np.concatenate(dr_list, axis=-1)  # shape (num_randomizations, total_num_randomized_params)
+            
+            
     
     def get_updated_randomizations(self, signal: np.ndarray) -> Tuple[bool, dict, jnp.ndarray]:
         # check if signal is informative
@@ -272,23 +331,16 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
         #     return tuple((False, self.current_randomizations, weights))
         # clip the signal to avoid extreme values
         
-  
-        dr_list = [] 
-        # extract randomized values
-        for field, values in self.current_randomizations.items():
-            if field not in self.randomized_idxs:
-                raise ValueError(f"Field {field} not in randomized_idxs.")
-            idxs = self.randomized_idxs[field]["idxs"]
-            # extract from model field
-            field_values = values[..., idxs]  # shape (num_randomizations, num_idxs)
-            dr_list.append(field_values)
+
         # concatenate all randomized values
-        dr_array = np.concatenate(dr_list, axis=1)  # shape (num_randomizations, total_num_randomized_params)
+        dr_array = self._extract_randomized_values()  # shape (num_randomizations, total_num_randomized_params)
         
         new_dr  = self._evolve(dr_array, signal)  # shape (num_randomizations, total_num_randomized_params)
         
+        print("DR array shape:", new_dr)
         self._update_randomization_model(new_dr)
-        
+        print("Updated randomizations.")
+        print(self.current_randomizations["geom_friction"][:,jnp.array([3, 4]), :])
         weights = jnp.ones(self.num_randomizations) / self.num_randomizations
         
         return tuple((True, self.current_randomizations, weights))
@@ -357,29 +409,42 @@ class BayesianDomainRandomization(AdaptiveDomainRandomizationStrategy):
         new_dr = np.clip(new_dr, self.min_bounds, self.max_bounds)
         # TODO use truncated normal ?
         
+    def _extract_randomized_values(self) -> np.ndarray:
+        
+        dr_list = [] 
+        # extract randomized values
+        for field, values in self.current_randomizations.items():
+            if field not in self.randomized_idxs:
+                raise ValueError(f"Field {field} not in randomized_idxs.")
+            idxs = np.array(self.randomized_idxs[field]["idxs"])
+            
+            if field == "geom_friction" or field == "geom_solref" or field == "geom_solimp":
+                internal_idxs = np.array(self.randomized_idxs[field]["internal_idx"])
+                # field_values = values[..., idxs[...,None], internal_idxs[...,None]]  # shape (num_randomizations, num_idxs, num_internal_idxs)
+                field_values = values[:, idxs, :]  # shape (num_randomizations, num_idxs, num_internal_idxs)
+                field_values = field_values[..., internal_idxs]
+            else:
+                field_values = values[..., idxs]  # shape (num_randomizations, num_idxs)
+            field_values = np.array(field_values).reshape(self.num_randomizations, -1)
+            dr_list.append(field_values)
+            print(f"Extracted field {field} with shape {field_values.shape}")
+        return np.concatenate(dr_list, axis=-1)  # shape (num_randomizations, total_num_randomized_params)
+        
     
     def get_updated_randomizations(self, signal: np.ndarray) -> Tuple[bool, dict, jnp.ndarray]:
         if np.sum(signal) != 1.0:
             print("Signal needs to be a probability distribution summing to 1, skipping update.")
             return False, self.current_randomizations, jnp.ones(self.num_randomizations) / self.num_randomizations
 
-        dr_list = []
-        # extract randomized values
-        for field, values in self.current_randomizations.items():
-            if field not in self.randomized_idxs:
-                raise ValueError(f"Field {field} not in randomized_idxs.")
-            idxs = self.randomized_idxs[field]["idxs"]
-            # extract from model field
-            field_values = values[..., idxs]  # shape (num_randomizations, num_idxs)
-            dr_list.append(field_values)
         # concatenate all randomized values
-        dr_array = np.concatenate(dr_list, axis=1)  # shape (num_randomizations, total_num_randomized_params)
+        dr_array = self._extract_randomized_values()  # shape (num_randomizations, total_num_randomized_params)
         
         new_dr  = self._evolve(dr_array, signal)  # shape (num_randomizations, total_num_randomized_params)
         
+        print("DR array shape:", new_dr)
         self._update_randomization_model(new_dr)
-        
-        # TODO new weights as likelihood under new gaussian ?
+        print("Updated randomizations.")
+        print(self.current_randomizations["geom_friction"][:,jnp.array([3, 4]), :])
         weights = jnp.ones(self.num_randomizations) / self.num_randomizations
         
         return tuple((True, self.current_randomizations, weights))

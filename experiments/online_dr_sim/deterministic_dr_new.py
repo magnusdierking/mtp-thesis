@@ -73,8 +73,9 @@ def differential_IK(
     ee_quat = np.array(ee_quat)
     goal_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071])  # Assuming goal orientation is aligned with x-axis
     goal_quat = np.array(goal_quat)
-    goal_vec = 10 * quat_error_body(goal_quat, ee_quat)                                   # (3,)
-
+    goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
+    
+    # print("End effector translation z error:", 0.035 - ee_pos[2])
     temp = np.concatenate([world_site_vel_desired, np.array([0.035-ee_pos[2]])])
     twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
     dq = J_pinv @ twist_err
@@ -157,8 +158,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         f"second horizon."
     )
 
-    print("True mass of the Target object:", mj_model.body_mass[controller.task.T_bid])
-    print("True friction of the Target object:", mj_model.geom_friction[controller.task.T_bid])
     # Figure out how many sim steps to run before replanning
     task_success = False
     replan_period = 1.0 / frequency
@@ -232,12 +231,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         site_id2 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_2")
         site_id3 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
         
-        old_observation1 = np.array(mj_data.site_xpos[site_id1])
-        old_observation2 = np.array(mj_data.site_xpos[site_id2])
-        old_observation3 = np.array(mj_data.site_xpos[site_id3])
+        old_observation1 = np.array(mj_data.site_xpos[site_id1])[:2]
+        old_observation2 = np.array(mj_data.site_xpos[site_id2])[:2]
+        old_observation3 = np.array(mj_data.site_xpos[site_id3])[:2]
 
         new_randomizations = dr_strategy.get_current_randomizations()
-        samples = new_randomizations["dof_damping"][:, 2] # should be torsional
+        samples = new_randomizations["geom_friction"][3, 2,...] # should be torsional
         plt.ion()
         fig, (ax_bar, ax_kde) = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
 
@@ -342,65 +341,76 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 # ! get error signal
                 sites_of_interest = policy_params.predicted_state#[..., 1]  # ignore end effector site
                 
-                new_observation1 = np.array(mj_data.site_xpos[site_id1])
-                new_observation2 = np.array(mj_data.site_xpos[site_id2])
-                new_observation3 = np.array(mj_data.site_xpos[site_id3])
+                new_observation1 = np.array(mj_data.site_xpos[site_id1])[:2]
+                new_observation2 = np.array(mj_data.site_xpos[site_id2])[:2]
+                new_observation3 = np.array(mj_data.site_xpos[site_id3])[:2]
                 
                 # check if any change in observation
-                if np.allclose(new_observation1, old_observation1) and np.allclose(new_observation2, old_observation2):
+                if np.allclose(new_observation1, old_observation1, atol=1e-2) and np.allclose(new_observation2, old_observation2, atol=1e-2):
                     # no change, skip update
                     print("No change in T observation, skipping DR update.")
                     
                 else:
+                    # print("Change in T observation, updating DR.")
+                    # print(f"Change in 1: {new_observation1 - old_observation1}, Change in 2: {new_observation2 - old_observation2}")
+                    
+                    
                     old_observation1 = new_observation1
                     old_observation2 = new_observation2
 
                     # TODO work with pose error instead
                     distance_1 = np.linalg.norm(
-                        sites_of_interest[...,1] - new_observation1, axis=-1
+                        sites_of_interest[...,:2,1] - new_observation1, axis=-1
                     )
                 
                     distance_2 = np.linalg.norm(
-                        sites_of_interest[...,2] - new_observation2, axis=-1
+                        sites_of_interest[...,:2,2] - new_observation2, axis=-1
                     )
                     distance_3 = np.linalg.norm(
-                        sites_of_interest[...,0] - new_observation3, axis=-1
+                        sites_of_interest[...,:2,0] - new_observation3, axis=-1
                     )
+                    mean_d3 = jnp.mean(distance_3)
+                    # clip distance 1,2 to mean of distance 3
+                    distance_1 = jnp.clip(distance_1, 0.0, mean_d3)
+                    distance_2 = jnp.clip(distance_2, 0.0, mean_d3)
                     
-                    distances = (distance_1 + distance_2 + distance_3) / 3.0  # average distance error
-                    print(f"DR raw distances: {distances}")
+                    distances = (distance_1 + distance_2) / 2.0  # average distance error
+                    # print(f"DR raw distances: {distance_1}, {distance_2}")
+                    # TODO : use distance 3 as scaling ?
+                    
                     # sclae distances to [0, 1]
-                    distances = 1 + (distances - np.min(distances)) / (np.max(distances) - np.min(distances) + 1e-12)
-                    # log sclain
-                    distances = np.log(distances)
-                    print(f"DR distances: {distances}")
+                    # distances = (distances - np.min(distances)) / (np.max(distances) - np.min(distances) + 1e-12)
+                    
+                    # probabilities via softmax
+                    temperature = np.std(distances) + 1e-12
+                    probs = np.exp(-distances / temperature)  # temperature scaling
+                    probs = probs / (np.sum(probs) + 1e-12)
 
-
-                    # randomizations = dr_strategy.get_current_randomizations()
-                
                     # ! -----------------------
                     updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances)
-                    samples = new_randomizations["dof_damping"][:, 0] # should be torsional
+                    samples = new_randomizations["geom_friction"][3, 0,...] 
+                    print("New DR shapes:", {k: v.shape for k, v in new_randomizations.items()})
                     controller.update_domain_randomization_model(new_randomizations)
-                    policy_params = policy_params.replace(domain_weights=jnp.array(new_weights))
+                    policy_params = policy_params.replace(domain_weights=jnp.array(probs))
                     
                     # update bars with distances as probabilities
-                    for bar, p in zip(bars, distances):
+                    for bar, p in zip(bars, probs):
                         bar.set_height(p)
                         # relable
-                    ax_bar.set_xticklabels([f"{p:.2f}" for p in distances])
+                    # y limits according to max probability
+                    ax_bar.set_ylim(np.min(probs), np.max(probs) * 1.05)
                   
                     kde = gaussian_kde(samples, bw_method='scott')
 
                     # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-                    s_min, s_max = 0.0, 3.0
+                    s_min, s_max = 0.2, 2.0
                     pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
                     x_kde = np.linspace(s_min - pad, s_max + pad, 512)
                     y_kde = kde(x_kde)
 
                     # Update the line
                     kde_line.set_data(x_kde, y_kde)
-                    ax_kde.set_xlim(0.0, 3.00)
+                    ax_kde.set_xlim(0.5, 2.0)
                     ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
 
                     fig.canvas.draw_idle()
@@ -519,7 +529,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
                 "state_cost": float(rollouts.costs[0, 0]),
                 "success": task_success,
-                "domain_weights": np.array(controller.domain_weights).tolist() if hasattr(controller, 'domain_weights') else None,
+                "domain_weights": np.array(policy_params.domain_weights).tolist() if hasattr(controller, 'domain_weights') else None,
                 "dr_samples": (
                     {k: np.asarray(v).tolist() for k, v in new_randomizations.items()}
                     if online_dr else None

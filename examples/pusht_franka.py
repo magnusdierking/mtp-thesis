@@ -92,8 +92,8 @@ det_init = {
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=16,
-                    sim_steps_per_control_step=4,
+                    planning_horizon=12,
+                    sim_steps_per_control_step=3,
                     ctrl_limits={"u_min": jnp.array([-0.5, -0.5]), 
                                 "u_max": jnp.array([0.5, 0.5])},
                     trace_sites=["ee_site"],
@@ -149,6 +149,11 @@ elif args.algorithm == "mppi":
         temperature=0.1,
         num_randomizations=num_randomizations,
         colorize_noise=False,   # !experimental
+        alpha_noise=1.6,
+        #shift=True,
+        #planning_freq=20,
+        default_zero_controls=True,
+        savgol_filter=True,
         alpha=0.1,
         seed=seed,
         update_cov=update_cov,

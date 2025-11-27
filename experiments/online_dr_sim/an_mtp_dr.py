@@ -221,6 +221,9 @@ class AnMTP(SamplingBasedController):
 
         out = out.at[self.keep_elites:].set(mixed_tail)
         out = jnp.clip(out, self.task.u_min, self.task.u_max)
+        
+        # set weights
+        self.risk_strategy.set_weights(params.domain_weights)
         return out, params.replace(rng=rng)
 
     # ----------------------
