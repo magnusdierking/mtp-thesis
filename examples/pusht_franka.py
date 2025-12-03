@@ -19,17 +19,17 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 # ----- for short horizon test , 0.025 dt, 8 times 2 horizon,-----
-# seed = 100
-# update_cov = True
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": -0.1,
-#     "block_pos_y": 0.15,
-#     "block_angle": np.pi/4,
-#     "ee_goal_pos": [0.35, 0.0, 0.035]
-# }
+seed = 100
+update_cov = True
+sigma_max = 0.75
+sigma_min = 0.05
+sigma_start = 0.2
+det_init = {
+    "block_pos_x": -0.1,
+    "block_pos_y": 0.15,
+    "block_angle": np.pi/4,
+    "ee_goal_pos": [0.35, 0.0, 0.035]
+}
 
 # seed = 200
 # update_cov = False
@@ -47,7 +47,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 
 
 
-# ----- for medium horizon test -----
+# ----- for medium horizon test 0.02 dt, 16 x 4-----
 # very easy
 # seed = 10
 # update_cov = True
@@ -75,24 +75,24 @@ Run an interactive simulation of the push-T task with predictive sampling.
 # }
 
 # very hard cna result in failure
-seed = 445
-update_cov = False
-sigma_max = 0.75
-sigma_min = 0.05
-sigma_start = 0.2
-det_init = {
-    "block_pos_x": -0.1,
-    "block_pos_y": 0.1,
-    "block_angle": 3*np.pi/4,
-    "ee_goal_pos": [0.35, 0.0, 0.035]
-}
+# seed = 445
+# update_cov = False
+# sigma_max = 0.75
+# sigma_min = 0.05
+# sigma_start = 0.2
+# det_init = {
+#     "block_pos_x": -0.1,
+#     "block_pos_y": 0.1,
+#     "block_angle": 3*np.pi/4,
+#     "ee_goal_pos": [0.35, 0.0, 0.035]
+# }
 
 
 
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=12,
+                    planning_horizon=16,
                     sim_steps_per_control_step=3,
                     ctrl_limits={"u_min": jnp.array([-0.5, -0.5]), 
                                 "u_max": jnp.array([0.5, 0.5])},
@@ -126,12 +126,12 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 64
-num_randomizations = 10
+num_samples = 2048
+num_randomizations = 1
 
 
 data = {}
-path = get_data_path() / "pushT_sim" / args.algorithm 
+path = get_data_path() / "pushT_sim" / args.algorithm / "smooth"
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_update_cov_{update_cov}.csv"
@@ -148,12 +148,12 @@ elif args.algorithm == "mppi":
         noise_level=0.2,
         temperature=0.1,
         num_randomizations=num_randomizations,
-        colorize_noise=False,   # !experimental
-        alpha_noise=1.6,
+        colorize_noise=True,   # !experimental
+        alpha_noise=1.2,
         #shift=True,
         #planning_freq=20,
-        default_zero_controls=True,
-        savgol_filter=True,
+        default_zero_controls=False,
+        savgol_filter=False,
         alpha=0.1,
         seed=seed,
         update_cov=update_cov,
@@ -187,9 +187,13 @@ elif args.algorithm == "mtp":
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=12,
-        beta=0.25,
+        beta=0.45,
         alpha=0.1,
         interpolation='bspline',
+        colorize_noise=False,   # !experimental
+        alpha_noise=0.7,
+        default_zero_controls=True,
+        savgol_filter=True,
         num_randomizations=num_randomizations,
         seed=seed,
         update_cov=update_cov,
@@ -210,8 +214,8 @@ elif args.algorithm == "anmtp":
             keep_elites=1,   # !experimental
             beta = 0.25,
             beta_lr = 0.1,        # adaptation step size
-            beta_min = 0.0,
-            beta_max = 0.35,
+            beta_min = 0.1,
+            beta_max = 0.5,
             alpha=0.1,
             interpolation='bspline',
             shift = False,
@@ -233,7 +237,7 @@ run_interactive(
     frequency=20,
     show_traces=True,
     trace_width=0.55,
-    max_traces=32,
+    max_traces=64,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,

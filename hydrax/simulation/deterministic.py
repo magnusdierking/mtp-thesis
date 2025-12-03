@@ -373,8 +373,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                                 viewer.user_scn.geoms[ii],
                                 mujoco.mjtGeom.mjGEOM_LINE,
                                 trace_width,
-                                rollouts.trace_sites[0, i, j, k],        # ! 
-                                rollouts.trace_sites[0, i, j + 1, k],    # !
+                                rollouts.trace_sites[0, i, j, k, :3],        # ! 
+                                rollouts.trace_sites[0, i, j + 1, k, :3],    # !
                             )
                             ii += 1
 
@@ -449,20 +449,20 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
             # ----- adaptive beta (single alpha) -----
             # x = jnp.array(mj_data.qpos)
-            if hasattr(policy_params, 'beta'):
-                sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
-                ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
+            # if hasattr(policy_params, 'beta'):
+            #     sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
+            #     ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
 
-                sensor_adr_block = mj_model.sensor_adr[controller.task.block_global_position_sensor]
-                block_pos = mj_data.sensordata[sensor_adr_block : sensor_adr_block + 3]
+            #     sensor_adr_block = mj_model.sensor_adr[controller.task.block_global_position_sensor]
+            #     block_pos = mj_data.sensordata[sensor_adr_block : sensor_adr_block + 3]
 
-                error = jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) # only x,y
-                max_error = max(max_error, error)
+            #     error = jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) # only x,y
+            #     max_error = max(max_error, error)
                 
-                new_beta = controller.beta_max * (error / max_error)
-                new_beta = jnp.clip(new_beta, controller.beta_min, controller.beta_max)
-                policy_params = controller.update_beta(float(new_beta), policy_params)
-                print(f"Initial position error: {error:.4f} m")
+            #     new_beta = controller.beta_max * (error / max_error)
+            #     new_beta = jnp.clip(new_beta, controller.beta_min, controller.beta_max)
+            #     policy_params = controller.update_beta(float(new_beta), policy_params)
+            #     print(f"Initial position error: {error:.4f} m")
                 # beta = sched.update(np.array(ee_pos))
                 # policy_params = controller.update_beta(float(beta), policy_params)
                 # print(f"Updated beta to {float(beta):.3f}")

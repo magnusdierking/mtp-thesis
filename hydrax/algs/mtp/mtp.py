@@ -14,7 +14,7 @@ from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
 from .splines.akima import poly_akima, poly_interpolation
 from .splines.bsplines import compute_b_spline_matrix
-from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
+from hydrax.algs.alg_extension_utils import colorize_time_series, make_savgol_filter, shift_tensor, savgol_coeffs
 
 
 @dataclass
@@ -64,6 +64,7 @@ class MTP(SamplingBasedController):
         shift: bool = False, # !experimental,
         planning_freq: int = 1, # !experimental
         keep_elites: int = 1,   #!experimental
+        savgol_filter: bool = False, # !experimental
         default_zero_controls: bool = False, #!experimental
     ):
         """Initialize the controller.
@@ -125,6 +126,10 @@ class MTP(SamplingBasedController):
         self.default_zero_controls = default_zero_controls
 
         self.update_cov = update_cov
+
+        self.savgol_filter = savgol_filter  
+        if savgol_filter:
+            self.savgol_filter_fn = make_savgol_filter(window_length=5, polyorder=2)
         
         
     def start_clamped_knot_vector(self, num_ctrl_points, degree, dtype=jnp.float32):
@@ -265,6 +270,8 @@ class MTP(SamplingBasedController):
                 ),
             )
             mppi_controls = params.mean + self.sigma_start * noise
+            if self.savgol_filter:
+                mppi_controls = self.savgol_filter_fn(mppi_controls)
             out = out.at[1+self.nbr_mtp_samples:1+self.nbr_mtp_samples+self.nbr_mppi_samples].set(mppi_controls)
         if self.keep_elites > 0 and params.elites is not None:
             out = out.at[:self.keep_elites].set(params.elites)

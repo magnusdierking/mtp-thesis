@@ -13,7 +13,9 @@ from hydrax.task_base import Task
 from .splines.akima import poly_akima, poly_interpolation
 from .splines.bsplines import compute_b_spline_matrix
 from .splines.linear import interpolate_linear
-from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
+from hydrax.algs.alg_extension_utils import colorize_time_series, make_savgol_filter, shift_tensor, savgol_coeffs
+
+
 
 @dataclass
 class AnMTPParams:
@@ -23,6 +25,7 @@ class AnMTPParams:
     spline: jax.Array = None   # (T, U)
     elites: jax.Array = None   # (num_elites, T, U), optional
     beta: jax.Array = None     # scalar jax array, updated inside jit
+    last_a_idx: int = 0        # last action index for shifting
 
 
 class AnMTP(SamplingBasedController):
@@ -48,7 +51,7 @@ class AnMTP(SamplingBasedController):
         num_randomizations: int = 1,
         beta: float = 0.1,
         beta_lr: float = 0.2,        # adaptation step size
-        beta_decay: float = 0.9,
+        beta_decay: float = 0.99,
         beta_min: float = 0.05,
         beta_max: float = 0.95,
         alpha: float = 0.5,
@@ -60,8 +63,9 @@ class AnMTP(SamplingBasedController):
         planning_freq: int = 1, # !experimental
         keep_elites: int = 1,   #!experimental
         default_zero_controls: bool = False, #!experimental
+        savgol_filter: bool = False, # !experimental
         seed: int = 0,
-        beta_strategy: str = "task", # task, ratio, greedy
+        beta_strategy: str = "ratio", # task, ratio, greedy
         update_cov: bool = True,
     ):
         super().__init__(task, num_randomizations, risk_strategy, seed)
@@ -121,6 +125,10 @@ class AnMTP(SamplingBasedController):
         self.last_a_idx = int(self.task.dt * planning_freq)
         
         self.default_zero_controls = default_zero_controls
+
+        self.savgol_filter = savgol_filter  
+        if savgol_filter:
+            self.savgol_filter_fn = make_savgol_filter(window_length=7, polyorder=3)
         # ----------------------
 
     def _start_clamped_knot_vector(self, num_ctrl_points: int, degree: int, *, dtype=jnp.float32) -> jax.Array:
@@ -219,6 +227,8 @@ class AnMTP(SamplingBasedController):
         if self.colorize_noise:
             noise = self.colorize_time_series(noise) # !experimental
         mppi_controls = params.mean[None, ...] + params.cov[None, ...] * noise  # (S,T,U)
+        if self.savgol_filter:
+            mppi_controls = self.savgol_filter_fn(mppi_controls)
 
         # --- Masked mixing with fixed shape ---
         # K = floor(beta * S) determines how many of the S slots are MTP; shape is constant.
@@ -310,13 +320,14 @@ class AnMTP(SamplingBasedController):
         new_beta = jnp.clip(new_beta, self.beta_min, self.beta_max)
         new_elites = rollouts.controls[elite_idx[:self.keep_elites]]
 
-        return params.replace(mean=mean, spline=spline, beta=new_beta, new_elites=new_elites, cov=cov)
+        return params.replace(mean=mean, spline=spline, beta=new_beta, elites=new_elites, cov=cov)
 
     # ----------------------
     # Action extraction
     # ----------------------
     def get_action(self, params: AnMTPParams, t: float) -> jax.Array:
         idx = jnp.floor(t / self.task.dt).astype(jnp.int32)
+        params = params.replace(last_a_idx=idx)
         return params.spline[idx]
 
     # Optional manual override
