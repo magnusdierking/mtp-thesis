@@ -143,9 +143,22 @@ class Task(ABC):
             The positions of the trace sites at the current time step.
         """
         if len(self.trace_site_ids) == 0:
-            return jnp.zeros((0, 3))
-
-        return state.site_xpos[self.trace_site_ids]
+            return jnp.zeros((0, 7))
+        # combine site positions and orientations
+        site_pos = state.site_xpos[self.trace_site_ids]
+        site_mat = state.site_xmat[self.trace_site_ids] # 3 x 3
+        # convert to quaternion
+        def mat2quat(mat):
+            # transform 3x3 rotation matrix to quaternion
+            w = jnp.sqrt(1.0 + mat[0, 0] + mat[1, 1] + mat[2, 2]) / 2.0
+            x = (mat[2, 1] - mat[1, 2]) / (4.0 * w)
+            y = (mat[0, 2] - mat[2, 0]) / (4.0 * w)
+            z = (mat[1, 0] - mat[0, 1]) / (4.0 * w)
+            return jnp.array([w, x, y, z])
+        
+        site_xquat = jax.vmap(mat2quat)(site_mat)
+        return jnp.concatenate([site_pos, site_xquat], axis=-1)  
+        # return state.site_xpos[self.trace_site_ids]
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         """Generate randomized model parameters for domain randomization.
