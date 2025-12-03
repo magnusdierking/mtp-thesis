@@ -279,7 +279,7 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
                 new_dr[i, ...] = queue_samples[i]
         
         # other half is subsampled from current elites
-        new_dr[int(self.num_mutations / 2):self.num_mutations, ...] = elite_dr[self.rng.choice(self.num_elites, int(self.num_mutations / 2), replace=True), ...]
+        new_dr[int(self.num_mutations / 2):self.num_mutations-1, ...] = elite_dr[self.rng.choice(self.num_elites, int(self.num_mutations / 2), replace=True), ...]
 
         noise = self.mutation_rate * np.random.randn(int(self.num_mutations), elite_dr.shape[1])
  
