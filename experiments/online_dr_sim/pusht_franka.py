@@ -12,6 +12,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from hydrax.risk import RiskStrategy, ExpectedCost, AverageCost, ValueAtRisk, ConditionalValueAtRisk,InverseValueAtRisk, InverseConditionalValueAtRisk
 from domain_adaptation import BayesianDomainRandomization, EvolutionaryDomainRandomization, UniformDomainRandomization
 
 """
@@ -19,8 +20,8 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 
-num_samples = 64
-num_randomizations = 10#30
+num_samples = 256
+num_randomizations = 16#30
 
 # very hard cna result in failure
 # online_dr = True
@@ -73,8 +74,7 @@ task = PushTFranka(ik_type = 'pinv',
                     planning_horizon=14,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
-                                "u_max": jnp.array([0.4, 0.4])},
-                    trace_sites=["ee_site", "T_1", "T_2"],
+                                 "u_max": jnp.array([0.4, 0.4])},
                     actuation_type='velocity',
                     sampling_space="velocity",
                     det_init=det_init,
@@ -105,22 +105,27 @@ parser.add_argument(
 )
 parser.add_argument(
     "--risk",
-    choices=["average", "expectation", "icvar"],
+    choices=["average", "expectation", "var", "cvar", "ivar", "icvar"],
     help="risk aggregation method for domain randomization"
 )
 
 args = parser.parse_args()
 print(args)
 
-if args.risk is None: 
+risk_alpha = 0.25  # for (C)VaR
+if args.risk is None or args.risk == "average": 
     args.risk = "average"  # Default to MTP
-    aggregation = "average"
-elif args.risk == "average":
-    aggregation = "average"
+    aggregation = AverageCost()
 elif args.risk == "expectation":
-    aggregation = "expectation"
+    aggregation = ExpectedCost(jnp.ones((num_randomizations,), dtype=jnp.float32) / num_randomizations)
+elif args.risk == "var":
+    aggregation = ValueAtRisk(alpha=risk_alpha)
+elif args.risk == "cvar":
+    aggregation = ConditionalValueAtRisk(alpha=risk_alpha)
+elif args.risk == "ivar":
+    aggregation = InverseValueAtRisk(alpha=risk_alpha)
 elif args.risk == "icvar":
-    aggregation = "icvar"
+    aggregation = InverseConditionalValueAtRisk(alpha=risk_alpha)
 
 
 
@@ -198,6 +203,7 @@ elif args.algorithm == "anmtp":
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=num_randomizations,
+            risk_strategy=aggregation,
             seed=seed,
         )
     error_log = "./../data/error_log_pushT/anmtp_{seed}.npy".format(seed=seed)
@@ -215,8 +221,8 @@ elif args.dr == "uniform":
         seed=seed,
         task=task,
         controller=ctrl,
-        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.01], "internal_idx": [2]},
-                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.01], "internal_idx": [2]}
+        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [2]},
+                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [2]}
         },
         randomized_joints = {
             # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
@@ -232,12 +238,9 @@ elif args.dr == "evolutionary":
         seed=seed,
         task=task,
         controller=ctrl,
-        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.01], "internal_idx": [1]},
-                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.01], "internal_idx": [1]}
-                        # "bottom": {"field": "geom_friction", "min": [0.2], "max": [1.5], "internal_idx": [0]},
-                        #    "top": {"field": "geom_friction", "min": [0.2], "max": [1.5], "internal_idx": [0]}
-                           },
-            
+        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [2]},
+                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [2]}
+        },
         randomized_joints = {
             # "T_x": {"field": "dof_damping", "min": 0.01, "max": 3.0},
             # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
@@ -274,7 +277,7 @@ elif args.dr == "bayesian":
 path = get_data_path() / "dr_sim"  
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{aggregation}"
+path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
 
 print(dr_strategy.randomized_idxs)
 print("+"*10)

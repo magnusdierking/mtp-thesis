@@ -7,13 +7,14 @@ def quat_to_yaw(qx, qy, qz, qw):
     return jnp.arctan2(siny, cosy) + jnp.pi/1.0  # Adjusted by +90 degrees to align with plotting convention
 
 
-def plot_poses_2d(poses, ax, alphas=None, arrow_length=0.05):
+def plot_poses_2d(poses, ax, ref_pose = None, alphas=None, arrow_length=0.05):
     """
     Plot or update 2D poses (points + orientation arrows).
 
     If axis already has stored plot handles, update them.
     Otherwise, initialize the artists.
     """
+    
 
     # Extract components
     x = -jnp.asarray(poses[:, 1])
@@ -72,6 +73,39 @@ def plot_poses_2d(poses, ax, alphas=None, arrow_length=0.05):
             frames.append((line_x, line_y))
         ax.set_ylim(0.2,0.8)
         ax.set_xlim(-.35,.35)
+
+
+        if ref_pose is not None:
+            ref_x = -ref_pose[1]
+            ref_y = ref_pose[0]
+            qw = ref_pose[3]
+            qx = ref_pose[4]
+            qy = ref_pose[5]
+            qz = ref_pose[6]
+            ref_yaw = quat_to_yaw(qx, qy, qz, qw
+            )
+            # Plot reference pose in black
+            c = float(jnp.cos(ref_yaw))
+            s = float(jnp.sin(ref_yaw)) 
+            ex_x = arrow_length * c
+            ex_y = arrow_length * s
+            ey_x = arrow_length * -s
+            ey_y = arrow_length * c
+
+            line_x = ax.plot(
+                [float(ref_x), float(ref_x + ex_x)],
+                [float(ref_y), float(ref_y + ex_y)],
+                color=(0, 0, 0, 1.0),
+                linewidth=2.0,
+            )
+            line_y = ax.plot(
+                [float(ref_x), float(ref_x + ey_x)],
+                [float(ref_y), float(ref_y + ey_y)],
+                color=(0, 0, 0, 1.0),
+                linewidth=2.0,
+            )
+            frames.append((line_x, line_y))
+
         ax._pose_frames = frames
 
     # -----------------------

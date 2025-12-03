@@ -284,9 +284,9 @@ class AnMTP(SamplingBasedController):
         new_beta = jnp.clip(new_beta, self.beta_min, self.beta_max)
         
         # ! Experimental
-        jax.debug.print("Sites predicted state shape: {}", rollouts.trace_sites.shape)
-        jax.debug.print("Next idx: {}", next_idx)
-        jax.debug.print("Observation step: {}", self.observation_step)
+        # jax.debug.print("Sites predicted state shape: {}", rollouts.trace_sites.shape)
+        # jax.debug.print("Next idx: {}", next_idx)
+        # jax.debug.print("Observation step: {}", self.observation_step)
         predicted_state = rollouts.trace_sites[:, next_idx, self.observation_step, ...] # one timestep over all domains, for rolloed out 
 
         return params.replace(mean=mean, spline=spline, beta=new_beta, elites=controls[:self.keep_elites], predicted_state=predicted_state)

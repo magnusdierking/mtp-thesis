@@ -73,7 +73,7 @@ def se3_left_invariant_metric(p1, p2, rot_weight=1.0, trans_weight=1.0):
     Returns:
         The left-invariant distance between p1 and p2, shape (...,).
     """
-    jax.debug.print("se3_left_invariant_metric called with p1 shape: {}, p2 shape: {}", p1.shape, p2.shape)
+    # jax.debug.print("se3_left_invariant_metric called with p1 shape: {}, p2 shape: {}", p1.shape, p2.shape)
     pos1, quat1 = p1[:3], p1[3:]
     pos2, quat2 = p2[:3], p2[3:]
 

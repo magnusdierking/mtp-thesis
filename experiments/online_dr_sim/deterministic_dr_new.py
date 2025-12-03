@@ -359,23 +359,29 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     distances = distances - jnp.min(distances)
                     if jnp.max(distances) > 1e-6:
                         distances = distances / jnp.max(distances)
+                    # clip distances to [0, 1]
+                    distances = jnp.clip(distances, 0.0, 1.0)
+                    # set NaN to 1
+                    distances = jnp.nan_to_num(distances, nan=1.0)
                     distances = np.array(distances)
                     print("Distances:", distances)                   
                     
                     
                     # probabilities via softmax
-                    temperature = np.std(distances) + 1e-12
-                    probs = np.exp(-distances / temperature)  # temperature scaling
-                    probs = probs / (np.sum(probs) + 1e-12)
+                    # temperature = np.std(distances) + 1e-12
+                    # probs = np.exp(-distances / temperature)  # temperature scaling
+                    # probs = probs / (np.sum(probs) + 1e-12)
 
                     # ! -----------------------
                     updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances)
-                    samples = new_randomizations["geom_friction"][3, 0,...] 
+                    print("Shape", new_randomizations["geom_friction"].shape)
+                    samples = new_randomizations["geom_friction"][:, 3,2] 
+                    print("New Samples:", samples)
                     # print("New DR shapes:", {k: v.shape for k, v in new_randomizations.items()})
                     controller.update_domain_randomization_model(new_randomizations)
-                    policy_params = policy_params.replace(domain_weights=jnp.array(probs))
+                    # policy_params = policy_params.replace(domain_weights=jnp.array(probs))
                     # print("Sites of interest:", sites_of_interest[...,:2,1])
-                    plot_poses_2d(sites_of_interest[...,1,:], ax_poses)
+                    plot_poses_2d(sites_of_interest[...,1,:], ax=ax_poses, ref_pose=old_observation2, alphas=distances)
                     kde = gaussian_kde(samples, bw_method='scott')
                     y_kde = kde(x_kde)
 

@@ -240,7 +240,7 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
                  randomized_bodies: dict,
                  randomized_joints: dict,
                  num_randomizations: int,
-                 mutation_rate: float = 0.05, # standard deviation of gaussian noise added to elites
+                 mutation_rate: float = 0.01, # standard deviation of gaussian noise added to elites
                  elite_fraction: float = 0.5, # fraction of top performers to consider as elites
                  epsilon: float = 0.85        # fraction of new individuals created via mutation, else uniform sampling
                  ):
@@ -295,7 +295,7 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
             
             new_dr[i,...] = self.rng.uniform(self.min_bounds, self.max_bounds)
 
-        self.elite_queue.extend(elite_dr[:int(self.num_elites / 2), ...])  # add half of elites to queue
+        # self.elite_queue.extend(elite_dr[:int(self.num_elites / 2), ...])  # add half of elites to queue
         return new_dr
     
     def _extract_randomized_values(self) -> np.ndarray:
