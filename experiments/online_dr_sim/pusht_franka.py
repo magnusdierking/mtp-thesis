@@ -12,7 +12,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from domain_adaptation import BayesianDomainRandomization, EvolutionaryDomainRandomization
+from domain_adaptation import BayesianDomainRandomization, EvolutionaryDomainRandomization, UniformDomainRandomization
 
 """
 Run an interactive simulation of the push-T task with predictive sampling.
@@ -185,6 +185,7 @@ elif args.algorithm == "anmtp":
             num_samples=num_samples,
             M=3, # horizon via control points
             N=64, # samples
+            planning_frequency=5,
             sigma_min=sigma_min,
             sigma_max=sigma_max,
             sigma_start=sigma_start,
@@ -210,17 +211,14 @@ if args.dr is None:
     dr_strategy = None
 elif args.dr == "uniform":
     print("Using Uniform Domain Randomization.")
-    dr_strategy = BayesianDomainRandomization(
+    dr_strategy = UniformDomainRandomization(
         seed=seed,
         task=task,
         controller=ctrl,
-        randomized_bodies={"tblock": {"field": "geom_friction", "min": 0.2, "max": 1.5}},
-            # "body_mass": (0.1, 1.75, task.T_bid),  # randomize mass of the block
-            # "geom_friction": (jnp.array([0.5, 1e-03, 0.5e-04]), jnp.array([1.5, 10e-03, 2e-04]), task.T_bid),  # friction
+        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.01], "internal_idx": [2]},
+                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.01], "internal_idx": [2]}
+        },
         randomized_joints = {
-            "T_x": {"field": "dof_damping", "min": 0.1, "max": 2.0},
-            "T_y": {"field": "dof_damping", "min": 0.1, "max": 2.0},
-            "T_z": {"field": "dof_damping", "min": 0.1, "max": 2.0},
             # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
             # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
             # "T_z": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
@@ -234,10 +232,10 @@ elif args.dr == "evolutionary":
         seed=seed,
         task=task,
         controller=ctrl,
-        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.4], "max": [1.5], "internal_idx": [0]},
-                           "top": {"field": "geom_friction", "min": [0.4], "max": [1.5], "internal_idx": [0]}
-                        #    "bottom": {"field": "geom_friction", "min": [0.5, 0.8], "max": [2.0, 2.5], "internal_idx": [1, 2]},
-                        #    "top": {"field": "geom_friction", "min": [0.5, 0.8], "max": [2.0, 2.5], "internal_idx": [1, 2]}
+        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.01], "internal_idx": [1]},
+                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.01], "internal_idx": [1]}
+                        # "bottom": {"field": "geom_friction", "min": [0.2], "max": [1.5], "internal_idx": [0]},
+                        #    "top": {"field": "geom_friction", "min": [0.2], "max": [1.5], "internal_idx": [0]}
                            },
             
         randomized_joints = {
@@ -322,7 +320,7 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=10,
+    frequency=5,
     show_traces=True,
     trace_width=0.55,
     max_traces=6,

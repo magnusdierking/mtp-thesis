@@ -44,7 +44,7 @@ class PushTFranka(Task):
         self, planning_horizon: int = 16, sim_steps_per_control_step: int = 5, 
         nu: int = 2, 
         ctrl_limits = {"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
-        trace_sites=["ee_site", "T_1", "T_2"],
+        trace_sites=["T_1", "T_2","ee_site"],
         actuation_type: str = 'velocity',
         sampling_space: str = 'velocity',
         block_type: str = 'free', # 'free' or 'joint'

@@ -219,7 +219,9 @@ class UniformDomainRandomization(AdaptiveDomainRandomizationStrategy):
 
     def get_updated_randomizations(self, signal: np.ndarray) -> Tuple[bool, dict, jnp.ndarray]:
         # Dummy, always return the same uniform randomizations
-        return self.current_randomizations
+        weights = jnp.ones(self.num_randomizations) / self.num_randomizations
+        
+        return tuple((True, self.current_randomizations, weights))
 
 
 
@@ -314,7 +316,7 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
                 field_values = values[..., idxs]  # shape (num_randomizations, num_idxs)
             field_values = np.array(field_values).reshape(self.num_randomizations, -1)
             dr_list.append(field_values)
-            print(f"Extracted field {field} with shape {field_values.shape}")
+            # print(f"Extracted field {field} with shape {field_values.shape}")
         return np.concatenate(dr_list, axis=-1)  # shape (num_randomizations, total_num_randomized_params)
             
             
@@ -337,10 +339,10 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
         
         new_dr  = self._evolve(dr_array, signal)  # shape (num_randomizations, total_num_randomized_params)
         
-        print("DR array shape:", new_dr)
+        # print("DR array shape:", new_dr)
         self._update_randomization_model(new_dr)
-        print("Updated randomizations.")
-        print(self.current_randomizations["geom_friction"][:,jnp.array([3, 4]), :])
+        # print("Updated randomizations.")
+        # print(self.current_randomizations["geom_friction"][:,jnp.array([3, 4]), :])
         weights = jnp.ones(self.num_randomizations) / self.num_randomizations
         
         return tuple((True, self.current_randomizations, weights))

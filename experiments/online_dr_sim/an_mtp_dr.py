@@ -66,7 +66,9 @@ class AnMTP(SamplingBasedController):
     ):
         # super().__init__(task, num_randomizations, risk_strategy, seed)
         # ! experimental
-        super().__init__(task, num_randomizations, ExpectedCost(jnp.ones((num_randomizations,), dtype=jnp.float32) / num_randomizations), seed)
+        if risk_strategy is None:
+            risk_strategy = ExpectedCost(jnp.ones((num_randomizations,), dtype=jnp.float32) / num_randomizations)
+        super().__init__(task, num_randomizations, risk_strategy, seed)
         assert degree >= 2, "degree must be at least 2."
 
         self.degree = degree
@@ -118,10 +120,10 @@ class AnMTP(SamplingBasedController):
         # ----------------------
         # Experimental domain randomization
         # compute horizon step to save and compare to next observed state
-        horizon_time = self.task.planning_horizon * self.task.sim_steps_per_control_step * self.task.dt 
+        horizon_time = self.task.planning_horizon  * self.task.dt 
         planning_time = 1.0 / planning_frequency
-        self.observation_step = jnp.round(horizon_time / planning_time) * self.task.planning_horizon 
-        self.observation_step = self.observation_step.astype(jnp.int32)
+        self.observation_step = (planning_time / horizon_time) * self.task.planning_horizon 
+        self.observation_step = jnp.floor(self.observation_step).astype(jnp.int32)
         
         self.domain_weights = jnp.ones((self.num_randomizations,), dtype=jnp.float32) / self.num_randomizations
         # ----------------------
@@ -143,7 +145,7 @@ class AnMTP(SamplingBasedController):
         T, U = self.task.planning_horizon, self.task.nu
         spline = jnp.zeros((T, U), dtype=jnp.float32)
         elites = jnp.zeros((self.keep_elites, T, U), dtype=jnp.float32) # ! experimental
-        predicted_state = jnp.zeros((self.num_randomizations, len(self.task.trace_site_ids), 3), dtype=jnp.float32) # ! experimental
+        predicted_state = jnp.zeros((self.num_randomizations, len(self.task.trace_site_ids), 7), dtype=jnp.float32) # ! experimental
         domain_weights = jnp.ones((self.num_randomizations,), dtype=jnp.float32) / self.num_randomizations # ! experimental
         mean = jnp.zeros((T, U), dtype=jnp.float32)
         cov = jnp.full_like(mean, self.sigma_start)
@@ -282,6 +284,9 @@ class AnMTP(SamplingBasedController):
         new_beta = jnp.clip(new_beta, self.beta_min, self.beta_max)
         
         # ! Experimental
+        jax.debug.print("Sites predicted state shape: {}", rollouts.trace_sites.shape)
+        jax.debug.print("Next idx: {}", next_idx)
+        jax.debug.print("Observation step: {}", self.observation_step)
         predicted_state = rollouts.trace_sites[:, next_idx, self.observation_step, ...] # one timestep over all domains, for rolloed out 
 
         return params.replace(mean=mean, spline=spline, beta=new_beta, elites=controls[:self.keep_elites], predicted_state=predicted_state)

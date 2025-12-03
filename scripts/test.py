@@ -6,9 +6,7 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
 import time
-from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
-from hydrax.utils.utils import mujoco_to_scipy_quat
-
+from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec, mat2quat, se3_left_invariant_metric
 
 def differential_IK(
     model: mujoco.MjModel,
@@ -191,13 +189,18 @@ step = 0
 scale = 0.8
 scaled = False
 
+site_id1 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
+def quat_to_yaw(qx, qy, qz, qw):
+    siny = 2.0 * (qw * qz + qx * qy)
+    cosy = 1.0 - 2.0 * (qy * qy + qz * qz)
+    return np.arctan2(siny, cosy)
 
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
         # data.ctrl[0] = 0.01 #q
         mujoco.mj_step(model, data)
         # sinusoidal control
-        velocity_x = - 0.5 * np.sin(0.01 * step)
+        velocity_x = - 0.2 * np.sin(0.025 * step)
         velocity_y = 0.001#0.02 * np.sin(0.01 * step)
         dq = differential_IK(
             model,
@@ -208,5 +211,12 @@ with mujoco.viewer.launch_passive(model, data) as v:
         )
         data.qvel[np.array(dof_adr)] = dq
         step += 1
+        
+        # print site position
+        site_rot = data.site_xmat[site_id1].reshape(3,3)
+        # to quaternion
+        site_quat = mat2quat(site_rot)
+        yaw = quat_to_yaw(site_quat[1], site_quat[2], site_quat[3], site_quat[0])
+        print("Step:", step, "Site position:", site_quat, "Yaw:", yaw)
         
         v.sync()

@@ -19,8 +19,9 @@ from hydrax.utils.video import VideoRecorder
 from hydrax.algs.mtp.beta_scheduler import *
 import matplotlib.pyplot as plt
 
-from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
+from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec, mat2quat, se3_left_invariant_metric
 from domain_adaptation import AdaptiveDomainRandomizationStrategy
+from hydrax.risk import ExpectedCost, AverageCost, WorstCase, BestCase, ExponentialWeightedAverage, InverseConditionalValueAtRisk, InverseValueAtRisk
 
 """
 Tools for deterministic (synchronous) simulation, with the simulator and
@@ -224,38 +225,32 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         
     # !LIVE PLOT SETUP ------------------------------------------------#
     if online_dr:
+        from vis_utils import plot_poses_2d
         from scipy.stats import gaussian_kde
-        from collections import deque
+        
         
         site_id1 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
         site_id2 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_2")
         site_id3 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
         
-        old_observation1 = np.array(mj_data.site_xpos[site_id1])[:2]
-        old_observation2 = np.array(mj_data.site_xpos[site_id2])[:2]
-        old_observation3 = np.array(mj_data.site_xpos[site_id3])[:2]
+        # true poses
+        old_observation1 = np.concatenate((np.array(mj_data.site_xpos[site_id1]), np.array(mat2quat(mj_data.site_xmat[site_id1])))) 
+        old_observation2 = np.concatenate((np.array(mj_data.site_xpos[site_id2]), np.array(mat2quat(mj_data.site_xmat[site_id2]))))
+        old_observation3 = np.concatenate((np.array(mj_data.site_xpos[site_id3]), np.array(mat2quat(mj_data.site_xmat[site_id3]))))
 
         new_randomizations = dr_strategy.get_current_randomizations()
-        samples = new_randomizations["geom_friction"][3, 2,...] # should be torsional
+        samples = new_randomizations["geom_friction"][3, 0,...] # should be torsional
+        
+        
         plt.ion()
-        fig, (ax_bar, ax_kde) = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
-
-        # --- BAR CHART (left) ---
-        values = np.arange(controller.num_randomizations)
-        probs = np.ones(controller.num_randomizations) / controller.num_randomizations
-
-        bars = ax_bar.bar(values, probs, width=0.8, align="center", edgecolor="k")
-        ax_bar.set_xticks(values)
-        ax_bar.set_xticklabels([f"{v:.2f}" for v in probs])
-        ax_bar.set_xlabel("Outcome")
-        ax_bar.set_ylabel("Probability")
-        ax_bar.set_title("Discrete Distribution")
+        fig, (ax_poses, ax_kde) = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+        # plot_poses_2d(old_observation2, ax_poses)
 
         # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
         kde = gaussian_kde(samples, bw_method='scott')
 
         # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-        s_min, s_max = 0.0, 3.0
+        s_min, s_max = 0.4, 1.5
         pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
         x_kde = np.linspace(s_min - pad, s_max + pad, 512)
         y_kde = kde(x_kde)
@@ -263,7 +258,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
         # Update the line
         kde_line.set_data(x_kde, y_kde)
-        ax_kde.set_xlim(0.0, 3.0)
+        ax_kde.set_xlim(0.4, 1.5)
         ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
         # kde_line, = ax_kde.plot([], [], lw=2)
         ax_kde.set_xlabel("Sample value")
@@ -340,46 +335,33 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             if online_dr:
                 # ! get error signal
                 sites_of_interest = policy_params.predicted_state#[..., 1]  # ignore end effector site
-                
-                new_observation1 = np.array(mj_data.site_xpos[site_id1])[:2]
-                new_observation2 = np.array(mj_data.site_xpos[site_id2])[:2]
-                new_observation3 = np.array(mj_data.site_xpos[site_id3])[:2]
+                # true poses
+                new_observation1 = jnp.concatenate((jnp.array(mj_data.site_xpos[site_id1]), jnp.array(mat2quat(mj_data.site_xmat[site_id1]))), axis=-1) 
+                new_observation2 = jnp.concatenate((jnp.array(mj_data.site_xpos[site_id2]), jnp.array(mat2quat(mj_data.site_xmat[site_id2]))), axis=-1)
+                new_observation3 = jnp.concatenate((jnp.array(mj_data.site_xpos[site_id3]), jnp.array(mat2quat(mj_data.site_xmat[site_id3]))), axis=-1)
                 
                 # check if any change in observation
-                if np.allclose(new_observation1, old_observation1, atol=1e-2) and np.allclose(new_observation2, old_observation2, atol=1e-2):
+                if np.allclose(np.array(new_observation1), old_observation1, atol=1e-2) and np.allclose(np.array(new_observation2), old_observation2, atol=1e-2):
                     # no change, skip update
                     print("No change in T observation, skipping DR update.")
                     
                 else:
-                    # print("Change in T observation, updating DR.")
-                    # print(f"Change in 1: {new_observation1 - old_observation1}, Change in 2: {new_observation2 - old_observation2}")
-                    
                     
                     old_observation1 = new_observation1
                     old_observation2 = new_observation2
 
-                    # TODO work with pose error instead
-                    distance_1 = np.linalg.norm(
-                        sites_of_interest[...,:2,1] - new_observation1, axis=-1
-                    )
-                
-                    distance_2 = np.linalg.norm(
-                        sites_of_interest[...,:2,2] - new_observation2, axis=-1
-                    )
-                    distance_3 = np.linalg.norm(
-                        sites_of_interest[...,:2,0] - new_observation3, axis=-1
-                    )
-                    mean_d3 = jnp.mean(distance_3)
-                    # clip distance 1,2 to mean of distance 3
-                    distance_1 = jnp.clip(distance_1, 0.0, mean_d3)
-                    distance_2 = jnp.clip(distance_2, 0.0, mean_d3)
+                    distance_1 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(sites_of_interest[...,0,:], new_observation1)
+                    distance_2 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(sites_of_interest[...,1,:], new_observation2)
+                    # ee
+                    distance_3 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(sites_of_interest[...,2,:], new_observation3)
+                    distances = distance_1 + distance_2
+                    # normalize distances to [0, 1]
+                    distances = distances - jnp.min(distances)
+                    if jnp.max(distances) > 1e-6:
+                        distances = distances / jnp.max(distances)
+                    distances = np.array(distances)
+                    print("Distances:", distances)                   
                     
-                    distances = (distance_1 + distance_2) / 2.0  # average distance error
-                    # print(f"DR raw distances: {distance_1}, {distance_2}")
-                    # TODO : use distance 3 as scaling ?
-                    
-                    # sclae distances to [0, 1]
-                    # distances = (distances - np.min(distances)) / (np.max(distances) - np.min(distances) + 1e-12)
                     
                     # probabilities via softmax
                     temperature = np.std(distances) + 1e-12
@@ -389,29 +371,13 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     # ! -----------------------
                     updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances)
                     samples = new_randomizations["geom_friction"][3, 0,...] 
-                    print("New DR shapes:", {k: v.shape for k, v in new_randomizations.items()})
+                    # print("New DR shapes:", {k: v.shape for k, v in new_randomizations.items()})
                     controller.update_domain_randomization_model(new_randomizations)
                     policy_params = policy_params.replace(domain_weights=jnp.array(probs))
-                    
-                    # update bars with distances as probabilities
-                    for bar, p in zip(bars, probs):
-                        bar.set_height(p)
-                        # relable
-                    # y limits according to max probability
-                    ax_bar.set_ylim(np.min(probs), np.max(probs) * 1.05)
-                  
+                    # print("Sites of interest:", sites_of_interest[...,:2,1])
+                    plot_poses_2d(sites_of_interest[...,1,:], ax_poses)
                     kde = gaussian_kde(samples, bw_method='scott')
-
-                    # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-                    s_min, s_max = 0.2, 2.0
-                    pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
-                    x_kde = np.linspace(s_min - pad, s_max + pad, 512)
                     y_kde = kde(x_kde)
-
-                    # Update the line
-                    kde_line.set_data(x_kde, y_kde)
-                    ax_kde.set_xlim(0.5, 2.0)
-                    ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
 
                     fig.canvas.draw_idle()
                     plt.pause(0.01)  # yield to the GUI loop
@@ -430,8 +396,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                                     geom,
                                     mujoco.mjtGeom.mjGEOM_LINE,
                                     trace_width,
-                                    rollouts.trace_sites[d, i, j, k],        # ! randomizations x rollouts x horizon x sites
-                                    rollouts.trace_sites[d, i, j + 1, k],    # !
+                                    rollouts.trace_sites[d, i, j, k, :3],        # ! randomizations x rollouts x horizon x sites
+                                    rollouts.trace_sites[d, i, j + 1, k, :3],    # !
                                 )
                                 if k > 0:
                                     geom.rgba = np.array(color.tolist())
