@@ -21,7 +21,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 
 
 num_samples = 256
-num_randomizations = 16#30
+num_randomizations = 24
 
 # very hard cna result in failure
 # online_dr = True
@@ -221,8 +221,8 @@ elif args.dr == "uniform":
         seed=seed,
         task=task,
         controller=ctrl,
-        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [2]},
-                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [2]}
+        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [1]},
+                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [1]}
         },
         randomized_joints = {
             # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
@@ -238,8 +238,8 @@ elif args.dr == "evolutionary":
         seed=seed,
         task=task,
         controller=ctrl,
-        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [2]},
-                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [2]}
+        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [1]},
+                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [1]}
         },
         randomized_joints = {
             # "T_x": {"field": "dof_damping", "min": 0.01, "max": 3.0},
@@ -326,13 +326,13 @@ run_interactive(
     frequency=5,
     show_traces=True,
     trace_width=0.55,
-    max_traces=6,
+    max_traces=1,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,
     max_step=200,
     seed=seed,
-    log_file=path.as_posix(),
+    # log_file=path.as_posix(),
     online_dr=online_dr,
     dr_strategy = dr_strategy,
     )

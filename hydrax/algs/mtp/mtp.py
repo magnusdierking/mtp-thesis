@@ -129,7 +129,7 @@ class MTP(SamplingBasedController):
 
         self.savgol_filter = savgol_filter  
         if savgol_filter:
-            self.savgol_filter_fn = make_savgol_filter(window_length=5, polyorder=2)
+            self.savgol_filter_fn = make_savgol_filter(window_length=7, polyorder=2, axis=1)
         
         
     def start_clamped_knot_vector(self, num_ctrl_points, degree, dtype=jnp.float32):

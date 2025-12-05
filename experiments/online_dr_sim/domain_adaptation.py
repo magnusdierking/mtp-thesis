@@ -272,6 +272,7 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
         # get elite indives
         elite_indices = jnp.argsort(signal)[:self.num_elites]
         elite_dr = dr_array[elite_indices, ...]  # shape (num_elites, total_num_randomized_params)
+        print("Elite values:", elite_dr)
         new_dr = np.empty_like(dr_array)
 
         if len(self.elite_queue) >= int(self.num_mutations / 2):
@@ -281,7 +282,7 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
                 new_dr[i, ...] = queue_samples[i]
         
         # other half is subsampled from current elites
-        new_dr[int(self.num_mutations / 2):self.num_mutations-1, ...] = elite_dr[self.rng.choice(self.num_elites, int(self.num_mutations / 2), replace=True), ...]
+        new_dr[int(self.num_mutations / 2):self.num_mutations, ...] = elite_dr[self.rng.choice(self.num_elites, int(self.num_mutations / 2), replace=True), ...]
 
         noise = self.mutation_rate * np.random.randn(int(self.num_mutations), elite_dr.shape[1])
  
@@ -332,6 +333,10 @@ class EvolutionaryDomainRandomization(AdaptiveDomainRandomizationStrategy):
         #     weights = jnp.ones(self.num_randomizations) / self.num_randomizations
         #     return tuple((False, self.current_randomizations, weights))
         # clip the signal to avoid extreme values
+        if np.allclose(signal, signal[0], rtol=1e-2):
+            print("Signal values too close to each other, skipping update.")
+            weights = jnp.ones(self.num_randomizations) / self.num_randomizations
+            return tuple((False, self.current_randomizations, weights))
         
 
         # concatenate all randomized values

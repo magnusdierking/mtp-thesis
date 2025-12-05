@@ -99,7 +99,8 @@ task = PushTFranka(ik_type = 'pinv',
                     trace_sites=["ee_site"],
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    det_init=det_init
+                    det_init=det_init,
+                    block_type = 'free',
                 )
 
 # position control

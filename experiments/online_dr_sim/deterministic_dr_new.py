@@ -250,7 +250,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         kde = gaussian_kde(samples, bw_method='scott')
 
         # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-        s_min, s_max = 0.4, 1.5
+        s_min, s_max = 0.0, 2.0
         pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
         x_kde = np.linspace(s_min - pad, s_max + pad, 512)
         y_kde = kde(x_kde)
@@ -258,7 +258,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
         # Update the line
         kde_line.set_data(x_kde, y_kde)
-        ax_kde.set_xlim(0.4, 1.5)
+        ax_kde.set_xlim(0.0, 2.0)
         ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
         # kde_line, = ax_kde.plot([], [], lw=2)
         ax_kde.set_xlabel("Sample value")
@@ -355,33 +355,46 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     # ee
                     distance_3 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(sites_of_interest[...,2,:], new_observation3)
                     distances = distance_1 + distance_2
+
+
                     # normalize distances to [0, 1]
                     distances = distances - jnp.min(distances)
-                    if jnp.max(distances) > 1e-6:
-                        distances = distances / jnp.max(distances)
+
+                    # if jnp.max(distances) > 1e-6:
+                    #     distances = distances / jnp.max(distances)
+                    
                     # clip distances to [0, 1]
                     distances = jnp.clip(distances, 0.0, 1.0)
                     # set NaN to 1
-                    distances = jnp.nan_to_num(distances, nan=1.0)
-                    distances = np.array(distances)
-                    print("Distances:", distances)                   
+                    max_distance = jnp.max(distances)
+                    # if max is NaN, set to 1.0
+                    if not jnp.isfinite(max_distance):
+                        max_distance = 1.0
+                    distances = jnp.nan_to_num(distances, nan=max_distance)
                     
+                    distances = np.array(distances)
+                    distances = distances / (np.sum(distances) + 1e-12)
+                    print("Distances:", distances)    
+
+                    # scale to [0, 1] for alphas
+                    alphas = 0.9 * (distances - np.min(distances)) / (np.max(distances) - np.min(distances) + 1e-12)    
+                    alphas = 1 - alphas  # invert, so that smaller distance = higher weight           
                     
                     # probabilities via softmax
-                    # temperature = np.std(distances) + 1e-12
-                    # probs = np.exp(-distances / temperature)  # temperature scaling
-                    # probs = probs / (np.sum(probs) + 1e-12)
+                    temperature = np.std(distances) + 1e-12
+                    probs = np.exp(-distances / temperature)  # temperature scaling
+                    probs = probs / (np.sum(probs) + 1e-12)
 
                     # ! -----------------------
                     updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances)
                     print("Shape", new_randomizations["geom_friction"].shape)
-                    samples = new_randomizations["geom_friction"][:, 3,2] 
+                    samples = new_randomizations["geom_friction"][:, 3,1] 
                     print("New Samples:", samples)
                     # print("New DR shapes:", {k: v.shape for k, v in new_randomizations.items()})
                     controller.update_domain_randomization_model(new_randomizations)
-                    # policy_params = policy_params.replace(domain_weights=jnp.array(probs))
+                    policy_params = policy_params.replace(domain_weights=jnp.array(probs))
                     # print("Sites of interest:", sites_of_interest[...,:2,1])
-                    plot_poses_2d(sites_of_interest[...,1,:], ax=ax_poses, ref_pose=old_observation2, alphas=distances)
+                    plot_poses_2d(sites_of_interest[...,0,:], ax=ax_poses, ref_pose=new_observation1, alphas=alphas)
                     kde = gaussian_kde(samples, bw_method='scott')
                     y_kde = kde(x_kde)
 
@@ -393,7 +406,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             colors = plt.cm.viridis(np.linspace(0, 1, controller.num_randomizations))
             if show_traces:
                 ii = 0
-                for k in range(num_trace_sites):
+                for k in [1]:# range(num_trace_sites):
                     for i in range(num_traces):
                         for d, color in enumerate(colors): # num_randomizations
                             for j in range(controller.task.planning_horizon):

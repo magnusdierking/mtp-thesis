@@ -19,17 +19,34 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 # ----- for short horizon test , 0.025 dt, 8 times 2 horizon,-----
-seed = 100
-update_cov = True
+
+
+seed = 120
+update_cov = False
 sigma_max = 0.75
 sigma_min = 0.05
 sigma_start = 0.2
 det_init = {
     "block_pos_x": -0.1,
-    "block_pos_y": 0.15,
+    "block_pos_y": 0.2,
     "block_angle": np.pi/4,
     "ee_goal_pos": [0.35, 0.0, 0.035]
 }
+
+# seed = 100
+# update_cov = False
+# sigma_max = 0.75
+# sigma_min = 0.05
+# sigma_start = 0.2
+# det_init = {
+#     "block_pos_x": -0.1,
+#     "block_pos_y": 0.15,
+#     "block_angle": np.pi/4,
+#     "ee_goal_pos": [0.35, 0.0, 0.035]
+# }
+
+
+
 
 # seed = 200
 # update_cov = False
@@ -92,10 +109,10 @@ det_init = {
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=16,
-                    sim_steps_per_control_step=3,
-                    ctrl_limits={"u_min": jnp.array([-0.5, -0.5]), 
-                                "u_max": jnp.array([0.5, 0.5])},
+                    planning_horizon=10,
+                    sim_steps_per_control_step=2,
+                    ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
+                                "u_max": jnp.array([0.4, 0.4])},
                     trace_sites=["ee_site"],
                     actuation_type='velocity',
                     sampling_space="velocity",
@@ -131,7 +148,7 @@ num_randomizations = 1
 
 
 data = {}
-path = get_data_path() / "pushT_sim" / args.algorithm / "smooth"
+path = get_data_path() / "pushT_sim" / args.algorithm / "smooth_default_zero"
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_update_cov_{update_cov}.csv"
@@ -149,7 +166,7 @@ elif args.algorithm == "mppi":
         temperature=0.1,
         num_randomizations=num_randomizations,
         colorize_noise=True,   # !experimental
-        alpha_noise=1.2,
+        alpha_noise=0.1,
         #shift=True,
         #planning_freq=20,
         default_zero_controls=False,
@@ -187,13 +204,14 @@ elif args.algorithm == "mtp":
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=12,
-        beta=0.45,
+        keep_elites=1,   # !experimental
+        beta=0.35,
         alpha=0.1,
         interpolation='bspline',
         colorize_noise=False,   # !experimental
         alpha_noise=0.7,
-        default_zero_controls=True,
-        savgol_filter=True,
+        default_zero_controls=False,
+        savgol_filter=False,
         num_randomizations=num_randomizations,
         seed=seed,
         update_cov=update_cov,
@@ -243,7 +261,7 @@ run_interactive(
     record_video=False,
     max_step=300,
     seed=seed,
-    # log_file=path.as_posix(),
+    log_file=path.as_posix(),
     )
 
 

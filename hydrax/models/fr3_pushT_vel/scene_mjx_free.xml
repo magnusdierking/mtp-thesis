@@ -23,7 +23,7 @@
   <!-- Push T setup -->
   <worldbody>
     <camera name='top_view' pos="-0.276 -0.512 0.817" xyaxes="0.864 -0.503 0.000 0.404 0.694 0.596"/>
-    <camera name="comparison" pos="1.095 0.299 1.037" xyaxes="-0.271 0.962 -0.000 -0.701 -0.198 0.685"/>
+    <camera name="comparison" pos="1.107 -0.076 0.436" xyaxes="0.178 0.984 -0.000 -0.466 0.084 0.881"/>
 
       <body name="goal" mocap="true" pos="0.4 0.0 0.009" quat="1 0 0 -1">
         <geom class="goal" name="goal_bottom" type="box" size=".025 0.05 0.025"/>
