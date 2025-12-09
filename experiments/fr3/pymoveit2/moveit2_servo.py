@@ -90,6 +90,7 @@ class MoveIt2Servo:
         # Enable servo immediately, if desired
         if enable_at_init:
             self.enable_servo()
+            self.use_twist()  # default to twist commands
 
     
     def _call_pause(self, paused: bool, timeout_sec: float = 2.0):

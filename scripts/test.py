@@ -217,6 +217,8 @@ with mujoco.viewer.launch_passive(model, data) as v:
         # to quaternion
         site_quat = mat2quat(site_rot)
         yaw = quat_to_yaw(site_quat[1], site_quat[2], site_quat[3], site_quat[0])
-        print("Step:", step, "Site position:", site_quat, "Yaw:", yaw)
-        
+        # print("Step:", step, "Site position:", site_quat, "Yaw:", yaw)
+        print("Vel  ", data.qvel)
+        # position control
+        print("Pos  ", data.qpos)
         v.sync()

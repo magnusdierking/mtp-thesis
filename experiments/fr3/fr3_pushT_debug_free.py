@@ -6,7 +6,7 @@ import argparse
 from math import sin, cos
 
 from hydrax.algs import MPPI, MTP, AnMTP
-from hydrax.tasks.pusht_franka import PushTFranka
+from pusht_franka_free import PushTFranka
 
 from hydrax.alg_base import SamplingBasedController
 
@@ -16,10 +16,12 @@ from scipy.spatial.transform import Rotation as R
 import jax.numpy as jnp
 
 from shape_msgs.msg import Mesh, MeshTriangle, SolidPrimitive
-from geometry_msgs.msg import PoseStamped, TransformStamped
+from geometry_msgs.msg import PoseStamped, TransformStamped, Pose, Point
 from franka_panda_server import FrankaPandaServer
 
+from rclpy.callback_groups import ReentrantCallbackGroup
 from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityException, ExtrapolationException
+from tf_transformations import quaternion_from_euler, quaternion_multiply, quaternion_matrix
 from tf2_geometry_msgs import do_transform_pose
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
@@ -28,7 +30,6 @@ def yaw_from_quat(x, y, z, w):
     # standard ZYX Euler convention
     yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
     return yaw
-
 
 
 class FR3_PushT(FrankaPandaServer):
@@ -82,20 +83,16 @@ class FR3_PushT(FrankaPandaServer):
             position=np.array([0.4, 0.475, 0.15]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
-     
-        # TODO add walls around action space
         
         ####################################
         ##       Move to initial pose     ##    
         ####################################
-        # self.move_to_home()
-        # # wait 
-        # time.sleep(2.0)
         
-        self.init_pos = np.array([0.35, -0.2, 0.26])   # 0,26
+        self.init_pos = np.array([0.45, 0.1, 0.165])   # 0,26
+        # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
-        # self.init_pos[0] += np.random.normal(0, 0.01)   # x
-        # self.init_pos[1] += np.random.normal(0, 0.05)   # y (larger variance)
+        # self.init_pos[0] += np.random.uniform(-0.1, 0.05)   # x
+        # self.init_pos[1] += np.random.uniform(-0.1, 0.1)   # y (larger variance)
         self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
        
         self.init_rot = R.from_quat(self.init_quat).as_matrix()
@@ -104,50 +101,23 @@ class FR3_PushT(FrankaPandaServer):
         pose[:3, 3] = self.init_pos
         self.plan_and_move_to_pose(pose)
         
-        time.sleep(2.0)
-
-        while not self._states_received():
-            rclpy.spin_once(self, timeout_sec=0.1)
         
         ####################################
         ##            T Object            ##    
         ####################################
-        
-        self.br = StaticTransformBroadcaster(self)
-        self._publish_static_robot_tf()
-        time.sleep(1.0)
-        
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
+        self.br = StaticTransformBroadcaster(self)
+        self._publish_static_robot_tf()
+   
 
-        ####################################
-        ##         JIT Controller         ##    
-        ####################################
-        # Wait until all states are received
-        # while not self._states_received():
-        #     rclpy.spin_once(self, timeout_sec=0.1)
-
-        # print("All states received, initializing controller...")
-
-        # self.ctrl = ctrl
-        # self.mjx_data = mjx.make_data(self.ctrl.task.model)
-        # self.policy_params = self.ctrl.init_params(seed)
-        # print(
-        #     f"Planning with {self.ctrl.task.planning_horizon} steps "
-        #     f"over a {self.ctrl.task.planning_horizon * self.ctrl.task.dt} second horizon."
-        # )
-        # print("Jitting controller...")
-        # print("This may take a while, please be patient.")
-        # st = time.time()
-        # self.mjx_data = mjx.forward(ctrl.task.model, self.mjx_data)
-        # self.jit_optimize = jax.jit(
-        #     lambda d, p: ctrl.optimize(d, p)[0], donate_argnums=(1,)
-        # )
-        # self.get_action = jax.jit(ctrl.get_action)
-        # self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
-        # print(f"Time to jit: {time.time() - st}")
-        
+        for _ in range(10):
+            rclpy.spin_once(self, timeout_sec=0.1)
+            if self.tf_buffer.can_transform("fr3_link0", "objectPushT_MuJoCo",
+                                            rclpy.time.Time(),
+                                            rclpy.duration.Duration(seconds=0.0)):
+                break
         
         ####################################
         ##         Debug Simulator        ##    
@@ -155,31 +125,19 @@ class FR3_PushT(FrankaPandaServer):
         self.debug_model = debug_model
         self.debug_data = debug_data
         self.viewer = viewer
-
-        self.create_timer(1.0 / 20.0, self._step_debug_sim)
-        time.sleep(1.0)  # wait for viewer to initialize
-
-        ####################################
-        ##         Set up Timers          ##    
-        ####################################
-
-        self.create_timer(1.0 / 50.0, self._update_state)
-
-        # # SMPC update 
-        # self.mpc_freq = 20  # Hz
-        # self.create_timer(1.0 / self.mpc_freq, self._run_controller)
-
-        # # # Command publisher
-        # # self.action_timer = time.time()
-        # self.get_logger().info("Starting servo...")
-        # self.servo.enable_servo()
-        # self.servo.use_twist()  # switch to twist commands
-        # self.servo_freq = 35  # Hz
-        # self.create_timer(1.0 / self.servo_freq, self._send_command)
+        self.servo_freq = 50  # Hz
+        self.sim_freq = 50
+        self.servo_group = ReentrantCallbackGroup()
+        self.sim_group = ReentrantCallbackGroup()
+        time.sleep(0.1) 
+        self.create_timer(1.0 / self.sim_freq, self._step_debug_sim, callback_group=self.sim_group)
+        time.sleep(0.1) 
+        self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.servo_group)
         
-        # # TODO - regularly check for error threshold and send robot home if below threshold
 
     def _step_debug_sim(self):
+        current_time = self.get_clock().now().nanoseconds / 1e9
+        self._update_state()
         if not self.viewer.is_running():
             self.get_logger().info("Viewer closed — shutting down.")
             # Cancel timer first to avoid callbacks during shutdown.
@@ -189,9 +147,10 @@ class FR3_PushT(FrankaPandaServer):
         # Step simulation then sync the viewer.
         mujoco.mj_forward(self.debug_model, self.debug_data)
         self.viewer.sync()
-        
-        # TODO - reset function to
-        self._update_T()
+        current_time2 = self.get_clock().now().nanoseconds / 1e9
+        freq = 1 / (current_time2 - current_time)
+        print(f"Debug sim running at {freq:.3f} Hz")
+  
     
     
     def _publish_static_robot_tf(self):
@@ -199,9 +158,6 @@ class FR3_PushT(FrankaPandaServer):
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
-        # objectPushT, fr3-calibration-ee
-        
-        # TODO hardcoded for now, potentially automatically publish after calibration in the future
 
         # Translation (meters)
         t.transform.translation.x = 1.12763
@@ -218,29 +174,46 @@ class FR3_PushT(FrankaPandaServer):
         self.br.sendTransform(t)
         self.get_logger().info('Published static TF fr3_link0 -> optitrack')
 
+        # same for mujoco
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = 'objectPushT'
+        t.child_frame_id = 'objectPushT_MuJoCo'
+        # objectPushT, fr3-calibration-ee
+        
+        # TODO hardcoded for now, potentially automatically publish after calibration in the future
 
+        # Translation (meters)
+        t.transform.translation.x = 0.0
+        t.transform.translation.y = -0.025
+        t.transform.translation.z = 0.0
+
+        quat = quaternion_from_euler(0.0, 0.0, np.pi)
+        t.transform.rotation.x = quat[0]
+        t.transform.rotation.y = quat[1]
+        t.transform.rotation.z = quat[2]
+        t.transform.rotation.w = quat[3]
+
+        # Broadcast once; static transforms are latched
+        self.br.sendTransform(t)
+        self.get_logger().info('Published static TF objectPushT -> objectPushT_MuJoCo')
+    
         
     def _update_T(self):
-        if not self.tf_buffer.can_transform("fr3_link0", "objectPushT",
+        if not self.tf_buffer.can_transform("fr3_link0", "objectPushT_MuJoCo",
                                             rclpy.time.Time(),
-                                            rclpy.duration.Duration(seconds=0.01)):
-            return None
+                                            rclpy.duration.Duration(seconds=0.1)):
+            raise RuntimeError("TF transform not available yet.")
         else:
-            world_T_objReal = self.tf_buffer.lookup_transform("fr3_link0", "objectPushT", rclpy.time.Time())
-        # try:
-        #     world_T_objReal = self.tf_buffer.lookup_transform(
-        #         "fr3_link0", "objectPushT", rclpy.time.Time())
-        # except (LookupException, ConnectivityException, ExtrapolationException) as e:
-        #     self.get_logger().warn(f'TF lookup failed: {e}')
-            
-        # optitrack gives center of markers, need to convert to simulation center
-        lin = world_T_objReal.transform.translation
-        lin = np.array([lin.x, lin.y - 0.025, lin.z]) # offset due to optitrack vs mujoco center missmatch
-        quat = np.array([world_T_objReal.transform.rotation.x,
-                         world_T_objReal.transform.rotation.y,
-                         world_T_objReal.transform.rotation.z,
-                         world_T_objReal.transform.rotation.w])
-        # print(f"World transform (translation): {lin}")
+            world_T_objReal = self.tf_buffer.lookup_transform("fr3_link0", "objectPushT_MuJoCo", rclpy.time.Time())
+            lin = np.array([world_T_objReal.transform.translation.x,
+                            world_T_objReal.transform.translation.y,
+                            world_T_objReal.transform.translation.z])   
+             
+            quat = np.array([world_T_objReal.transform.rotation.x,
+                             world_T_objReal.transform.rotation.y,
+                             world_T_objReal.transform.rotation.z,
+                             world_T_objReal.transform.rotation.w])
     
         return lin, quat
 
@@ -248,25 +221,38 @@ class FR3_PushT(FrankaPandaServer):
     def _update_state(self):
         
         lin_t, quat_t = self._update_T()
-        self.debug_data.qpos[0] = -lin_t[1] # x in block, -y in robot
-        self.debug_data.qpos[1] = lin_t[0] -0.44 # y in block, x in robot, offset from spawn
-        self.debug_data.qpos[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) - np.pi 
-        # print(f"Object yaw: {self.debug_data.qpos[2]*180.0/np.pi} deg")
+        old_pos = self.debug_data.qpos[:7].copy()
 
-        self.debug_data.qpos[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
-        self.debug_data.qvel[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
-        
+        self.debug_data.qpos[:7] = [lin_t[0] - 0.15, #! Why ?
+                                    lin_t[1], 
+                                    old_pos[2],  # keep z the saame, avoids soft contacts wiht table
+                                    quat_t[3], 
+                                    quat_t[0], 
+                                    quat_t[1],
+                                    quat_t[2]]
+
+        # robot jints are in qpos[1:7]
+        self.debug_data.qpos[7:14] = np.array([copy.deepcopy(self._current_joint_state.position)])
+        self.debug_data.qvel[7:14] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
+
+        # TODO - twist based on frame estimation history
 
         
     def _send_command(self):
-        
-        # t = time.time() - self.action_timer
-        # action = self.get_action(self.policy_params, t)
-        # linear = (action[0], action[1], 0.0)
-        # angular = (0.0, 0.0, 0.0)
-        # self.servo(linear=linear, angular=angular)
-        now_sec = self.get_clock().now().nanoseconds * 1e-9
-        self.servo(linear=(sin(now_sec), cos(now_sec), 0.0), angular=(0.0, 0.0, 0.0))
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+        vx = 0.25*sin(now_sec / 2)
+        vy = 0.25*cos(now_sec / 2)
+        # print(f"Sending command: linear=({vx}, {vy}, 0.0), angular=(0.0, 0.0, 0.0)")
+        # current pose
+        # ee_lin = self.get_ee_position()
+        # delta_z = ee_lin[2] - self.init_pos[2]
+        # print(f"Current delta_z: {delta_z:.6f}")
+        # print(f"Current EE position: {ee_lin}")
+
+        self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+        # now_sec2 = self.get_clock().now().nanoseconds / 1e9
+        # freq = 1 / (now_sec2 - now_sec)
+        # print(f"Servo running at {freq:.3f} Hz")
         
 
     def _run_controller(self):
@@ -295,38 +281,32 @@ class FR3_PushT(FrankaPandaServer):
             return True
     
     
-    
-    # self.get_logger().debug("This is a debug message")
-    #     self.get_logger().info("This is an info message")
-    #     self.get_logger().warn("This is a warning")
-    #     self.get_logger().error("This is an error")
-    #     self.get_logger().fatal("This is fatal!")
-    
-    
+
+
+
 if __name__ == '__main__':
     
     rclpy.init()
 
     task = PushTFranka(ik_type = 'pinv',
-        planning_horizon=8,
-        sim_steps_per_control_step=2,
-        ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
-                    "u_max": jnp.array([0.4, 0.4])},
-        trace_sites=[],
-        actuation_type='velocity',
-        sampling_space="velocity",
-    )
+                    planning_horizon=12,
+                    sim_steps_per_control_step=2,
+                    ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
+                                 "u_max": jnp.array([0.4, 0.4])},
+                    actuation_type='velocity',
+                    sampling_space="velocity",
+                    block_type = 'free',
+                )
 
     import mujoco
     import mujoco.viewer
     
  
     # Load the MuJoCo model
-    xml_path = "/home/mtp/Lab/mtp-thesis/hydrax/models/fr3_pushT_vel/scene_mjx.xml"
+    xml_path = "/home/mtp/Lab/mtp-thesis/hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
     # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
     xml_dir = os.path.dirname(xml_path)
-    print(os.path.basename(xml_path))
-    print(xml_path)
+
     model = mujoco.MjModel.from_xml_path(xml_path)
     data = mujoco.MjData(model)
     
@@ -382,7 +362,7 @@ if __name__ == '__main__':
         )
 
         # TODO - does multi-threaded executor give me any advantage ? -> Benchmark
-        executor = rclpy.executors.MultiThreadedExecutor()
+        executor = rclpy.executors.MultiThreadedExecutor(num_threads=8)
         executor.add_node(controller)
         
         try:
