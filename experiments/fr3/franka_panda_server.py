@@ -17,6 +17,7 @@ from geometry_msgs.msg import PoseStamped, TwistStamped
 from sensor_msgs.msg import JointState
 from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_pose
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 
 class FrankaPandaServer(RobotServer):
@@ -41,33 +42,33 @@ class FrankaPandaServer(RobotServer):
             "fr3_joint_6": np.pi/2,
             "fr3_joint_7": np.pi/4
         }}
+
+        self.parallel_group = ReentrantCallbackGroup()
         
         self._ee_pose_subscriber = self.create_subscription(
             PoseStamped,
             "/franka_robot_state_broadcaster/current_pose",
             self._ee_pose_callback,
-            10
+            10,
+            callback_group=self.parallel_group
         )
 
         self._ee_twist_subscriber = self.create_subscription(
             TwistStamped,
             "/franka_robot_state_broadcaster/current_twist",  
             self._ee_twist_callback,
-            10
+            10,
+            callback_group=self.parallel_group
         )
 
         self._joint_state_subscriber = self.create_subscription(
             JointState,
             "/franka_robot_state_broadcaster/measured_joint_states",
             self._joint_state_callback,
-            5
+            5,
+            callback_group=self.parallel_group
         )
-            
-        #self.create_timer(1.0, self._print_joint_states) 
-        # For thesis
-        #self.create_timer(0.01, self.update_states)  
-
-    # Control
+ 
 
     def plan_and_move_to_pose(self, pose: np.ndarray):
         """
