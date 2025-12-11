@@ -7,6 +7,7 @@ import argparse
 from math import sin, cos
 
 from hydrax.algs import MPPI, MTP, AnMTP
+from hydrax.utils.utils import se3_left_invariant_metric
 from pusht_franka_free import PushTFranka
 
 from hydrax.alg_base import SamplingBasedController
@@ -89,7 +90,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.45, 0.1, 0.165])   # 0,26
+        self.init_pos = np.array([0.55, 0.1, 0.160])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
         # self.init_pos[0] += np.random.uniform(-0.1, 0.05)   # x
@@ -130,10 +131,10 @@ class FR3_PushT(FrankaPandaServer):
 
         # Do a forward once (host side is fine here)
         self.mjx_data = mjx.forward(ctrl.task.model, self.mjx_data)
-        def break_aliasing(tree):
-            return jax.tree.map(lambda x: x + jnp.zeros_like(x), tree)
+        # def break_aliasing(tree):
+        #     return jax.tree.map(lambda x: x + jnp.zeros_like(x), tree)
 
-        self.mjx_data = break_aliasing(self.mjx_data)
+        # self.mjx_data = break_aliasing(self.mjx_data)
 
         # Make unified jitted step function
         self.jit_step = self.make_jitted_step(ctrl)
@@ -163,8 +164,8 @@ class FR3_PushT(FrankaPandaServer):
         ##            T Object            ##    
         ####################################
 
-        self.lin = None
-        self.quat = None
+        self.lin_t = None
+        self.quat_t = None
         self.robot_q = None
         self.robot_dq = None
 
@@ -187,13 +188,13 @@ class FR3_PushT(FrankaPandaServer):
         ##           Start Timer          ##    
         ####################################
 
-        self.servo_freq = 10  # Hz
-        self.plan_freq = 20
+        self.servo_freq = 50  # Hz
+        self.plan_freq = 10
         self.action = None
         
         self.sim_group = MutuallyExclusiveCallbackGroup()
 
-        # self.create_timer(1.0 / self.plan_freq, self._run_controller, callback_group=self.sim_group)
+        self.create_timer(1.0 / self.plan_freq, self._run_controller, callback_group=self.sim_group)
         self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.parallel_group)
         
 
@@ -218,14 +219,14 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
 
-        t.transform.translation.x = 1.12763
-        t.transform.translation.y = -1.26957
-        t.transform.translation.z = -0.02129
+        t.transform.translation.x = 1.07658
+        t.transform.translation.y = -1.23784
+        t.transform.translation.z = 0.04381
 
-        t.transform.rotation.x = -0.00703
-        t.transform.rotation.y = -0.00123
-        t.transform.rotation.z = 0.99989
-        t.transform.rotation.w = 0.01335
+        t.transform.rotation.x = -0.01901
+        t.transform.rotation.y = 0.00215
+        t.transform.rotation.z = 0.99975
+        t.transform.rotation.w = -0.01119
 
         self.static_tf = t
         self.br.sendTransform(t)
@@ -238,7 +239,7 @@ class FR3_PushT(FrankaPandaServer):
         t.child_frame_id = 'objectPushT_MuJoCo'
 
         t.transform.translation.x = 0.0
-        t.transform.translation.y = -0.025
+        t.transform.translation.y = +0.025
         t.transform.translation.z = 0.0
 
         quat = quaternion_from_euler(0.0, 0.0, np.pi)
@@ -268,11 +269,11 @@ class FR3_PushT(FrankaPandaServer):
             robot_q = jnp.asarray(robot_q, dtype=jnp.float32)
             robot_dq = jnp.asarray(robot_dq, dtype=jnp.float32)
 
-            # --- update mjx_data.qpos / qvel on device ---
-            new_qpos = mjx_data.qpos.at[0:14].set(jnp.array([
+            # --- on device ---
+            new_qpos = mjx_data.qpos.at[jnp.array([0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])].set(jnp.array([
                 lin_t[0] - 0.15,
                 lin_t[1],
-                lin_t[2],
+                # lin_t[2], # keep z the same, avoids soft contacts with table
                 quat_t[3],
                 quat_t[0],
                 quat_t[1],
@@ -301,14 +302,31 @@ class FR3_PushT(FrankaPandaServer):
                 qvel=new_qvel,
             )
 
-            # --- run the controller on device ---
+            # --- on device ---
             new_policy_params, rollouts = ctrl.optimize(mjx_data, policy_params)
 
             return mjx_data, new_policy_params
 
-        return jax.jit(step, donate_argnums=(0,1))
+        return jax.jit(step, donate_argnums=(1,))
+
 
     def _update_T(self):
+        """
+        Update the transformation between the robot base frame and the object frame.
+        
+        Retrieves the current transformation from the TF buffer between "fr3_link0" 
+        (robot base frame) and "objectPushT_MuJoCo" (object frame). Extracts the 
+        translation and rotation components and returns them as separate numpy arrays.
+        
+        Returns:
+            tuple: A tuple containing:
+                - lin (np.ndarray): Translation vector [x, y, z] in meters as float32 array,
+                                   or None if transform is not available.
+                - quat (np.ndarray): Rotation quaternion [x, y, z, w] as float32 array,
+                                    or None if transform is not available.
+        
+        Logs a warning if the TF transform is not available and returns (None, None).
+        """
         if not self.tf_buffer.can_transform("fr3_link0", "objectPushT_MuJoCo",
                                             rclpy.time.Time(),
                                             rclpy.duration.Duration(seconds=0.0)):
@@ -333,7 +351,16 @@ class FR3_PushT(FrankaPandaServer):
 
         return lin, quat
 
+
     def _get_robot_state_np(self):
+        """
+        Retrieve the current robot joint state as NumPy float32 arrays.
+        
+        Returns:
+            tuple: A tuple containing:
+                - robot_q (np.ndarray): Joint positions as a float32 NumPy array.
+                - robot_dq (np.ndarray): Joint velocities as a float32 NumPy array.
+        """
         robot_q = np.array(
             copy.deepcopy(self._current_joint_state.position),
             dtype=np.float32
@@ -344,20 +371,54 @@ class FR3_PushT(FrankaPandaServer):
         )
         return robot_q, robot_dq
     
-    def _run_controller(self):
-        t0 = time.time()
-        lin_t, quat_t = self._update_T()  
-        robot_q, robot_dq = self._get_robot_state_np()
     
+    def _run_controller(self):
+        """
+        Execute a single SMPC planning step.
+        This method performs the following operations in sequence:
+        1. Updates the T linear position and quaternion orientation
+        2. Retrieves the current robot joint positions and velocities
+        3. Validates that both object and robot states are available
+        4. Executes the JIT-compiled policy step to update MuJoCo state and policy parameters
+        5. Computes the control action from the updated policy parameters
+      
+        Returns:
+            None
+        """
+        t0 = time.time()
+        self.lin_t, self.quat_t = self._update_T()  
+        self.robot_q, self.robot_dq = self._get_robot_state_np()
+        if self.lin_t is None or self.quat_t is None:
+            self.get_logger().warn(
+                "Skipping control step: missing object state."
+            )
+            return
+        if self.robot_dq is None or self.robot_q is None:
+            self.get_logger().warn(
+                "Skipping control step: missing robot state."
+            )
+            return
+
+        # pose_T = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
+        #                    self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
+        # ee_quat = self.get_ee_orientation()
+        # ee_lin = self.get_ee_position()
+
+        # pose_ee = np.array([ee_lin[0], ee_lin[1], ee_lin[2],
+        #                    ee_quat[3], ee_quat[0], ee_quat[1], ee_quat[2]])
+        # error = se3_left_invariant_metric(pose_T, pose_ee)
+        # error = np.linalg.norm(self.lin_t - ee_lin)
+        # self.get_logger().info(f"Pose error: {error}")
+        
         t1 = time.time()
-        # self.mjx_data, self.policy_params = self.jit_step(
-        #     self.mjx_data,
-        #     self.policy_params,
-        #     lin_t,
-        #     quat_t,
-        #     robot_q,
-        #     robot_dq,
-        # )
+        self.mjx_data, self.policy_params = self.jit_step(
+            self.mjx_data,
+            self.policy_params,
+            self.lin_t,
+            self.quat_t,
+            self.robot_q,
+            self.robot_dq,
+        )
         self.action = self.ctrl.get_action(self.policy_params, 0.0)   
         t2 = time.time()
         self.get_logger().info(
@@ -366,39 +427,39 @@ class FR3_PushT(FrankaPandaServer):
         )
 
 
-    def control_loop(self, freq=10):
-        dt = 1.0 / freq
+    # def control_loop(self, freq=10):
+    #     dt = 1.0 / freq
 
-        lin, quat = self._update_T()           
-        q, dq = self._get_robot_state_np()     
-        while lin is None or quat is None:
-            self.get_logger().warn(
-                "Skipping control step: missing object state."
-            )
-            lin, quat = self._update_T()           
-            q, dq = self._get_robot_state_np()     
-            time.sleep(0.1)
+    #     lin, quat = self._update_T()           
+    #     q, dq = self._get_robot_state_np()     
+    #     while lin is None or quat is None:
+    #         self.get_logger().warn(
+    #             "Skipping control step: missing object state."
+    #         )
+    #         lin, quat = self._update_T()           
+    #         q, dq = self._get_robot_state_np()     
+    #         time.sleep(0.1)
 
 
-        while rclpy.ok():
-            t0 = time.time()
-            try:
-                self.get_logger().info("Starting control loop...")
-                lin, quat = self._update_T()           
-                q, dq = self._get_robot_state_np()    
-                self.mjx_data, self.policy_params = self.jit_step(
-                    self.mjx_data, self.policy_params,
-                    lin, quat, q, dq
-                )
-                t1 = time.time()
-                self.get_logger().info(
-                    f"Control loop step time: {t1 - t0:.3f} s"
-                )
-                remaining = dt - (t1 - t0)
-                if remaining > 0:   
-                    time.sleep(remaining)
-            except Exception as e:
-                self.get_logger().error(f"control_loop error: {e}")
+    #     while rclpy.ok():
+    #         t0 = time.time()
+    #         try:
+    #             self.get_logger().info("Starting control loop...")
+    #             lin, quat = self._update_T()           
+    #             q, dq = self._get_robot_state_np()    
+    #             self.mjx_data, self.policy_params = self.jit_step(
+    #                 self.mjx_data, self.policy_params,
+    #                 lin, quat, q, dq
+    #             )
+    #             t1 = time.time()
+    #             self.get_logger().info(
+    #                 f"Control loop step time: {t1 - t0:.3f} s"
+    #             )
+    #             remaining = dt - (t1 - t0)
+    #             if remaining > 0:   
+    #                 time.sleep(remaining)
+    #         except Exception as e:
+    #             self.get_logger().error(f"control_loop error: {e}")
         
     
     def _send_command(self):
@@ -407,14 +468,24 @@ class FR3_PushT(FrankaPandaServer):
         
         :param self: Description
         """
+        if self.action is None:
+            self.get_logger().warn(
+                "No action available to send."
+            )
+            return
 
         self.get_logger().warn(
                 f"Actrion: {self.action}"
             )
-        now_sec = self.get_clock().now().nanoseconds / 1e9
-        vx = 0.25*sin(now_sec / 2)
-        vy = 0.25*cos(now_sec / 2)
+        vx = float(self.action[0])
+        vy = float(self.action[1])
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+        # # For testing: circular motion
+        # now_sec = self.get_clock().now().nanoseconds / 1e9
+        # vx = 0.25*sin(now_sec / 2)
+        # vy = 0.25*cos(now_sec / 2)
+        # self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+
     
     def _states_received(self):
         """
@@ -436,21 +507,16 @@ if __name__ == '__main__':
     rclpy.init()
 
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=12,
-                    sim_steps_per_control_step=2,
-                    ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
-                                 "u_max": jnp.array([0.4, 0.4])},
+                    planning_horizon=10,
+                    sim_steps_per_control_step=3,
+                    ctrl_limits={"u_min": jnp.array([-0.35, -0.35]), 
+                                 "u_max": jnp.array([0.35, 0.35])},
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    block_type = 'free',
+                    block_type = 'sim-real',
                 )
 
     import mujoco
-    
- 
-    # Load the MuJoCo model
-    xml_path = "/home/mtp/Lab/mtp-thesis/hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
-    xml_dir = os.path.dirname(xml_path)
     
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
@@ -482,15 +548,20 @@ if __name__ == '__main__':
         print("Running MTP")
         ctrl = MTP(
                 task,
-                num_samples=128,
-                M=2, # horizon via control points
+                num_samples=1024,
+                M=3, # horizon via control points
                 N=64, # samples 
-                num_elites=4,
-                beta=0.05,
-                alpha=0.01,
+                num_elites=12,
+                sigma_start=0.2,
+                beta=0.25,
+                alpha=0.1,
                 interpolation='bspline',
-                num_randomizations=2,
+                num_randomizations=1,
                 seed=seed,
+                savgol_filter=False,
+                keep_elites=1,
+                default_zero_controls=True,
+                update_cov=False,
             )
     
     controller = FR3_PushT(
@@ -499,11 +570,11 @@ if __name__ == '__main__':
         seed=seed,
     )
 
-    executor = rclpy.executors.MultiThreadedExecutor(num_threads=2)
+    executor = rclpy.executors.SingleThreadedExecutor()
     executor.add_node(controller)
     
     try:
-        threading.Thread(target=controller.control_loop, args=(10,), daemon=True).start()
+        # threading.Thread(target=controller.control_loop, args=(10,), daemon=True).start()
         executor.spin()
     except KeyboardInterrupt:
         print("Shutting down controller...")

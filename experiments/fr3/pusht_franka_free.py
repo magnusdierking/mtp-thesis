@@ -63,10 +63,16 @@ class PushTFranka(Task):
                 mj_model = mujoco.MjModel.from_xml_path(
                     (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx.xml").as_posix()
                 )
-            else:
+            elif block_type == 'free':
                 mj_model = mujoco.MjModel.from_xml_path(
                     (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
                 )
+            elif block_type == 'sim-real':
+                mj_model = mujoco.MjModel.from_xml_path(
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free_sim_real.xml").as_posix()
+                )
+            else:
+                raise ValueError("block_type must be 'joint', 'free' or 'sim-real'")
         else:
             raise ValueError("actuation_type must be 'position' or 'velocity'")
         
@@ -281,7 +287,7 @@ class PushTFranka(Task):
         
         # TODO velocity error for the T ?
         control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
-        error = total_goal_err + 0.02 * ee_block_distance_cost # was 0.05 ee
+        error = total_goal_err + 0.05 * ee_block_distance_cost # was 0.05 ee
         
         return error 
                                                                               

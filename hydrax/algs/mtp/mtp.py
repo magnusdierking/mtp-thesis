@@ -26,6 +26,7 @@ class MTPParams:
     cov: jax.Array = None
     spline: jax.Array = None
     elites: jax.Array = None   # (num_elites, T, U), optional
+    beta: float = 0.0
   
 
 

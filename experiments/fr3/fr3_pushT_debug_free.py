@@ -88,7 +88,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.45, 0.1, 0.165])   # 0,26
+        self.init_pos = np.array([0.5, 0.1, 0.158])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
         # self.init_pos[0] += np.random.uniform(-0.1, 0.05)   # x
@@ -126,7 +126,7 @@ class FR3_PushT(FrankaPandaServer):
         self.debug_data = debug_data
         self.viewer = viewer
         self.servo_freq = 50  # Hz
-        self.sim_freq = 50
+        self.sim_freq = 20
         self.servo_group = ReentrantCallbackGroup()
         self.sim_group = ReentrantCallbackGroup()
         time.sleep(0.1) 
@@ -145,6 +145,7 @@ class FR3_PushT(FrankaPandaServer):
             return
 
         # Step simulation then sync the viewer.
+     
         mujoco.mj_forward(self.debug_model, self.debug_data)
         self.viewer.sync()
         current_time2 = self.get_clock().now().nanoseconds / 1e9
@@ -160,14 +161,21 @@ class FR3_PushT(FrankaPandaServer):
         t.child_frame_id = 'optitrack'
 
         # Translation (meters)
-        t.transform.translation.x = 1.12763
-        t.transform.translation.y = -1.26957
-        t.transform.translation.z = -0.02129
+        # t.transform.translation.x = 1.12763
+        # t.transform.translation.y = -1.26957
+        # t.transform.translation.z = -0.02129
+        t.transform.translation.x = 1.07658
+        t.transform.translation.y = -1.23784
+        t.transform.translation.z = 0.04381
 
-        t.transform.rotation.x = -0.00703
-        t.transform.rotation.y = -0.00123
-        t.transform.rotation.z = 0.99989
-        t.transform.rotation.w = 0.01335
+        # t.transform.rotation.x = -0.00703
+        # t.transform.rotation.y = -0.00123
+        # t.transform.rotation.z = 0.99989
+        # t.transform.rotation.w = 0.01335
+        t.transform.rotation.x = -0.01901
+        t.transform.rotation.y = 0.00215
+        t.transform.rotation.z = 0.99975
+        t.transform.rotation.w = -0.01119
 
         # Broadcast once; static transforms are latched
         self.static_tf = t
@@ -185,7 +193,7 @@ class FR3_PushT(FrankaPandaServer):
 
         # Translation (meters)
         t.transform.translation.x = 0.0
-        t.transform.translation.y = -0.025
+        t.transform.translation.y = +0.025
         t.transform.translation.z = 0.0
 
         quat = quaternion_from_euler(0.0, 0.0, np.pi)
@@ -221,11 +229,9 @@ class FR3_PushT(FrankaPandaServer):
     def _update_state(self):
         
         lin_t, quat_t = self._update_T()
-        old_pos = self.debug_data.qpos[:7].copy()
 
-        self.debug_data.qpos[:7] = [lin_t[0] - 0.15, #! Why ?
+        self.debug_data.qpos[[0, 1, 3, 4, 5, 6]] = [lin_t[0],
                                     lin_t[1], 
-                                    old_pos[2],  # keep z the saame, avoids soft contacts wiht table
                                     quat_t[3], 
                                     quat_t[0], 
                                     quat_t[1],
@@ -239,20 +245,12 @@ class FR3_PushT(FrankaPandaServer):
 
         
     def _send_command(self):
-        now_sec = self.get_clock().now().nanoseconds / 1e9
-        vx = 0.25*sin(now_sec / 2)
-        vy = 0.25*cos(now_sec / 2)
-        # print(f"Sending command: linear=({vx}, {vy}, 0.0), angular=(0.0, 0.0, 0.0)")
-        # current pose
-        # ee_lin = self.get_ee_position()
-        # delta_z = ee_lin[2] - self.init_pos[2]
-        # print(f"Current delta_z: {delta_z:.6f}")
-        # print(f"Current EE position: {ee_lin}")
 
+        # self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+        vx = 0.15*sin(now_sec / 2)
+        vy = 0.15*cos(now_sec / 2)
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
-        # now_sec2 = self.get_clock().now().nanoseconds / 1e9
-        # freq = 1 / (now_sec2 - now_sec)
-        # print(f"Servo running at {freq:.3f} Hz")
         
 
     def _run_controller(self):
@@ -295,7 +293,7 @@ if __name__ == '__main__':
                                  "u_max": jnp.array([0.4, 0.4])},
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    block_type = 'free',
+                    block_type = 'sim-real',
                 )
 
     import mujoco

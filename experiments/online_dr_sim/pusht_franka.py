@@ -20,8 +20,8 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 
-num_samples = 256
-num_randomizations = 24
+num_samples = 512 #256
+num_randomizations = 1#24
 
 # very hard cna result in failure
 # online_dr = True
@@ -221,9 +221,9 @@ elif args.dr == "uniform":
         seed=seed,
         task=task,
         controller=ctrl,
-        randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [1]},
-                           "top": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [1]}
-        },
+        randomized_bodies={},#{"bottom": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [1]},
+                           #"top": {"field": "geom_friction", "min": [0.0001], "max": [0.8], "internal_idx": [1]}
+        #},
         randomized_joints = {
             # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
             # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
@@ -279,16 +279,16 @@ if not path.exists():
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
 
-print(dr_strategy.randomized_idxs)
-print("+"*10)
+# print(dr_strategy.randomized_idxs)
+# print("+"*10)
 # print all shapes
-for shape in dr_strategy.get_uniform_randomizations().values():
-    print(shape.shape)
+# for shape in dr_strategy.get_uniform_randomizations().values():
+#     print(shape.shape)
 # randomizations, geoms, dofs
-print(dr_strategy.get_uniform_randomizations()["geom_friction"][:,jnp.array([3, 4]), :])
-print("+"*10)
+# print(dr_strategy.get_uniform_randomizations()["geom_friction"][:,jnp.array([3, 4]), :])
+# print("+"*10)
 
-ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
+# ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
 
 # ----------------
 # Test update of randomizations

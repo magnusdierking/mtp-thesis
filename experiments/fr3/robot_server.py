@@ -46,8 +46,8 @@ class RobotServer(ABC, Node):
         )
         self.servo = MoveIt2Servo(
             node=self,
-            linear_speed=0.5,
-            angular_speed=0.5,
+            linear_speed=1.0,
+            angular_speed=1.0,
             frame_id=robot.base_link_name(),
             callback_group=self._callback_group,
         )

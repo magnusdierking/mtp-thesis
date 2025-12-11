@@ -165,26 +165,26 @@ class FrankaPandaServer(RobotServer):
         """
         return self.get_joint_positions(), self.get_joint_velocities(), self.get_joint_efforts()
 
-    def get_ee_position(self, frame : str = "base_link"):
+    def get_ee_position(self, frame : str = "fr3_link0"):
         if not self._current_pose:
             print("End-effector pose not available.")
             return None 
         else:
             if frame != "base_link":
                 # Transform the pose to the specified frame
-                print(f"Transforming end-effector pose to frame: {frame}")
+                # print(f"Transforming end-effector pose to frame: {frame}")
                 try:
-                    transformed_pose = do_transform_pose(self._current_pose, self._tf_buffer.lookup_transform(frame, self._current_pose.header.frame_id, self._current_pose.header.stamp))
+                    transformed_pose = do_transform_pose(self._current_pose.pose, self._tf_buffer.lookup_transform(frame, self._current_pose.header.frame_id, self._current_pose.header.stamp))
                 except Exception as e:
                     print(f"Transform error: {e}")
                     return None
             else:
                 transformed_pose = self._current_pose
-            pose = transformed_pose.pose
-            translation = np.array([pose.position.x, pose.position.y, pose.position.z])
+           
+            translation = np.array([transformed_pose.position.x, transformed_pose.position.y, transformed_pose.position.z])
             return translation
         
-    def get_ee_orientation(self, frame : str = "base_link", type: str = "quat"):
+    def get_ee_orientation(self, frame : str = "fr3_link0", type: str = "quat"):
         if not self._current_pose:
             print("End-effector pose not available.")
             return None 
