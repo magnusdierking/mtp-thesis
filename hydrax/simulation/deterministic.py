@@ -24,50 +24,7 @@ from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, 
 Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
 """    
-# def differential_IK(
-#     model: mujoco.MjModel,
-#     data: mujoco.MjData,
-#     body_id: str = "ee_frame",
-#     world_site_vel_desired: np.ndarray = np.zeros(2),
-# ) -> np.ndarray:
-#     """
-#     Differential IK for all dofs in the model, with planar motion priority
-#     and roll/pitch anti-tilt damping.
-#     """
-#     # Geometric Jacobians at body_id
-#     jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
-#     jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
-#     mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
 
-#     # Build 6×nv Jacobian
-#     J = np.vstack((jacp, jacr))
-
-#     # --- Roll/pitch anti-tilt (use current angular velocity) ---
-#     v_curr = J @ data.qvel                     # [vx, vy, vz, wx, wy, wz]
-#     wx, wy = v_curr[3], v_curr[4]
-#     k_rp = 2.0                                 # tune ~2..10
-#     # Desired 6D twist: vx, vy from input; vz=0; wx/wy damped; wz=0
-#     twist = np.array([
-#         world_site_vel_desired[0],
-#         world_site_vel_desired[1],
-#         0.0,
-#         -k_rp * wx,                           # kill roll
-#         -k_rp * wy,                           # kill pitch
-#         0.0                                   # leave yaw free
-#     ], dtype=np.float64)
-
-#     # --- Optional row-weighting: prioritize planar translation over orientation ---
-#     W = np.diag([1.0, 1.0, 0.0, 0.3, 0.3, 0.0])   # lightweight priority; adjust if needed
-#     Jw = J
-#     tw = twist
-
-#     # Damped least-squares with the weighted Jacobian
-#     lam = 1e-3
-#     JwJwT = Jw @ Jw.T
-#     J_pseudo_inv = Jw.T @ np.linalg.inv(JwJwT + (lam * lam) * np.eye(6))
-
-#     dq = J_pseudo_inv @ tw
-#     return dq
 
 def ik(
     model: mujoco.MjModel,
@@ -121,14 +78,16 @@ def differential_IK(
 
     actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
     actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
+    actuator_jids = model.jnt_qposadr[actuator_joint_idxs]
+    dof_adr  = model.jnt_dofadr[actuator_joint_idxs]    
 
     # get current joint positions
     qpos = data.qpos.copy()
-    qnow = qpos[jnp.array(actuator_joint_idxs)]
+    qnow = qpos[jnp.array(actuator_jids)]
     qhome = np.array([ 0.51199203,  0.1014329,  -0.36340348, -2.9813132,   0.50339095,  3.06692214, -1.92271156])
 
     # Build jacobian
-    J = np.vstack((jacp, jacr))[:,np.array(actuator_joint_idxs)]  # (6, n)
+    J = np.vstack((jacp, jacr))[:,np.array(dof_adr)]  # (6, n)
     J_pinv = np.linalg.pinv(J)
     twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
 
@@ -147,7 +106,8 @@ def differential_IK(
     goal_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071])  # Assuming goal orientation is aligned with x-axis
     goal_quat = np.array(goal_quat)
     goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
-
+    
+    # print("End effector translation z error:", 0.035 - ee_pos[2])
     temp = np.concatenate([world_site_vel_desired, np.array([0.035-ee_pos[2]])])
     twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
     dq = J_pinv @ twist_err
@@ -158,6 +118,7 @@ def differential_IK(
         dq += N @ (kp_ori * (qhome - qnow))
 
     return dq
+
 
 
 

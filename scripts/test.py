@@ -80,6 +80,8 @@ data = mujoco.MjData(model)
 
 # model.opt.gravity[:] = 0.0
 print(len(data.qpos))
+print(len(data.qvel))
+print("===========")
 
 for i in range(model.njnt):
     name = model.joint(i).name
@@ -88,6 +90,8 @@ for i in range(model.njnt):
     print(f"  Joint index: {model.joint(i).id}")
     # qpos address
     print(f"  qpos address: {model.jnt_qposadr[i]}")
+    # qvel address
+    print(f"  qvel address: {model.jnt_dofadr[i]}")
 #     # print damping, stiffness, frictionloss
 #     print(f"  Damping: {model.joint(i).damping}, Stiffness: {model.joint(i).stiffness}, Frictionloss: {model.joint(i).frictionloss}")
 # for i in range(model.nu):
@@ -212,13 +216,13 @@ with mujoco.viewer.launch_passive(model, data) as v:
         data.qvel[np.array(dof_adr)] = dq
         step += 1
         
-        # print site position
-        site_rot = data.site_xmat[site_id1].reshape(3,3)
-        # to quaternion
-        site_quat = mat2quat(site_rot)
-        yaw = quat_to_yaw(site_quat[1], site_quat[2], site_quat[3], site_quat[0])
-        # print("Step:", step, "Site position:", site_quat, "Yaw:", yaw)
-        print("Vel  ", data.qvel)
-        # position control
-        print("Pos  ", data.qpos)
+        # # print site position
+        # site_rot = data.site_xmat[site_id1].reshape(3,3)
+        # # to quaternion
+        # site_quat = mat2quat(site_rot)
+        # yaw = quat_to_yaw(site_quat[1], site_quat[2], site_quat[3], site_quat[0])
+        # # print("Step:", step, "Site position:", site_quat, "Yaw:", yaw)
+        # print("Vel  ", data.qvel)
+        # # position control
+        # print("Pos  ", data.qpos)
         v.sync()

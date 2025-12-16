@@ -8,7 +8,7 @@ from math import sin, cos
 
 from hydrax.algs import MPPI, MTP, AnMTP
 from hydrax.utils.utils import se3_left_invariant_metric
-from pusht_franka_free import PushTFranka
+from hydrax.tasks.pusht_franka_free import PushTFranka
 
 from hydrax.alg_base import SamplingBasedController
 
@@ -19,6 +19,8 @@ from scipy.spatial.transform import Rotation as R
 import jax
 jax.config.update("jax_platform_name", "gpu")
 import jax.numpy as jnp
+import mujoco
+from mujoco import mjx
 
 from shape_msgs.msg import Mesh, MeshTriangle, SolidPrimitive
 from geometry_msgs.msg import PoseStamped, TransformStamped, Pose, Point
@@ -37,7 +39,7 @@ from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 class FR3_PushT(FrankaPandaServer):
 
     def __init__(self, 
-                 ctrl: SamplingBasedController,
+                 ctrl,
                  robot_ip,
                  seed,
                  ):
@@ -48,11 +50,6 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().info(
             "Initializing SMPC Controller..."
         )
-        
-        
-        # import jax
-        # jax.config.update("jax_platform_name", "gpu")
-        from mujoco import mjx
         
         ####################################
         ##    MoveIt Safety Constraints   ##    
@@ -90,7 +87,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.55, 0.1, 0.160])   # 0,26
+        self.init_pos = np.array([0.55, 0.15, 0.158])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
         # self.init_pos[0] += np.random.uniform(-0.1, 0.05)   # x
@@ -104,63 +101,6 @@ class FR3_PushT(FrankaPandaServer):
         self.plan_and_move_to_pose(pose)
 
         ####################################
-        ##         JIT Controller         ##    
-        ####################################
-
-        # Wait until all states are received
-        while not self._states_received():
-            rclpy.spin_once(self, timeout_sec=0.1)
-
-        self.get_logger().info(
-            "All states received, initializing controller..."
-        )
-
-        self.ctrl = ctrl
-
-        # Create mjx_data once on host, then push to device via jitted code
-        self.mjx_data = mjx.make_data(self.ctrl.task.model)
-        self.policy_params = self.ctrl.init_params(seed)
-
-        self.get_logger().info(
-            f"Planning with {self.ctrl.task.planning_horizon} steps "
-            f"over a {self.ctrl.task.planning_horizon * self.ctrl.task.dt} second horizon."
-        )
-
-        self.get_logger().info("Jitting controller...")
-        st = time.time()
-
-        # Do a forward once (host side is fine here)
-        self.mjx_data = mjx.forward(ctrl.task.model, self.mjx_data)
-        # def break_aliasing(tree):
-        #     return jax.tree.map(lambda x: x + jnp.zeros_like(x), tree)
-
-        # self.mjx_data = break_aliasing(self.mjx_data)
-
-        # Make unified jitted step function
-        self.jit_step = self.make_jitted_step(ctrl)
-
-        # Warmstart on device with dummy data (zeros)
-        lin0 = jnp.zeros(3, dtype=jnp.float32)
-        quat0 = jnp.array([0., 0., 0., 1.], dtype=jnp.float32)
-        q0 = jnp.zeros(7, dtype=jnp.float32)
-        dq0 = jnp.zeros(7, dtype=jnp.float32)
-
-        # One call to transfer mjx_data & policy_params to GPU and compile
-        self.jit_step = self.jit_step.lower(
-            self.mjx_data, self.policy_params,
-            lin0, quat0, q0, dq0
-        ).compile()
-
-        # Extra warmstart iterations if you want
-        for _ in range(5):
-            self.mjx_data, self.policy_params = self.jit_step(
-                self.mjx_data, self.policy_params,
-                lin0, quat0, q0, dq0
-            )
-        self.get_logger().info(f"Time to jit and warmstart: {time.time() - st:.3f} s")
-
-
-        ####################################
         ##            T Object            ##    
         ####################################
 
@@ -169,8 +109,9 @@ class FR3_PushT(FrankaPandaServer):
         self.robot_q = None
         self.robot_dq = None
 
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        # Fix, already initialized in RobotServer
+        self.tf_buffer = self._tf_buffer
+        self.tf_listener = self._tf_listener
 
         self.br = StaticTransformBroadcaster(self)
         self._publish_static_robot_tf()
@@ -185,12 +126,83 @@ class FR3_PushT(FrankaPandaServer):
         time.sleep(0.5)  # wait a bit more
         
         ####################################
+        ##         JIT Controller         ##    
+        ####################################
+
+        # Wait until all states are received
+        while not self._states_received():
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.get_logger().info(
+            "All states received, initializing controller..."
+        )
+
+        self.ctrl = ctrl
+  
+        id = mujoco.mj_name2id(self.ctrl.task.mj_model, mujoco.mjtObj.mjOBJ_BODY, "ghost_block")
+        self.ghost_id = self.ctrl.task.mj_model.body_mocapid[id]
+        
+        #! mj_model on CPU
+        #! model on GPu
+        # Create mjx_data on host,  push to device
+        self.mjx_data = mjx.make_data(self.ctrl.task.model)
+        self.policy_params = self.ctrl.init_params(seed)
+
+        self.get_logger().info(
+            f"Planning with {self.ctrl.task.planning_horizon} steps "
+            f"over a {self.ctrl.task.planning_horizon * self.ctrl.task.dt} second horizon."
+        )
+
+        while self.lin_t is None or self.quat_t is None or self.robot_q is None or self.robot_dq is None:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            self.lin_t, self.quat_t = self._update_T()  
+            self.robot_q, self.robot_dq = self._get_robot_state_np()
+        self.get_logger().info(
+            "Initial object and robot states received, starting controller..."
+        )
+
+        # Do a forward once (host side is fine here)
+        self.mjx_data = mjx.forward(self.ctrl.task.model, self.mjx_data)
+
+        # Make unified jitted step function
+        self.jit_step = self.make_jitted_step(ctrl)
+
+        self.get_logger().info("Jitting controller...")
+        st = time.time()
+
+        # # Warmstart on device with dummy data (zeros)
+        # lin0 = jnp.zeros(3, dtype=jnp.float32)
+        # quat0 = jnp.array([0., 0., 0., 1.], dtype=jnp.float32)
+        # q0 = jnp.zeros(7, dtype=jnp.float32)
+        # dq0 = jnp.zeros(7, dtype=jnp.float32)
+
+        # One call to transfer mjx_data & policy_params to GPU and compile
+        self.jit_step = self.jit_step.lower(
+            self.mjx_data, self.policy_params,
+            self.lin_t, self.quat_t, self.robot_q, self.robot_dq
+        ).compile()
+        
+        # warmstart simulation
+        # to resolve mocap vs object initial discrepancy
+        for _ in range(20):
+            self.mjx_data = mjx.step(self.ctrl.task.model, self.mjx_data)
+        # warmstart controller
+        for _ in range(5):
+            self.mjx_data, self.policy_params = self.jit_step(
+                self.mjx_data, self.policy_params,
+                self.lin_t, self.quat_t, self.robot_q, self.robot_dq
+            )
+        
+        self.get_logger().info(f"Time to jit and warmstart: {time.time() - st:.3f} s")
+
+        ####################################
         ##           Start Timer          ##    
         ####################################
 
         self.servo_freq = 50  # Hz
         self.plan_freq = 10
         self.action = None
+        self.start_time = self.get_clock().now().nanoseconds / 1e9
         
         self.sim_group = MutuallyExclusiveCallbackGroup()
 
@@ -240,7 +252,7 @@ class FR3_PushT(FrankaPandaServer):
 
         t.transform.translation.x = 0.0
         t.transform.translation.y = +0.025
-        t.transform.translation.z = 0.0
+        t.transform.translation.z = -0.027
 
         quat = quaternion_from_euler(0.0, 0.0, np.pi)
         t.transform.rotation.x = quat[0]
@@ -251,6 +263,8 @@ class FR3_PushT(FrankaPandaServer):
         self.br.sendTransform(t)
         self.get_logger().info('Published static TF objectPushT -> objectPushT_MuJoCo')
     
+
+
     def make_jitted_step(self, ctrl):
 
         def step(mjx_data, policy_params,
@@ -269,11 +283,25 @@ class FR3_PushT(FrankaPandaServer):
             robot_q = jnp.asarray(robot_q, dtype=jnp.float32)
             robot_dq = jnp.asarray(robot_dq, dtype=jnp.float32)
 
+            # new_mocap_pos = mjx_data.mocap_pos.at[self.ghost_id].set(jnp.array([
+            #     lin_t[0],
+            #     lin_t[1],
+            #     lin_t[2],
+            # ], dtype=jnp.float32))  
+            # new_mocap_quat = mjx_data.mocap_quat.at[self.ghost_id].set(jnp.array([
+            #     quat_t[3],
+            #     quat_t[0],
+            #     quat_t[1],
+            #     quat_t[2],
+            # ], dtype=jnp.float32))
+
             # --- on device ---
-            new_qpos = mjx_data.qpos.at[jnp.array([0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])].set(jnp.array([
-                lin_t[0] - 0.15,
+            # 0 - 6 is free object
+            # 7 - 13 is robot joints
+            new_qpos = mjx_data.qpos.at[jnp.array([0, 1, 3, 4 ,5, 6, 7, 8, 9, 10, 11, 12, 13])].set(jnp.array([
+                lin_t[0],
                 lin_t[1],
-                # lin_t[2], # keep z the same, avoids soft contacts with table
+                # lin_t[2],
                 quat_t[3],
                 quat_t[0],
                 quat_t[1],
@@ -286,8 +314,8 @@ class FR3_PushT(FrankaPandaServer):
                 robot_q[5],
                 robot_q[6],
             ], dtype=jnp.float32))
-
-            new_qvel = mjx_data.qvel.at[7:14].set(jnp.array([
+            # ! free object has only 6 DoF, axis angle instead of quaternion
+            new_qvel = mjx_data.qvel.at[6:13].set(jnp.array([
                 robot_dq[0],
                 robot_dq[1],
                 robot_dq[2],
@@ -300,10 +328,21 @@ class FR3_PushT(FrankaPandaServer):
             mjx_data = mjx_data.replace(
                 qpos=new_qpos,
                 qvel=new_qvel,
+                # mocap_pos=new_mocap_pos,
+                # mocap_quat=new_mocap_quat,
             )
+            
+            # jax fori loop over sim steps per control step
+            mjx_data = jax.lax.fori_loop(
+                0, 
+                ctrl.task.sim_steps_per_control_step, 
+                lambda i, d: mjx.step(self.ctrl.task.model, d), 
+                mjx_data
+            )
+            planning_data = mjx_data
 
             # --- on device ---
-            new_policy_params, rollouts = ctrl.optimize(mjx_data, policy_params)
+            new_policy_params, rollouts = ctrl.optimize(planning_data, policy_params)
 
             return mjx_data, new_policy_params
 
@@ -398,6 +437,9 @@ class FR3_PushT(FrankaPandaServer):
                 "Skipping control step: missing robot state."
             )
             return
+        
+        # resolve state 
+        # self.mjx_data = mjx.step(self.ctrl.task.model, self.mjx_data)
 
         # pose_T = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
         #                    self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
@@ -425,43 +467,8 @@ class FR3_PushT(FrankaPandaServer):
             f"Controller step time: {t2 - t1:.3f} s"
             f" (State update: {t1 - t0:.3f} s)"
         )
-
-
-    # def control_loop(self, freq=10):
-    #     dt = 1.0 / freq
-
-    #     lin, quat = self._update_T()           
-    #     q, dq = self._get_robot_state_np()     
-    #     while lin is None or quat is None:
-    #         self.get_logger().warn(
-    #             "Skipping control step: missing object state."
-    #         )
-    #         lin, quat = self._update_T()           
-    #         q, dq = self._get_robot_state_np()     
-    #         time.sleep(0.1)
-
-
-    #     while rclpy.ok():
-    #         t0 = time.time()
-    #         try:
-    #             self.get_logger().info("Starting control loop...")
-    #             lin, quat = self._update_T()           
-    #             q, dq = self._get_robot_state_np()    
-    #             self.mjx_data, self.policy_params = self.jit_step(
-    #                 self.mjx_data, self.policy_params,
-    #                 lin, quat, q, dq
-    #             )
-    #             t1 = time.time()
-    #             self.get_logger().info(
-    #                 f"Control loop step time: {t1 - t0:.3f} s"
-    #             )
-    #             remaining = dt - (t1 - t0)
-    #             if remaining > 0:   
-    #                 time.sleep(remaining)
-    #         except Exception as e:
-    #             self.get_logger().error(f"control_loop error: {e}")
-        
     
+
     def _send_command(self):
         """
         Send velocity command (twist) to moveit servo
@@ -477,9 +484,16 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().warn(
                 f"Actrion: {self.action}"
             )
-        vx = float(self.action[0])
-        vy = float(self.action[1])
+        # vx = 0.0
+        # vy = 0.0
+        vx = 1.0 * float(self.action[0])
+        vy = 1.0 * float(self.action[1])
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+
+        # print("Sim qpos:", self.mjx_data.qpos)
+
+        # print("Best sample control sequence:", self.policy_params.spline)
+
         # # For testing: circular motion
         # now_sec = self.get_clock().now().nanoseconds / 1e9
         # vx = 0.25*sin(now_sec / 2)
@@ -507,16 +521,14 @@ if __name__ == '__main__':
     rclpy.init()
 
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=10,
-                    sim_steps_per_control_step=3,
-                    ctrl_limits={"u_min": jnp.array([-0.35, -0.35]), 
-                                 "u_max": jnp.array([0.35, 0.35])},
+                    planning_horizon=13,
+                    sim_steps_per_control_step=2,
+                    ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
+                                 "u_max": jnp.array([0.45, 0.45])},
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    block_type = 'sim-real',
+                    block_type = 'free',
                 )
-
-    import mujoco
     
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
@@ -552,8 +564,8 @@ if __name__ == '__main__':
                 M=3, # horizon via control points
                 N=64, # samples 
                 num_elites=12,
-                sigma_start=0.2,
-                beta=0.25,
+                sigma_start=0.25,
+                beta=0.35,
                 alpha=0.1,
                 interpolation='bspline',
                 num_randomizations=1,

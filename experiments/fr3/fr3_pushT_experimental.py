@@ -48,7 +48,7 @@ from hydrax.utils.video import VideoRecorder
 
 # Local: Project specific
 from franka_panda_server import FrankaPandaServer
-from pusht_franka_free import PushTFranka
+from hydrax.tasks.pusht_franka_free import PushTFranka
 
 
 

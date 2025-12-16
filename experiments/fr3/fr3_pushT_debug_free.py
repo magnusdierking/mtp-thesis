@@ -6,7 +6,7 @@ import argparse
 from math import sin, cos
 
 from hydrax.algs import MPPI, MTP, AnMTP
-from pusht_franka_free import PushTFranka
+from hydrax.tasks.pusht_franka_free import PushTFranka
 
 from hydrax.alg_base import SamplingBasedController
 
@@ -83,30 +83,17 @@ class FR3_PushT(FrankaPandaServer):
             position=np.array([0.4, 0.475, 0.15]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
-        
-        ####################################
-        ##       Move to initial pose     ##    
-        ####################################
-        
-        self.init_pos = np.array([0.5, 0.1, 0.158])   # 0,26
-        # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
-        # add small noise: keep x small, increase variance in y
-        # self.init_pos[0] += np.random.uniform(-0.1, 0.05)   # x
-        # self.init_pos[1] += np.random.uniform(-0.1, 0.1)   # y (larger variance)
-        self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
-       
-        self.init_rot = R.from_quat(self.init_quat).as_matrix()
-        pose = np.eye(4)
-        pose[:3, :3] = self.init_rot
-        pose[:3, 3] = self.init_pos
-        self.plan_and_move_to_pose(pose)
-        
-        
+
         ####################################
         ##            T Object            ##    
         ####################################
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        id = mujoco.mj_name2id(debug_model, mujoco.mjtObj.mjOBJ_BODY, "ghost_block")
+        print(f"Ghost block mocap id: {id}")
+        self.ghost_id = debug_model.body_mocapid[id]
+        print(f"Ghost block mocap id: {self.ghost_id}")
+        
+        self.tf_buffer = self._tf_buffer
+        self.tf_listener = self._tf_listener
 
         self.br = StaticTransformBroadcaster(self)
         self._publish_static_robot_tf()
@@ -118,6 +105,26 @@ class FR3_PushT(FrankaPandaServer):
                                             rclpy.time.Time(),
                                             rclpy.duration.Duration(seconds=0.0)):
                 break
+        self.servo.enable_servo()
+        self.servo.use_twist()  
+        
+        ####################################
+        ##       Move to initial pose     ##    
+        ####################################
+        
+        self.init_pos = np.array([0.6, 0.0, 0.158])   # 0,26
+        # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
+        # add small noise: keep x small, increase variance in y
+        # self.init_pos[0] += np.random.uniform(-0.1, 0.05)   # x
+        # self.init_pos[1] += np.random.uniform(-0.1, 0.1)   # y (larger variance)
+        self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
+       
+        self.init_rot = R.from_quat(self.init_quat).as_matrix()
+        pose = np.eye(4)
+        pose[:3, :3] = self.init_rot
+        pose[:3, 3] = self.init_pos
+        self.plan_and_move_to_pose(pose)
+
         
         ####################################
         ##         Debug Simulator        ##    
@@ -125,32 +132,38 @@ class FR3_PushT(FrankaPandaServer):
         self.debug_model = debug_model
         self.debug_data = debug_data
         self.viewer = viewer
-        self.servo_freq = 50  # Hz
+        self.servo_freq = 100  # Hz
         self.sim_freq = 20
         self.servo_group = ReentrantCallbackGroup()
         self.sim_group = ReentrantCallbackGroup()
-        time.sleep(0.1) 
+        self.start_time = self.get_clock().now().nanoseconds / 1e9
+        # warmup debug sim
+        for _ in range(15):
+            self._step_debug_sim()
         self.create_timer(1.0 / self.sim_freq, self._step_debug_sim, callback_group=self.sim_group)
-        time.sleep(0.1) 
         self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.servo_group)
         
 
     def _step_debug_sim(self):
-        current_time = self.get_clock().now().nanoseconds / 1e9
-        self._update_state()
-        if not self.viewer.is_running():
-            self.get_logger().info("Viewer closed — shutting down.")
-            # Cancel timer first to avoid callbacks during shutdown.
+        try:
+            current_time = self.get_clock().now().nanoseconds / 1e9
+            self._update_state()
+            if not self.viewer.is_running():
+                self.get_logger().info("Viewer closed — shutting down.")
+                # Cancel timer first to avoid callbacks during shutdown.
+                rclpy.shutdown()
+                return
+
+            # mujoco.mj_forward(self.debug_model, self.debug_data)
+            mujoco.mj_step(self.debug_model, self.debug_data, nstep=3)
+            self.viewer.sync()
+        except Exception as e:
+            self.get_logger().error(f"Error in debug sim step: {e}")
             rclpy.shutdown()
             return
-
-        # Step simulation then sync the viewer.
-     
-        mujoco.mj_forward(self.debug_model, self.debug_data)
-        self.viewer.sync()
-        current_time2 = self.get_clock().now().nanoseconds / 1e9
-        freq = 1 / (current_time2 - current_time)
-        print(f"Debug sim running at {freq:.3f} Hz")
+        # current_time2 = self.get_clock().now().nanoseconds / 1e9
+        # freq = 1 / (current_time2 - current_time)
+        # print(f"Debug sim running at {freq:.3f} Hz")
   
     
     
@@ -194,7 +207,7 @@ class FR3_PushT(FrankaPandaServer):
         # Translation (meters)
         t.transform.translation.x = 0.0
         t.transform.translation.y = +0.025
-        t.transform.translation.z = 0.0
+        t.transform.translation.z = -0.025
 
         quat = quaternion_from_euler(0.0, 0.0, np.pi)
         t.transform.rotation.x = quat[0]
@@ -211,7 +224,9 @@ class FR3_PushT(FrankaPandaServer):
         if not self.tf_buffer.can_transform("fr3_link0", "objectPushT_MuJoCo",
                                             rclpy.time.Time(),
                                             rclpy.duration.Duration(seconds=0.1)):
-            raise RuntimeError("TF transform not available yet.")
+            # log warning only once
+            self.get_logger().warn("TF transform not available yet.")
+            return None, None
         else:
             world_T_objReal = self.tf_buffer.lookup_transform("fr3_link0", "objectPushT_MuJoCo", rclpy.time.Time())
             lin = np.array([world_T_objReal.transform.translation.x,
@@ -223,50 +238,57 @@ class FR3_PushT(FrankaPandaServer):
                              world_T_objReal.transform.rotation.z,
                              world_T_objReal.transform.rotation.w])
     
-        return lin, quat
+            return lin, quat
 
 
     def _update_state(self):
         
         lin_t, quat_t = self._update_T()
-
-        self.debug_data.qpos[[0, 1, 3, 4, 5, 6]] = [lin_t[0],
-                                    lin_t[1], 
-                                    quat_t[3], 
-                                    quat_t[0], 
-                                    quat_t[1],
-                                    quat_t[2]]
+        if lin_t is None or quat_t is None or self._current_joint_state is None:
+            return
+        
+        # self.debug_data.mocap_pos[self.ghost_id] = [lin_t[0], lin_t[1], lin_t[2]] 
+        # self.debug_data.mocap_quat[self.ghost_id] = [quat_t[3], quat_t[0], quat_t[1], quat_t[2]]
 
         # robot jints are in qpos[1:7]
+        old_z = self.debug_data.qpos[2]
+        self.debug_data.qpos[0:7] = np.array([lin_t[0], lin_t[1], old_z,
+                                             quat_t[3], quat_t[0], quat_t[1], quat_t[2]])
         self.debug_data.qpos[7:14] = np.array([copy.deepcopy(self._current_joint_state.position)])
-        self.debug_data.qvel[7:14] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
+        self.debug_data.qvel[6:13] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
 
         # TODO - twist based on frame estimation history
 
         
     def _send_command(self):
 
-        # self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
-        now_sec = self.get_clock().now().nanoseconds / 1e9
-        vx = 0.15*sin(now_sec / 2)
-        vy = 0.15*cos(now_sec / 2)
+        current_time = self.get_clock().now().nanoseconds / 1e9
+        t = current_time - self.start_time  # Time starts at 0.0
+        omega = 0.7 # Angular velocity (rad/s)
+        radius = 0.35 # Meters
+
+        # Pure Velocity (Feed-Forward)
+        vx = -1.0 * radius * omega * sin(omega * t)
+        vy = radius * omega * cos(omega * t)
+
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+  
         
 
-    def _run_controller(self):
-        st = time.time()
-        # TODO update state
-        self._update_state()
+    # def _run_controller(self):
+    #     st = time.time()
+    #     # TODO update state
+    #     self._update_state()
         
-        # TODO compute action from controller
-        self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
-        u = self.ctrl.get_action(self.policy_params, 0.0)
+    #     # TODO compute action from controller
+    #     self.policy_params = self.jit_optimize(self.mjx_data, self.policy_params)
+    #     u = self.ctrl.get_action(self.policy_params, 0.0)
         
-        # TODO send action to robot
-        print(f"Action: {u}")
-        freq = 1 / (time.time() - st)
-        print(f"Controller running at {freq:.3f} Hz")
-        self.action_timer = time.time()
+    #     # TODO send action to robot
+    #     print(f"Action: {u}")
+    #     freq = 1 / (time.time() - st)
+    #     print(f"Controller running at {freq:.3f} Hz")
+    #     self.action_timer = time.time()
         
     
     def _states_received(self):
@@ -293,19 +315,13 @@ if __name__ == '__main__':
                                  "u_max": jnp.array([0.4, 0.4])},
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    block_type = 'sim-real',
+                    block_type = 'free',
                 )
 
     import mujoco
     import mujoco.viewer
-    
- 
-    # Load the MuJoCo model
-    xml_path = "/home/mtp/Lab/mtp-thesis/hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
-    # xml_path = "/home/magnus/GitHub/mtp/hydrax/hydrax/models/pusht_franka/scene.xml"
-    xml_dir = os.path.dirname(xml_path)
 
-    model = mujoco.MjModel.from_xml_path(xml_path)
+    model = task.mj_model
     data = mujoco.MjData(model)
     
     # Parse command-line arguments
@@ -360,7 +376,7 @@ if __name__ == '__main__':
         )
 
         # TODO - does multi-threaded executor give me any advantage ? -> Benchmark
-        executor = rclpy.executors.MultiThreadedExecutor(num_threads=8)
+        executor = rclpy.executors.SingleThreadedExecutor()
         executor.add_node(controller)
         
         try:

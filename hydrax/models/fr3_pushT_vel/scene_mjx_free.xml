@@ -7,11 +7,11 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="1.2 0.005 0.005" 
-            solref="0.04 1.0" 
+      <geom friction="1.0 0.002 0.002" 
+            solref="0.055 1.0" 
             margin="0.001"
             solimp="0.8 0.95 0.001 0.5 2"
-            condim="6"
+            condim="4"
             contype="2" 
             conaffinity="5"/>  
     </default>
@@ -25,19 +25,30 @@
     <camera name='top_view' pos="-0.276 -0.512 0.817" xyaxes="0.864 -0.503 0.000 0.404 0.694 0.596"/>
     <camera name="comparison" pos="1.107 -0.076 0.436" xyaxes="0.178 0.984 -0.000 -0.466 0.084 0.881"/>
 
-      <body name="goal" mocap="true" pos="0.4 0.0 0.009" quat="1 0 0 -1">
-        <geom class="goal" name="goal_bottom" type="box" size=".025 0.05 0.025"/>
-        <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
-      </body>
+    <body name="goal" mocap="true" pos="0.5 0.0 0.009" quat="1 0 0 -1">
+      <geom class="goal" name="goal_bottom" type="box" size=".025 0.05 0.025"/>
+      <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
+    </body>
 
-      <body name="block" pos="0.5 0.0 0.036" quat="1 0 0 -1">
-        <joint name="T" type="free"/>
-        <geom class="tblock" name="bottom" type="box" size=".025 0.05 0.025" pos="0.0 0.0 0.0" mass="0.0655"/>
-          <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
-          <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>
-        <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"  mass="0.07855"/>
+    <!-- Ghost block to stabilize simulation -->
+    <body name="ghost_block" mocap="true" pos="0.5 0.0 0.036" quat="1 0 0 -1">
+      <geom type="box" size=".025 0.05 0.025" contype="0" conaffinity="0" rgba="1 0 0 0.3"/> 
 
-      </body>
+      <!-- <body name="z_adapter" pos="0 0 0">
+          <inertial pos="0 0 0" mass="0.01" diaginertia="0.001 0.001 0.001"/>
+
+          <joint name="slip_z" type="slide" axis="0 0 1" damping="0.0"/>
+      </body> -->
+    </body>
+
+    <body name="block" pos="0.5 0.0 0.036" quat="1 0 0 -1">
+      <joint name="T" type="free"/>
+      <geom class="tblock" name="bottom" type="box" size=".025 0.05 0.025" pos="0.0 0.0 0.0" mass="0.0655"/>
+        <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
+        <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>
+      <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"  mass="0.07855"/>
+
+    </body>
   </worldbody>
 
 
@@ -49,7 +60,7 @@
           solver="Newton"
           jacobian="dense"
           cone="pyramidal"
-          timestep="0.02" 
+          timestep="0.025" 
           iterations="5"
           ls_iterations="8"
           ls_tolerance="0.01">
@@ -82,11 +93,13 @@
     <exclude body1="ee_frame" body2="sphere_carrier"/>
   </contact>
 
-  <!-- Equality constraint for end effector -->
   <equality>
+    <!-- (Linear) equality constraint for end effector -->
     <connect site1="ee_site" site2="sphere_site"
-             solref="0.04 1.0" 
+             solref="0.05 1.0" 
              solimp="0.9 0.99 0.001"/>
+    <!-- Full 6 DoF equality MoCAP vs free object -->
+    <!-- <weld name="sensor_coupling" body1="block" body2="ghost_block" solref="0.055 1" solimp="0.9 0.99 0.001"/> -->
   </equality>
 
   <sensor>
@@ -107,8 +120,8 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" type="plane" size="0 0 0.05"
-          material="groundplane" friction="1.0 0.005 0.005" condim="6"
+    <geom name="floor" type="plane" size="0 0 0.05" solref="0.055 1"
+          material="groundplane" friction="1.0 0.002 0.002" condim="4"
           contype="4" conaffinity="3"/>  <!-- 3 = 1|2 (robot | objects) -->
   </worldbody>
 </mujoco>

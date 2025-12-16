@@ -335,3 +335,6 @@ class MTP(SamplingBasedController):
         idx = jnp.floor(idx_float).astype(jnp.int32)
         action = params.spline[idx]
         return action
+
+    def get_best_rollout(self, params: MTPParams) -> jax.Array:
+        return params.spline  # shape (horizon, nu)
