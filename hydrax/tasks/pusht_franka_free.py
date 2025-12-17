@@ -105,6 +105,9 @@ class PushTFranka(Task):
         self.block_global_position_sensor = mujoco.mj_name2id(
             mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "position_world"
         )
+        self.ee_goal_sensor = mujoco.mj_name2id(
+            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "safety"
+        )
         
         self.T_bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
         self.block_type = block_type
@@ -273,13 +276,23 @@ class PushTFranka(Task):
     #     goal_quat = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # Assuming goal orientation is aligned with x-axis
     #     return mjx._src.math.quat_sub(ee_quat, goal_quat)
     
-
+    def _safety_zone_cost(self, state: mjx.Data) -> jax.Array:
+        """Get a cost based on the distance between the end effector and the goal."""
+        sensor_adr = self.model.sensor_adr[self.ee_goal_sensor]
+        distance = state.sensordata[sensor_adr : sensor_adr + 3]
+        
+        distance = jnp.linalg.norm(distance)
+        cost = jnp.where(distance > 0.3, 100, 0.0)
+        return cost
+    
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
         
         # Goal error terms 
         position_err = self._get_position_err(state)
         orientation_err = self._get_orientation_err(state)
         position_cost = jnp.linalg.norm(position_err)
+
+        safety_cost = self._safety_zone_cost(state) 
         
         # orientation_cost = jnp.norm(orientation_err)
         orientation_cost = jnp.linalg.norm(orientation_err)
@@ -291,12 +304,12 @@ class PushTFranka(Task):
         ee_block_distance_cost = ee_block_distance#jnp.square(ee_block_distance)
         
         # TODO velocity error for the T ?
-        control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
+        # control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
         if self.block_type == 'joint' or self.block_type == 'spheres':
             error = total_goal_err + 0.02 * ee_block_distance_cost 
         elif self.block_type == 'free':
             error = total_goal_err + 0.1 * jnp.square(ee_block_distance_cost) 
-        return error 
+        return error + safety_cost 
                                                                               
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:

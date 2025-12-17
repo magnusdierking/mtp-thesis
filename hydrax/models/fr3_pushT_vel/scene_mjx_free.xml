@@ -31,10 +31,13 @@
       <geom class="goal" name="goal_bottom" type="box" size=".025 0.05 0.025"/>
       <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
     </body>
-
+    <!-- ghost sphere -->
+    <body name="ghost_sphere" mocap="true" pos="0.45 0.0 0.035" quat="0 0.7071068 0.7071068 0">
+      <geom type="sphere" size="0.3" contype="0" conaffinity="0" rgba="1 0 0 0.05"/>
+    </body>
     <!-- Ghost block to stabilize simulation -->
     <body name="ghost_block" mocap="true" pos="0.5 0.0 0.036" quat="1 0 0 -1">
-      <geom type="box" size=".025 0.05 0.025" contype="0" conaffinity="0" rgba="1 0 0 0.3"/> 
+      <geom type="box" size=".025 0.05 0.025" contype="0" conaffinity="0" rgba="1 0 0 0.1"/> 
 
       <!-- <body name="z_adapter" pos="0 0 0">
           <inertial pos="0 0 0" mass="0.01" diaginertia="0.001 0.001 0.001"/>
@@ -107,6 +110,8 @@
   <sensor>
     <framepos name="position" objtype="body" objname="block" reftype="body" refname="goal"/>
     <framequat name="orientation" objtype="body" objname="block" reftype="body" refname="goal"/>
+    <framepos name="safety" objtype="body" objname="ee_frame" reftype="body" refname="goal"/>
+  
     <framepos name="position_world" objtype="body" objname="block" reftype="body" refname="world"/>
   </sensor>
 

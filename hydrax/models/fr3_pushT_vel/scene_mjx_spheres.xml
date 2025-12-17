@@ -43,6 +43,10 @@
         <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
       </body>
 
+      <body name="ghost_sphere" mocap="true" pos="0.45 0.0 0.035" quat="0 0.7071068 0.7071068 0">
+        <geom type="sphere" size="0.3" contype="0" conaffinity="0" rgba="0 1 0 0.03"/>
+      </body>
+
       <body name="block" pos="0.4 0.0 0.026" quat="1 0 0 -1">
         <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" damping="0.7"/>
         <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" damping="0.7"/>
@@ -132,6 +136,7 @@
     <framepos name="position" objtype="body" objname="block" reftype="body" refname="goal"/>
     <framequat name="orientation" objtype="body" objname="block" reftype="body" refname="goal"/>
     <framepos name="position_world" objtype="body" objname="block" reftype="body" refname="world"/>
+    <framepos name="safety" objtype="body" objname="ee_frame" reftype="body" refname="goal"/>
   </sensor>
 
   <!-- Defines the spatial region to compute model statistics like mass, center of mass, etc. -->
