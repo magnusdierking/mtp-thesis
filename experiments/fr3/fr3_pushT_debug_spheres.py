@@ -7,7 +7,7 @@ from math import sin, cos
 
 from hydrax.algs import MPPI, MTP, AnMTP
 from hydrax.tasks.pusht_franka_free import PushTFranka
-
+from hydrax.utils.utils import se3_left_invariant_metric
 from hydrax.alg_base import SamplingBasedController
 
 import numpy as np
@@ -24,6 +24,12 @@ from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityExce
 from tf_transformations import quaternion_from_euler, quaternion_multiply, quaternion_matrix
 from tf2_geometry_msgs import do_transform_pose
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
+
+def yaw_from_quat(x, y, z, w):
+    # standard ZYX Euler convention
+    yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
+    return yaw + np.pi/2    
+
 
 
 class FR3_PushT(FrankaPandaServer):
@@ -158,7 +164,6 @@ class FR3_PushT(FrankaPandaServer):
         # current_time2 = self.get_clock().now().nanoseconds / 1e9
         # freq = 1 / (current_time2 - current_time)
         # print(f"Debug sim running at {freq:.3f} Hz")
-  
     
     
     def _publish_static_robot_tf(self):
@@ -212,7 +217,8 @@ class FR3_PushT(FrankaPandaServer):
         # Broadcast once; static transforms are latched
         self.br.sendTransform(t)
         self.get_logger().info('Published static TF objectPushT -> objectPushT_MuJoCo')
-    
+
+
         
     def _update_T(self):
         if not self.tf_buffer.can_transform("fr3_link0", "objectPushT_MuJoCo",
@@ -222,7 +228,9 @@ class FR3_PushT(FrankaPandaServer):
             self.get_logger().warn("TF transform not available yet.")
             return None, None
         else:
-            world_T_objReal = self.tf_buffer.lookup_transform("fr3_link0", "objectPushT_MuJoCo", rclpy.time.Time())
+            world_T_objReal = self.tf_buffer.lookup_transform(
+                "fr3_link0", "objectPushT_MuJoCo", rclpy.time.Time()
+            )
             lin = np.array([world_T_objReal.transform.translation.x,
                             world_T_objReal.transform.translation.y,
                             world_T_objReal.transform.translation.z])   
@@ -238,20 +246,23 @@ class FR3_PushT(FrankaPandaServer):
     def _update_state(self):
         
         lin_t, quat_t = self._update_T()
-        if lin_t is None or quat_t is None or self._current_joint_state is None:
-            return
-        
-        # self.debug_data.mocap_pos[self.ghost_id] = [lin_t[0], lin_t[1], lin_t[2]] 
-        # self.debug_data.mocap_quat[self.ghost_id] = [quat_t[3], quat_t[0], quat_t[1], quat_t[2]]
+        self.debug_data.qpos[0] = -lin_t[1] # x in block, -y in robot
+        self.debug_data.qpos[1] = lin_t[0] -0.4 # y in block, x in robot, offset from spawn
+        self.debug_data.qpos[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) 
+        # print(f"Object yaw: {self.debug_data.qpos[2]*180.0/np.pi} deg")
 
-        # robot jints are in qpos[1:7]
-        old_z = self.debug_data.qpos[2]
-        self.debug_data.qpos[0:7] = np.array([lin_t[0], lin_t[1], old_z,
-                                             quat_t[3], quat_t[0], quat_t[1], quat_t[2]])
-        self.debug_data.qpos[7:14] = np.array([copy.deepcopy(self._current_joint_state.position)])
-        self.debug_data.qvel[6:13] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
+        self.debug_data.qpos[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
+        self.debug_data.qvel[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
 
-        # TODO - twist based on frame estimation history
+        # error 
+        pose_T = np.array([lin_t[0], lin_t[1], lin_t[2],
+                           quat_t[3], quat_t[0], quat_t[1], quat_t[2]]) #(w, x, y, z)
+        pose_goal = np.array([0.45, 0.0, 0.032,
+                              1.0, 0.0, 0.0, -1.0])  
+
+        error = se3_left_invariant_metric(pose_T, pose_goal, rot_weight=1.0, trans_weight=10.0)
+
+        self.get_logger().info(f"Pose error: {error}")
 
         
     def _send_command(self):
@@ -266,7 +277,6 @@ class FR3_PushT(FrankaPandaServer):
         vy = radius * omega * cos(omega * t)
 
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
-  
         
 
     # def _run_controller(self):
@@ -294,10 +304,9 @@ class FR3_PushT(FrankaPandaServer):
             print("Current joint state received.")
             return True
     
+
     
-
-
-
+    
 if __name__ == '__main__':
     
     rclpy.init()
@@ -309,7 +318,7 @@ if __name__ == '__main__':
                                  "u_max": jnp.array([0.4, 0.4])},
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    block_type = 'free',
+                    block_type = 'spheres',
                 )
 
     import mujoco

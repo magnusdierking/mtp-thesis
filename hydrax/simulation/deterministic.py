@@ -402,8 +402,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
             # data    
-            state_error = np.linalg.norm(controller.task._get_position_err(mj_data) 
-                        + np.linalg.norm(controller.task._get_orientation_err(mj_data)))
+            linear_error = controller.task._get_position_err(mj_data)[0]
+            rotation_error = controller.task._get_orientation_err(mj_data)[0]
+
+            state_error = 20 * linear_error + 1 * rotation_error
+            print(f"State error: {state_error}, Linear: {linear_error}, Rotation: {rotation_error}")
+            ee_error = controller.task._get_ee_block_distance(mj_data)
             # only for pusht
             sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
             ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]

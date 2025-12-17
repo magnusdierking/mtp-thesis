@@ -67,10 +67,10 @@ class PushTFranka(Task):
                 mj_model = mujoco.MjModel.from_xml_path(
                     (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
                 )
-            # elif block_type == 'sim-real':
-            #     mj_model = mujoco.MjModel.from_xml_path(
-            #         (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free_sim_real.xml").as_posix()
-            #     )
+            elif block_type == 'spheres':
+                mj_model = mujoco.MjModel.from_xml_path(
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_spheres.xml").as_posix()
+                )
             else:
                 raise ValueError("block_type must be 'joint', 'free' or 'sim-real'")
         else:
@@ -110,7 +110,12 @@ class PushTFranka(Task):
         self.block_type = block_type
 
         # Get block joint indices
-        self.block_joint_names = ['T_x', 'T_y', 'T_z'] if block_type == 'joint' else ["T"]
+        if block_type == 'joint' or block_type == 'spheres':
+            self.block_joint_names = ['T_x', 'T_y', 'T_z']
+        elif block_type == 'free':
+            self.block_joint_names = ['T']  
+
+       
         self.block_joint_idxs = [mj_model.joint(name).id for name in self.block_joint_names]
         
         # Get actuator joint indices
@@ -123,7 +128,7 @@ class PushTFranka(Task):
         
         # special to this task
         self.ee_body_id = self.mj_model.body("ee_frame").id
-        self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, 0.0])  # [w, x, y, z]
+        self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, -1.0])  # [w, x, y, z]
         # initial end effector
         self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
         self.goal_pos_ee = jnp.array([0.3, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
@@ -147,7 +152,7 @@ class PushTFranka(Task):
         # Assuming the block's pose is at the beginning of qpos
         mj_data.qpos[0] = pos_x
         mj_data.qpos[1] = pos_y
-        if self.block_type == 'joint':
+        if self.block_type == 'joint' or self.block_type == 'spheres':
             mj_data.qpos[2] = angle
         else:
             quat = euler_to_quaternion(0, 0, angle)  # roll, pitch, yaw
@@ -258,15 +263,15 @@ class PushTFranka(Task):
         return jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) # only x,y
 
         
-    def _get_ee_orientation_err(self, state: mjx.Data) -> jax.Array:
-        """Get the end effector orientation error."""
-        sensor_adr = self.model.sensor_adr[self.ee_orientation_sensor]
-        # Get the end effector orientation quaternion
-        # Assuming the end effector orientation is given by a quaternion
-        # in the sensor data   
-        ee_quat = state.sensordata[sensor_adr : sensor_adr + 4]
-        goal_quat = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # Assuming goal orientation is aligned with x-axis
-        return mjx._src.math.quat_sub(ee_quat, goal_quat)
+    # def _get_ee_orientation_err(self, state: mjx.Data) -> jax.Array:
+    #     """Get the end effector orientation error."""
+    #     sensor_adr = self.model.sensor_adr[self.ee_orientation_sensor]
+    #     # Get the end effector orientation quaternion
+    #     # Assuming the end effector orientation is given by a quaternion
+    #     # in the sensor data   
+    #     ee_quat = state.sensordata[sensor_adr : sensor_adr + 4]
+    #     goal_quat = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # Assuming goal orientation is aligned with x-axis
+    #     return mjx._src.math.quat_sub(ee_quat, goal_quat)
     
 
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
@@ -274,21 +279,23 @@ class PushTFranka(Task):
         # Goal error terms 
         position_err = self._get_position_err(state)
         orientation_err = self._get_orientation_err(state)
-        position_cost = jnp.sum(jnp.square(position_err))
+        position_cost = jnp.linalg.norm(position_err)
         
         # orientation_cost = jnp.norm(orientation_err)
-        orientation_cost = jnp.sum(jnp.square(orientation_err))
+        orientation_cost = jnp.linalg.norm(orientation_err)
         
-        total_goal_err = 10 * position_cost + 5 * orientation_cost
+        total_goal_err = 10 * position_cost + 1 * orientation_cost
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
-        ee_block_distance_cost = jnp.square(ee_block_distance)
+        ee_block_distance_cost = ee_block_distance#jnp.square(ee_block_distance)
         
         # TODO velocity error for the T ?
         control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
-        error = total_goal_err + 0.1 * ee_block_distance_cost # was 0.05 ee
-        
+        if self.block_type == 'joint' or self.block_type == 'spheres':
+            error = total_goal_err + 0.02 * ee_block_distance_cost 
+        elif self.block_type == 'free':
+            error = total_goal_err + 0.1 * jnp.square(ee_block_distance_cost) 
         return error 
                                                                               
 

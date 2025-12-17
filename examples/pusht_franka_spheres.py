@@ -81,10 +81,12 @@ sigma_max = 0.55
 sigma_min = 0.15
 sigma_start = 0.3
 det_init = {
-    "block_pos_x": 0.45 + np.random.uniform(-0.05, 0.05),
-    "block_pos_y": -0.1 + np.random.uniform(-0.05, 0.05),
-    "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/12, np.pi/12),
-    "ee_goal_pos": [0.55, 0.1, 0.035]
+    "block_pos_x": 0.1 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": 0.1 + np.random.uniform(-0.05, 0.05),
+    "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/8, np.pi/8),
+    "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
+                    0.1 + np.random.uniform(-0.05, 0.05), 
+                    0.032]
 }
 
 
@@ -100,7 +102,7 @@ task = PushTFranka(ik_type = 'pinv',
                     actuation_type='velocity',
                     sampling_space="velocity",
                     det_init=det_init,
-                    block_type = 'free',
+                    block_type = 'spheres',
                 )
 
 # position control
@@ -183,7 +185,7 @@ elif args.algorithm == "mtp":
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=12,
-        beta=0.25,
+        beta=0.15,
         alpha=0.1,
         interpolation='bspline',
         num_randomizations=num_randomizations,
