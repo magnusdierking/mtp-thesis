@@ -17,6 +17,7 @@ from geometry_msgs.msg import PoseStamped, TwistStamped
 from sensor_msgs.msg import JointState
 from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_pose
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 
 class FrankaPandaServer(RobotServer):
@@ -41,33 +42,33 @@ class FrankaPandaServer(RobotServer):
             "fr3_joint_6": np.pi/2,
             "fr3_joint_7": np.pi/4
         }}
+
+        self.parallel_group = ReentrantCallbackGroup()
         
         self._ee_pose_subscriber = self.create_subscription(
             PoseStamped,
             "/franka_robot_state_broadcaster/current_pose",
             self._ee_pose_callback,
-            10
+            10,
+            callback_group=self.parallel_group
         )
 
         self._ee_twist_subscriber = self.create_subscription(
             TwistStamped,
             "/franka_robot_state_broadcaster/current_twist",  
             self._ee_twist_callback,
-            10
+            10,
+            callback_group=self.parallel_group
         )
 
         self._joint_state_subscriber = self.create_subscription(
             JointState,
             "/franka_robot_state_broadcaster/measured_joint_states",
             self._joint_state_callback,
-            5
+            5,
+            callback_group=self.parallel_group
         )
-            
-        #self.create_timer(1.0, self._print_joint_states) 
-        # For thesis
-        #self.create_timer(0.01, self.update_states)  
-
-    # Control
+ 
 
     def plan_and_move_to_pose(self, pose: np.ndarray):
         """
@@ -164,6 +165,55 @@ class FrankaPandaServer(RobotServer):
         """
         return self.get_joint_positions(), self.get_joint_velocities(), self.get_joint_efforts()
 
+    def get_ee_position(self, frame : str = "fr3_link0"):
+        if not self._current_pose:
+            print("End-effector pose not available.")
+            return None 
+        else:
+            if frame != "base_link":
+                # Transform the pose to the specified frame
+                # print(f"Transforming end-effector pose to frame: {frame}")
+                try:
+                    transformed_pose = do_transform_pose(self._current_pose.pose, self._tf_buffer.lookup_transform(frame, self._current_pose.header.frame_id, self._current_pose.header.stamp))
+                except Exception as e:
+                    print(f"Transform error: {e}")
+                    return None
+            else:
+                transformed_pose = self._current_pose
+           
+            translation = np.array([transformed_pose.position.x, transformed_pose.position.y, transformed_pose.position.z])
+            return translation
+        
+    def get_ee_orientation(self, frame : str = "fr3_link0", type: str = "quat"):
+        if not self._current_pose:
+            print("End-effector pose not available.")
+            return None 
+        else:
+            if frame != "base_link":
+                # Transform the pose to the specified frame
+                print(f"Transforming end-effector pose to frame: {frame}")
+                try:
+                    transformed_pose = do_transform_pose(self._current_pose, self._tf_buffer.lookup_transform(frame, self._current_pose.header.frame_id, self._current_pose.header.stamp))
+                except Exception as e:
+                    print(f"Transform error: {e}")
+                    return None
+            else:
+                transformed_pose = self._current_pose
+            pose = transformed_pose.pose
+            quat = np.array([pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w])
+            if type == "quat":
+                return quat
+            elif type == "euler":
+                rotation = R.from_quat(quat)
+                euler = rotation.as_euler('xyz', degrees=False)
+                return euler
+            elif type == "matrix":
+                rotation = R.from_quat([pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w])
+                return rotation.as_matrix()
+            else:
+                raise ValueError("Invalid type specified. Use 'quat', 'euler', or 'matrix'.")
+            
+            
     
     def get_ee_pose(self, frame : str = "base_link"): 
         # create homogeneous transformation matrix from pose

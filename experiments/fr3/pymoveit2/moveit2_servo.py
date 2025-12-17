@@ -90,12 +90,13 @@ class MoveIt2Servo:
         # Enable servo immediately, if desired
         if enable_at_init:
             self.enable_servo()
+            self.use_twist()  # default to twist commands
 
     
     def _call_pause(self, paused: bool, timeout_sec: float = 2.0):
         # Make sure the service is up
         if not self.__pause_service.wait_for_service(timeout_sec=timeout_sec):
-            self._node.get_logger().error("pause_servo service not available")
+            self._node.get_logger().error(f"pause_servo service with namespace {self.namespace} not available")
             return False, "Service unavailable"
 
         req = SetBool.Request()

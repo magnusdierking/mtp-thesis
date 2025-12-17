@@ -24,7 +24,7 @@ def base_link_name(prefix: str = "fr3_") -> str:
 
 
 def end_effector_name(prefix: str = "fr3_") -> str:
-    return prefix + "link7"
+    return prefix + "link8"
 
 
 def gripper_joint_names(prefix: str = "fr3_") -> List[str]:

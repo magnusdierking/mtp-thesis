@@ -9,7 +9,7 @@ from hydrax.simulation.deterministic import run_interactive
 # from hydrax.simulation.deterministic_dr import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
 
-from hydrax.tasks.pusht_franka import PushTFranka
+from hydrax.tasks.pusht_franka_free import PushTFranka
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -19,22 +19,8 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 # ----- for short horizon test , 0.025 dt, 8 times 2 horizon,-----
-
-
-seed = 120
-update_cov = False
-sigma_max = 0.75
-sigma_min = 0.05
-sigma_start = 0.2
-det_init = {
-    "block_pos_x": -0.1,
-    "block_pos_y": 0.2,
-    "block_angle": np.pi/4,
-    "ee_goal_pos": [0.35, 0.0, 0.035]
-}
-
 # seed = 100
-# update_cov = False
+# update_cov = True
 # sigma_max = 0.75
 # sigma_min = 0.05
 # sigma_start = 0.2
@@ -44,9 +30,6 @@ det_init = {
 #     "block_angle": np.pi/4,
 #     "ee_goal_pos": [0.35, 0.0, 0.035]
 # }
-
-
-
 
 # seed = 200
 # update_cov = False
@@ -64,7 +47,7 @@ det_init = {
 
 
 
-# ----- for medium horizon test 0.02 dt, 16 x 4-----
+# ----- for medium horizon test -----
 # very easy
 # seed = 10
 # update_cov = True
@@ -92,31 +75,34 @@ det_init = {
 # }
 
 # very hard cna result in failure
-# seed = 445
-# update_cov = False
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": -0.1,
-#     "block_pos_y": 0.1,
-#     "block_angle": 3*np.pi/4,
-#     "ee_goal_pos": [0.35, 0.0, 0.035]
-# }
+seed = 445
+update_cov = False
+sigma_max = 0.55
+sigma_min = 0.15
+sigma_start = 0.3
+det_init = {
+    "block_pos_x": 0.1 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": 0.1 + np.random.uniform(-0.05, 0.05),
+    "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/8, np.pi/8),
+    "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
+                    0.1 + np.random.uniform(-0.05, 0.05), 
+                    0.032]
+}
 
 
 
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=10,
+                    planning_horizon=13,
                     sim_steps_per_control_step=2,
-                    ctrl_limits={"u_min": jnp.array([-0.4, -0.4]), 
-                                "u_max": jnp.array([0.4, 0.4])},
+                    ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
+                                 "u_max": jnp.array([0.45, 0.45])},
                     trace_sites=["ee_site"],
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    det_init=det_init
+                    det_init=det_init,
+                    block_type = 'spheres',
                 )
 
 # position control
@@ -143,12 +129,12 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 2048
+num_samples = 1024
 num_randomizations = 1
 
 
 data = {}
-path = get_data_path() / "pushT_sim" / args.algorithm / "smooth_default_zero"
+path = get_data_path() / "pushT_sim" / args.algorithm 
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_update_cov_{update_cov}.csv"
@@ -165,12 +151,7 @@ elif args.algorithm == "mppi":
         noise_level=0.2,
         temperature=0.1,
         num_randomizations=num_randomizations,
-        colorize_noise=True,   # !experimental
-        alpha_noise=0.1,
-        #shift=True,
-        #planning_freq=20,
-        default_zero_controls=False,
-        savgol_filter=False,
+        colorize_noise=False,   # !experimental
         alpha=0.1,
         seed=seed,
         update_cov=update_cov,
@@ -204,17 +185,13 @@ elif args.algorithm == "mtp":
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=12,
-        keep_elites=1,   # !experimental
-        beta=0.35,
+        beta=0.15,
         alpha=0.1,
         interpolation='bspline',
-        colorize_noise=False,   # !experimental
-        alpha_noise=0.7,
-        default_zero_controls=False,
-        savgol_filter=False,
         num_randomizations=num_randomizations,
         seed=seed,
         update_cov=update_cov,
+        default_zero_controls=True,
     )
     error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
     
@@ -232,8 +209,8 @@ elif args.algorithm == "anmtp":
             keep_elites=1,   # !experimental
             beta = 0.25,
             beta_lr = 0.1,        # adaptation step size
-            beta_min = 0.1,
-            beta_max = 0.5,
+            beta_min = 0.0,
+            beta_max = 0.35,
             alpha=0.1,
             interpolation='bspline',
             shift = False,
@@ -255,13 +232,13 @@ run_interactive(
     frequency=20,
     show_traces=True,
     trace_width=0.55,
-    max_traces=64,
+    max_traces=32,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,
     max_step=300,
     seed=seed,
-    log_file=path.as_posix(),
+    # log_file=path.as_posix(),
     )
 
 

@@ -85,7 +85,7 @@ class MPPI(SamplingBasedController):
         
         self.savgol_filter = savgol_filter  
         if savgol_filter:
-            self.savgol_filter_fn = make_savgol_filter(window_length=7, polyorder=3)
+            self.savgol_filter_fn = make_savgol_filter(window_length=7, polyorder=3, axis=1)
 
     def init_params(self, seed: int = 0) -> MPPIParams:
         """Initialize the policy parameters."""
@@ -113,7 +113,7 @@ class MPPI(SamplingBasedController):
         )
         # colorize noise
         if self.colorize_noise:
-            noise = colorize_time_series(noise, remove_dc=True, alpha_noise=self.alpha_noise) # !experimental
+            noise = colorize_time_series(noise, remove_dc=False, alpha_noise=self.alpha_noise) # !experimental
         controls = params.mean + self.noise_level * noise
         
         # default zero controls
@@ -121,6 +121,7 @@ class MPPI(SamplingBasedController):
             controls = controls.at[0, ...].set(jnp.zeros((self.task.planning_horizon, self.task.nu)))
         
         if self.savgol_filter:
+            # controls are (samples x horizon x nu)
             controls = self.savgol_filter_fn(controls)
         # clip
         controls = jnp.clip(controls, self.task.u_min, self.task.u_max)

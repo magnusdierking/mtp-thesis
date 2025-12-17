@@ -289,8 +289,9 @@ class PushTFranka(Task):
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         return self.running_cost(state, jnp.zeros(self.model.nu))
 
-    def domain_randomize_model(self, rng: jax.Array, masses: jax.Array) -> Dict[str, jax.Array]:
-
+    def domain_randomize_model(self, rng: jax.Array, masses: jax.Array = None) -> Dict[str, jax.Array]:
+        if masses is None:
+            return {}
         new_masses = self.model.body_mass.at[self.T_bid].set(masses)
         return {"body_mass": new_masses}
 

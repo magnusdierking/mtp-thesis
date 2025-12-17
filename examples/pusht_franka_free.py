@@ -77,14 +77,14 @@ Run an interactive simulation of the push-T task with predictive sampling.
 # very hard cna result in failure
 seed = 445
 update_cov = False
-sigma_max = 0.75
-sigma_min = 0.05
-sigma_start = 0.2
+sigma_max = 0.55
+sigma_min = 0.15
+sigma_start = 0.3
 det_init = {
-    "block_pos_x": -0.1,
-    "block_pos_y": 0.1,
-    "block_angle": 3*np.pi/4,
-    "ee_goal_pos": [0.35, 0.0, 0.035]
+    "block_pos_x": 0.45 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": -0.1 + np.random.uniform(-0.05, 0.05),
+    "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/12, np.pi/12),
+    "ee_goal_pos": [0.55, 0.1, 0.035]
 }
 
 
@@ -92,14 +92,15 @@ det_init = {
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=16,
-                    sim_steps_per_control_step=4,
-                    ctrl_limits={"u_min": jnp.array([-0.5, -0.5]), 
-                                "u_max": jnp.array([0.5, 0.5])},
+                    planning_horizon=13,
+                    sim_steps_per_control_step=2,
+                    ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
+                                 "u_max": jnp.array([0.45, 0.45])},
                     trace_sites=["ee_site"],
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    det_init=det_init
+                    det_init=det_init,
+                    block_type = 'free',
                 )
 
 # position control
@@ -126,7 +127,7 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 2048
+num_samples = 1024
 num_randomizations = 1
 
 
@@ -188,6 +189,7 @@ elif args.algorithm == "mtp":
         num_randomizations=num_randomizations,
         seed=seed,
         update_cov=update_cov,
+        default_zero_controls=True,
     )
     error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
     
