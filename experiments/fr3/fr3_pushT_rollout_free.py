@@ -87,11 +87,11 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.55, 0.15, 0.158])   # 0,26
+        self.init_pos = np.array([0.6, 0.2, 0.156])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
-        # self.init_pos[0] += np.random.uniform(-0.1, 0.05)   # x
-        # self.init_pos[1] += np.random.uniform(-0.1, 0.1)   # y (larger variance)
+        self.init_pos[0] += np.random.uniform(-0.03 , 0.03)   # x
+        self.init_pos[1] += np.random.uniform(-0.03, 0.03)   # y (larger variance)
         self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
        
         self.init_rot = R.from_quat(self.init_quat).as_matrix()
@@ -198,7 +198,7 @@ class FR3_PushT(FrankaPandaServer):
         ####################################
         ##           Start Timer          ##    
         ####################################
-
+        self.finished_task = False
         self.servo_freq = 50  # Hz
         self.plan_freq = 10
         self.action = None
@@ -207,6 +207,7 @@ class FR3_PushT(FrankaPandaServer):
         self.sim_group = MutuallyExclusiveCallbackGroup()
 
         self.create_timer(1.0 / self.plan_freq, self._run_controller, callback_group=self.sim_group)
+        time.sleep(0.2)
         self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.parallel_group)
         
 
@@ -252,7 +253,7 @@ class FR3_PushT(FrankaPandaServer):
 
         t.transform.translation.x = 0.0
         t.transform.translation.y = +0.025
-        t.transform.translation.z = -0.027
+        t.transform.translation.z = -0.025
 
         quat = quaternion_from_euler(0.0, 0.0, np.pi)
         t.transform.rotation.x = quat[0]
@@ -333,12 +334,12 @@ class FR3_PushT(FrankaPandaServer):
             )
             
             # jax fori loop over sim steps per control step
-            mjx_data = jax.lax.fori_loop(
-                0, 
-                ctrl.task.sim_steps_per_control_step, 
-                lambda i, d: mjx.step(self.ctrl.task.model, d), 
-                mjx_data
-            )
+            # mjx_data = jax.lax.fori_loop(
+            #     0, 
+            #     ctrl.task.sim_steps_per_control_step, 
+            #     lambda i, d: mjx.step(self.ctrl.task.model, d), 
+            #     mjx_data
+            # )
             planning_data = mjx_data
 
             # --- on device ---
@@ -462,11 +463,13 @@ class FR3_PushT(FrankaPandaServer):
             self.robot_dq,
         )
         self.action = self.ctrl.get_action(self.policy_params, 0.0)   
+        self.actions = np.array(self.policy_params.spline) 
         t2 = time.time()
         self.get_logger().info(
             f"Controller step time: {t2 - t1:.3f} s"
             f" (State update: {t1 - t0:.3f} s)"
         )
+        self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
     
 
     def _send_command(self):
@@ -475,30 +478,48 @@ class FR3_PushT(FrankaPandaServer):
         
         :param self: Description
         """
-        if self.action is None:
+        if self.actions is None:
             self.get_logger().warn(
                 "No action available to send."
             )
             return
-
+        idx = np.floor((self.get_clock().now().nanoseconds / 1e9 - self.last_planning_time) / self.ctrl.task.dt)
+        action = self.action #self.actions[int(idx)]  # (vx, vy)
         self.get_logger().warn(
-                f"Actrion: {self.action}"
+                f"Action: {action}"
             )
-        # vx = 0.0
-        # vy = 0.0
-        vx = 1.0 * float(self.action[0])
-        vy = 1.0 * float(self.action[1])
+        pose_T = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
+                           self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
+      
+        # self.get_logger().info(f"Current pose_T: {pose_T}")
+        pose_goal = np.array([0.45, 0.0, 0.032,
+                              1.0, 0.0, 0.0, -1.0])  
+        error = se3_left_invariant_metric(pose_T, pose_goal, rot_weight=1.0, trans_weight=10.0)
+        self.get_logger().info(f"Pose error: {error}")
+        
+        if self.finished_task:
+            if error > 1.0:
+                self.finished_task = False
+                self.get_logger().info("Resuming task...")
+        else:
+            if error < 0.5:
+                self.finished_task = True
+                self.get_logger().info("Task finished!")
+
+        if self.finished_task:
+            vx = 0.0
+            vy = 0.0
+            self.get_logger().warn(
+                f"Finished task."
+            )
+        else:
+            vx = 1.0 * float(action[0])
+            vy = 1.0 * float(action[1])
+            self.get_logger().warn(
+                f"Action: {self.action}"
+            )
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
-
-        # print("Sim qpos:", self.mjx_data.qpos)
-
-        # print("Best sample control sequence:", self.policy_params.spline)
-
-        # # For testing: circular motion
-        # now_sec = self.get_clock().now().nanoseconds / 1e9
-        # vx = 0.25*sin(now_sec / 2)
-        # vy = 0.25*cos(now_sec / 2)
-        # self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+        #self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
 
     
     def _states_received(self):
@@ -521,7 +542,7 @@ if __name__ == '__main__':
     rclpy.init()
 
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=13,
+                    planning_horizon=9,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
                                  "u_max": jnp.array([0.45, 0.45])},
@@ -563,10 +584,12 @@ if __name__ == '__main__':
                 num_samples=1024,
                 M=3, # horizon via control points
                 N=64, # samples 
+                sigma_min=0.15,
+                sigma_max=0.55,
                 num_elites=12,
                 sigma_start=0.25,
-                beta=0.35,
-                alpha=0.1,
+                beta=0.3,
+                alpha=0.0,
                 interpolation='bspline',
                 num_randomizations=1,
                 seed=seed,

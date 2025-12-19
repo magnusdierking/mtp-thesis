@@ -265,8 +265,9 @@ class FR3_PushT(FrankaPandaServer):
         vx = -1.0 * radius * omega * sin(omega * t)
         vy = radius * omega * cos(omega * t)
 
-        self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
-  
+        # self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+        self.servo(linear=(0, 0, 0.0), angular=(0.0, 0.0, 0.0))
+
         
 
     # def _run_controller(self):

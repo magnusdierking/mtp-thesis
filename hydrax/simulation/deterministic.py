@@ -241,6 +241,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     if record_video:
         # Video dimensions
         width, height = 720, 480
+        print((get_root_path() / "recordings").as_posix())
         # Create the video recorder
         recorder = VideoRecorder(
             output_dir=(get_root_path() / "recordings").as_posix(),

@@ -25,6 +25,8 @@ from tf_transformations import quaternion_from_euler, quaternion_multiply, quate
 from tf2_geometry_msgs import do_transform_pose
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
+
+
 def yaw_from_quat(x, y, z, w):
     # standard ZYX Euler convention
     yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
@@ -112,7 +114,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.6, 0.0, 0.158])   # 0,26
+        self.init_pos = np.array([0.55, 0.0, 0.158])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
         # self.init_pos[0] += np.random.uniform(-0.1, 0.05)   # x
@@ -123,7 +125,7 @@ class FR3_PushT(FrankaPandaServer):
         pose = np.eye(4)
         pose[:3, :3] = self.init_rot
         pose[:3, 3] = self.init_pos
-        self.plan_and_move_to_pose(pose)
+        # self.plan_and_move_to_pose(pose)
 
         
         ####################################
@@ -141,7 +143,7 @@ class FR3_PushT(FrankaPandaServer):
         for _ in range(15):
             self._step_debug_sim()
         self.create_timer(1.0 / self.sim_freq, self._step_debug_sim, callback_group=self.sim_group)
-        self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.servo_group)
+        # self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.servo_group)
         
 
     def _step_debug_sim(self):
@@ -246,11 +248,16 @@ class FR3_PushT(FrankaPandaServer):
     def _update_state(self):
         
         lin_t, quat_t = self._update_T()
+        if lin_t is None or quat_t is None:
+            self.get_logger().warn("Skipping state update due to missing TF.")  
+            return
+        if self._current_joint_state is None:
+            self.get_logger().warn("Current joint state not received yet.")  
+            return
         self.debug_data.qpos[0] = -lin_t[1] # x in block, -y in robot
         self.debug_data.qpos[1] = lin_t[0] -0.4 # y in block, x in robot, offset from spawn
         self.debug_data.qpos[2] = yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) 
         # print(f"Object yaw: {self.debug_data.qpos[2]*180.0/np.pi} deg")
-
         self.debug_data.qpos[3:-2] = np.array([copy.deepcopy(self._current_joint_state.position)])
         self.debug_data.qvel[3:-2] = np.array([copy.deepcopy(self._current_joint_state.velocity)])
 

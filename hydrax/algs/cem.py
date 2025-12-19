@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from flax.struct import dataclass
 
 from hydrax.alg_base_opt import SamplingBasedController, Trajectory
-from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
+from hydrax.algs.alg_extension_utils import colorize_time_series, make_savgol_filter, shift_tensor, savgol_coeffs
 
 
 from hydrax.risk import RiskStrategy
@@ -49,6 +49,7 @@ class CEM(SamplingBasedController):
         planning_freq: int = 1, # !experimental
         keep_elites: int = 1,   #!experimental
         default_zero_controls: bool = False, #!experimental
+        savgol_filter: bool = False, # !experimental
     ):
         """Initialize the controller.
 
@@ -87,6 +88,9 @@ class CEM(SamplingBasedController):
         else:
             self.keep_elites = keep_elites
         self.default_zero_controls = default_zero_controls
+        self.savgol_filter = savgol_filter  
+        if savgol_filter:
+            self.savgol_filter_fn = make_savgol_filter(window_length=7, polyorder=2, axis=1)
 
     def init_params(self, seed: int = 0) -> CEMParams:
         """Initialize the policy parameters."""
@@ -116,6 +120,8 @@ class CEM(SamplingBasedController):
         if self.colorize_noise:
             noise = self.colorize_time_series(noise, remove_dc=True, alpha=self.alpha_noise) # !experimental
         controls = params.mean + params.cov * noise
+        if self.savgol_filter:
+            controls = self.savgol_filter_fn(controls)
         # infuse elites from previous iteration
         if self.keep_elites > 0 and params.elites is not None:
             controls = controls.at[:self.keep_elites].set(params.elites)

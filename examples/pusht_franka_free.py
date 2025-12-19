@@ -81,8 +81,8 @@ sigma_max = 0.55
 sigma_min = 0.15
 sigma_start = 0.3
 det_init = {
-    "block_pos_x": 0.45 + np.random.uniform(-0.05, 0.05),
-    "block_pos_y": -0.1 + np.random.uniform(-0.05, 0.05),
+    "block_pos_x": 0.5 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": -0.0 + np.random.uniform(-0.05, 0.05),
     "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/12, np.pi/12),
     "ee_goal_pos": [0.55, 0.1, 0.035]
 }
@@ -92,7 +92,7 @@ det_init = {
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=13,
+                    planning_horizon=9,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
                                  "u_max": jnp.array([0.45, 0.45])},
@@ -184,11 +184,12 @@ elif args.algorithm == "mtp":
         sigma_start=sigma_start,
         num_elites=12,
         beta=0.25,
-        alpha=0.1,
+        alpha=0.0,
         interpolation='bspline',
         num_randomizations=num_randomizations,
         seed=seed,
         update_cov=update_cov,
+        savgol_filter=True,  # !experimental
         default_zero_controls=True,
     )
     error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
@@ -209,7 +210,7 @@ elif args.algorithm == "anmtp":
             beta_lr = 0.1,        # adaptation step size
             beta_min = 0.0,
             beta_max = 0.35,
-            alpha=0.1,
+            alpha=0.0,
             interpolation='bspline',
             shift = False,
             num_randomizations=num_randomizations,
@@ -227,7 +228,7 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=20,
+    frequency=10,
     show_traces=True,
     trace_width=0.55,
     max_traces=32,

@@ -2,6 +2,7 @@ import mujoco
 import mujoco.viewer
 from mujoco import mj_id2name, mj_name2id
 import os
+import sys
 import numpy as np
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
@@ -205,8 +206,8 @@ with mujoco.viewer.launch_passive(model, data) as v:
         # data.ctrl[0] = 0.01 #q
         mujoco.mj_step(model, data)
         # sinusoidal control
-        velocity_x = - 0.2 * np.sin(0.025 * step)
-        velocity_y = 0.001#0.02 * np.sin(0.01 * step)
+        velocity_x = - 0.2 * np.sin(0.01 * step)
+        velocity_y = -0.002#0.02 * np.sin(0.01 * step)
         dq = differential_IK(
             model,
             data,
@@ -216,6 +217,9 @@ with mujoco.viewer.launch_passive(model, data) as v:
         )
         data.qvel[np.array(dof_adr)] = dq
         step += 1
+
+        sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ}")
+        sys.stdout.flush()
         
         # # print site position
         # site_rot = data.site_xmat[site_id1].reshape(3,3)

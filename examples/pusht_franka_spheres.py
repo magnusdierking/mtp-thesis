@@ -129,7 +129,7 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 1024
+num_samples = 1048
 num_randomizations = 1
 
 
@@ -163,7 +163,7 @@ elif args.algorithm == "cem":
     ctrl = CEM(
         task,
         num_samples=num_samples,
-        num_elites=12,
+        num_elites=13,
         sigma_start=sigma_start,
         sigma_min=sigma_min,
         sigma_max=sigma_max,
@@ -171,6 +171,7 @@ elif args.algorithm == "cem":
         num_randomizations=num_randomizations,
         seed=seed,
         update_cov=update_cov,
+        savgol_filter=True,  # !experimental
     )
     error_log = "./../data/error_log_pushT/cem_{seed}.npy".format(seed=seed)
     
@@ -185,7 +186,7 @@ elif args.algorithm == "mtp":
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=12,
-        beta=0.15,
+        beta=0.25,
         alpha=0.1,
         interpolation='bspline',
         num_randomizations=num_randomizations,
@@ -229,11 +230,11 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=20,
+    frequency=10,
     show_traces=True,
     trace_width=0.55,
     max_traces=32,
-    fixed_camera_id=0,
+    fixed_camera_id=mj_model.camera("video_view").id,
     show_ui=True,
     record_video=False,
     max_step=300,
