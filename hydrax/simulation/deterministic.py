@@ -151,6 +151,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     record_video: bool = False,
     show_ui: bool = True,
     seed: int = 0,
+    trace_idxs=None,
 ) -> None:
     """Run an interactive simulation with the MPC controller.
 
@@ -266,6 +267,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
         # Set up rollout traces
         if show_traces:
+            
             num_trace_sites = len(controller.task.trace_site_ids)
             for i in range(
                 num_trace_sites * num_traces * controller.task.planning_horizon
@@ -329,16 +331,28 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             if show_traces:
                 ii = 0
                 for k in range(num_trace_sites):
-                    for i in range(num_traces):
-                        for j in range(controller.task.planning_horizon):
-                            mujoco.mjv_connector(
-                                viewer.user_scn.geoms[ii],
-                                mujoco.mjtGeom.mjGEOM_LINE,
-                                trace_width,
-                                rollouts.trace_sites[0, i, j, k, :3],        # ! 
-                                rollouts.trace_sites[0, i, j + 1, k, :3],    # !
-                            )
-                            ii += 1
+                    if trace_idxs is not None:
+                        for i in trace_idxs:
+                            for j in range(controller.task.planning_horizon):
+                                mujoco.mjv_connector(
+                                    viewer.user_scn.geoms[ii],
+                                    mujoco.mjtGeom.mjGEOM_LINE,
+                                    trace_width,
+                                    rollouts.trace_sites[0, i, j, k, :3],        # ! 
+                                    rollouts.trace_sites[0, i, j + 1, k, :3],    # !
+                                )
+                                ii += 1
+                    else:
+                        for i in range(num_traces):
+                            for j in range(controller.task.planning_horizon):
+                                mujoco.mjv_connector(
+                                    viewer.user_scn.geoms[ii],
+                                    mujoco.mjtGeom.mjGEOM_LINE,
+                                    trace_width,
+                                    rollouts.trace_sites[0, i, j, k, :3],        # ! 
+                                    rollouts.trace_sites[0, i, j + 1, k, :3],    # !
+                                )
+                                ii += 1
 
             # Update the ghost reference
             if reference is not None:

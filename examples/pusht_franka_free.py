@@ -84,19 +84,22 @@ det_init = {
     "block_pos_x": 0.5 + np.random.uniform(-0.05, 0.05),
     "block_pos_y": -0.0 + np.random.uniform(-0.05, 0.05),
     "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/12, np.pi/12),
-    "ee_goal_pos": [0.55, 0.1, 0.035]
+    "ee_goal_pos": [0.55 + np.random.uniform(-0.05, 0.05), 
+                    0.1 + np.random.uniform(-0.05, 0.05), 
+                    0.032]
 }
 
 
 
 # Define the task (cost and dynamics)
 #velocity control
+max_speed = 0.3  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=9,
-                    sim_steps_per_control_step=2,
-                    ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
-                                 "u_max": jnp.array([0.45, 0.45])},
-                    trace_sites=["ee_site"],
+                    planning_horizon=12,
+                    sim_steps_per_control_step=3,
+                    ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
+                                 "u_max": jnp.array([max_speed, max_speed])},
+                    trace_sites=["ee_site", "T_1"],
                     actuation_type='velocity',
                     sampling_space="velocity",
                     det_init=det_init,
@@ -184,7 +187,7 @@ elif args.algorithm == "mtp":
         sigma_start=sigma_start,
         num_elites=12,
         beta=0.25,
-        alpha=0.0,
+        alpha=0.1,
         interpolation='bspline',
         num_randomizations=num_randomizations,
         seed=seed,
@@ -223,20 +226,23 @@ elif args.algorithm == "anmtp":
 mj_model, mj_data = task.reset(seed=seed)
 
 # Run the interactive simulation
-
+max_traces = 64
+trace_idxs = [i for i in range(0, num_samples, num_samples // max_traces)]
+print("Tracing indices:", trace_idxs)
 run_interactive(
     ctrl,
     mj_model,
     mj_data,
     frequency=10,
     show_traces=True,
-    trace_width=0.55,
-    max_traces=32,
+    trace_width=0.25,
+    max_traces=max_traces,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,
     max_step=300,
     seed=seed,
+    trace_idxs=trace_idxs,
     # log_file=path.as_posix(),
     )
 

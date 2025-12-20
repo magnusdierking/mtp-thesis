@@ -2,13 +2,11 @@ import os
 import threading
 import time
 import copy
-import pickle
 from pprint import pformat
 import argparse
 from math import sin, cos
 
 from hydrax.algs import MPPI, MTP, AnMTP
-from hydrax.utils.files import get_data_path
 from hydrax.utils.utils import se3_left_invariant_metric
 from hydrax.tasks.pusht_franka_free import PushTFranka
 
@@ -22,6 +20,7 @@ import jax
 jax.config.update("jax_platform_name", "gpu")
 import jax.numpy as jnp
 import mujoco
+import mujoco.viewer
 from mujoco import mjx
 
 from shape_msgs.msg import Mesh, MeshTriangle, SolidPrimitive
@@ -44,6 +43,10 @@ class FR3_PushT(FrankaPandaServer):
                  ctrl,
                  robot_ip,
                  seed,
+                 debug_model,
+                 debug_data,
+                 viewer,
+                 num_traces,
                  ):
         
         super().__init__(robot_ip, 
@@ -140,6 +143,10 @@ class FR3_PushT(FrankaPandaServer):
         )
 
         self.ctrl = ctrl
+        self.debug_model = debug_model
+        self.debug_data = debug_data
+        self.viewer = viewer
+        self.trace_idxs = [i * num_traces for i in range(self.ctrl.num_samples // num_traces)]  # visualize every 10th point
   
         id = mujoco.mj_name2id(self.ctrl.task.mj_model, mujoco.mjtObj.mjOBJ_BODY, "ghost_block")
         self.ghost_id = self.ctrl.task.mj_model.body_mocapid[id]
@@ -172,6 +179,12 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().info("Jitting controller...")
         st = time.time()
 
+        # # Warmstart on device with dummy data (zeros)
+        # lin0 = jnp.zeros(3, dtype=jnp.float32)
+        # quat0 = jnp.array([0., 0., 0., 1.], dtype=jnp.float32)
+        # q0 = jnp.zeros(7, dtype=jnp.float32)
+        # dq0 = jnp.zeros(7, dtype=jnp.float32)
+
         # One call to transfer mjx_data & policy_params to GPU and compile
         self.jit_step = self.jit_step.lower(
             self.mjx_data, self.policy_params,
@@ -184,7 +197,7 @@ class FR3_PushT(FrankaPandaServer):
             self.mjx_data = mjx.step(self.ctrl.task.model, self.mjx_data)
         # warmstart controller
         for _ in range(5):
-            self.mjx_data, self.policy_params = self.jit_step(
+            self.mjx_data, self.policy_params, _ = self.jit_step(
                 self.mjx_data, self.policy_params,
                 self.lin_t, self.quat_t, self.robot_q, self.robot_dq
             )
@@ -194,23 +207,20 @@ class FR3_PushT(FrankaPandaServer):
         ####################################
         ##           Start Timer          ##    
         ####################################
+
         self.finished_task = False
         self.servo_freq = 50  # Hz
-        self.plan_freq = 10
+        self.plan_freq = 8
         self.action = None
         self.start_time = self.get_clock().now().nanoseconds / 1e9
         
-
-        # Logs 
-        self.log = []
-        
-        # self.servo_group = ReentrantCallbackGroup()
         self.sim_group = MutuallyExclusiveCallbackGroup()
 
-        self.create_timer(1.0 / self.plan_freq, self._run_controller, callback_group=self.sim_group)
-        time.sleep(0.2)
-        self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.parallel_group)
+        self.create_timer(1.0 / 3, self._run_controller, callback_group=self.sim_group)
+        # time.sleep(0.2)
+        # self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.parallel_group)
         
+
 
     
     def _publish_static_robot_tf(self):
@@ -269,8 +279,8 @@ class FR3_PushT(FrankaPandaServer):
     def make_jitted_step(self, ctrl):
 
         def step(mjx_data, policy_params,
-                 lin_t, quat_t,
-                 robot_q, robot_dq):
+                lin_t, quat_t,
+                robot_q, robot_dq):
             """
             mjx_data, policy_params: persistent state (kept on device)
             lin_t: (3,) position (np or jnp)
@@ -297,17 +307,16 @@ class FR3_PushT(FrankaPandaServer):
             # ], dtype=jnp.float32))
 
             # --- on device ---
-            def yaw_from_quat(x, y, z, w):
-                # standard ZYX Euler convention
-                yaw = jnp.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
-                return yaw + jnp.pi/2
-            
-            # 0 - 3 is joint
+            # 0 - 6 is free object
             # 7 - 13 is robot joints
-            new_qpos = mjx_data.qpos.at[:-2].set(jnp.array([
-                -lin_t[1],
-                lin_t[0] -0.4,
-                yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) ,
+            new_qpos = mjx_data.qpos.at[jnp.array([0, 1, 3, 4 ,5, 6, 7, 8, 9, 10, 11, 12, 13])].set(jnp.array([
+                lin_t[0],
+                lin_t[1],
+                # lin_t[2],
+                quat_t[3],
+                quat_t[0],
+                quat_t[1],
+                quat_t[2],
                 robot_q[0],
                 robot_q[1],
                 robot_q[2],
@@ -317,7 +326,7 @@ class FR3_PushT(FrankaPandaServer):
                 robot_q[6],
             ], dtype=jnp.float32))
             # ! free object has only 6 DoF, axis angle instead of quaternion
-            new_qvel = mjx_data.qvel.at[3:-2].set(jnp.array([
+            new_qvel = mjx_data.qvel.at[6:13].set(jnp.array([
                 robot_dq[0],
                 robot_dq[1],
                 robot_dq[2],
@@ -333,7 +342,8 @@ class FR3_PushT(FrankaPandaServer):
                 # mocap_pos=new_mocap_pos,
                 # mocap_quat=new_mocap_quat,
             )
-            # resolve upadte discrepancy
+            
+            # jax fori loop over sim steps per control step
             mjx_data = jax.lax.fori_loop(
                 0, 
                 ctrl.task.sim_steps_per_control_step, 
@@ -345,9 +355,7 @@ class FR3_PushT(FrankaPandaServer):
             # --- on device ---
             new_policy_params, rollouts = ctrl.optimize(planning_data, policy_params)
 
-
-
-            return mjx_data, new_policy_params
+            return mjx_data, new_policy_params, rollouts
 
         return jax.jit(step, donate_argnums=(1,))
 
@@ -371,7 +379,7 @@ class FR3_PushT(FrankaPandaServer):
         """
         if not self.tf_buffer.can_transform("fr3_link0", "objectPushT_MuJoCo",
                                             rclpy.time.Time(),
-                                            rclpy.duration.Duration(seconds=0.1)):
+                                            rclpy.duration.Duration(seconds=0.0)):
             self.get_logger().warn("TF transform not available yet.")
             return None, None
         else:
@@ -417,6 +425,12 @@ class FR3_PushT(FrankaPandaServer):
     def _run_controller(self):
         """
         Execute a single SMPC planning step.
+        This method performs the following operations in sequence:
+        1. Updates the T linear position and quaternion orientation
+        2. Retrieves the current robot joint positions and velocities
+        3. Validates that both object and robot states are available
+        4. Executes the JIT-compiled policy step to update MuJoCo state and policy parameters
+        5. Computes the control action from the updated policy parameters
       
         Returns:
             None
@@ -435,8 +449,22 @@ class FR3_PushT(FrankaPandaServer):
             )
             return
         
+        # resolve state 
+        # self.mjx_data = mjx.step(self.ctrl.task.model, self.mjx_data)
+
+        # pose_T = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
+        #                    self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
+        # ee_quat = self.get_ee_orientation()
+        # ee_lin = self.get_ee_position()
+
+        # pose_ee = np.array([ee_lin[0], ee_lin[1], ee_lin[2],
+        #                    ee_quat[3], ee_quat[0], ee_quat[1], ee_quat[2]])
+        # error = se3_left_invariant_metric(pose_T, pose_ee)
+        # error = np.linalg.norm(self.lin_t - ee_lin)
+        # self.get_logger().info(f"Pose error: {error}")
+        
         t1 = time.time()
-        self.mjx_data, self.policy_params = self.jit_step(
+        self.mjx_data, self.policy_params, rollouts = self.jit_step(
             self.mjx_data,
             self.policy_params,
             self.lin_t,
@@ -444,24 +472,41 @@ class FR3_PushT(FrankaPandaServer):
             self.robot_q,
             self.robot_dq,
         )
-        self.action = self.ctrl.get_action(self.policy_params, 0.0)
-        self.actions = np.array(self.policy_params.spline) #self.ctrl.get_action(self.policy_params, 0.0)   
-        
+        self.action = self.ctrl.get_action(self.policy_params, 0.0)   
+        self.actions = np.array(self.policy_params.spline) 
         t2 = time.time()
+
+
+        # old_z = self.debug_data.qpos[2]
+        self.debug_data.qpos[0:7] = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
+                                             self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
+        self.debug_data.qpos[7:14] = self.robot_q
+        self.debug_data.qvel[6:13] = self.robot_dq
+        mujoco.mj_step(self.debug_model, self.debug_data)
+
+        ii = 0
+        k = 0
+        for i in range(len(self.trace_idxs)):
+            for j in range(self.ctrl.task.planning_horizon):
+                mujoco.mjv_connector(
+                    self.viewer.user_scn.geoms[ii],
+                    mujoco.mjtGeom.mjGEOM_LINE,
+                    0.2,
+                    rollouts.trace_sites[0, i, j, k, :3],        # ! 
+                    rollouts.trace_sites[0, i, j + 1, k, :3],    # !
+                )
+                ii += 1
+
+        self.viewer.sync()
+        t3 = time.time()
+        
         self.get_logger().info(
             f"Controller step time: {t2 - t1:.3f} s"
             f" (State update: {t1 - t0:.3f} s)"
+            f" (Visualization: {t3 - t2:.3f} s)"
         )
         self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
-        self.log.append({
-            'time': self.last_planning_time- self.start_time,
-            'planning_time': t2 - t1,
-            'qpos': self.robot_q.tolist(),
-            'qvel': self.robot_dq.tolist(),
-            'object_pos': self.lin_t.tolist(),
-            'object_quat': self.quat_t.tolist(),
-        })
-
+    
 
     def _send_command(self):
         """
@@ -512,7 +557,6 @@ class FR3_PushT(FrankaPandaServer):
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
         #self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
 
-
     
     def _states_received(self):
         """
@@ -532,15 +576,15 @@ class FR3_PushT(FrankaPandaServer):
 if __name__ == '__main__':
     
     rclpy.init()
-
+    max_speed = 0.3
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=11,
-                    sim_steps_per_control_step=2,
-                    ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
-                                 "u_max": jnp.array([0.45, 0.45])},
+                    planning_horizon=12,
+                    sim_steps_per_control_step=3,
+                    ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
+                                 "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    block_type = 'spheres',
+                    block_type = 'free',
                 )
     
     # Parse command-line arguments
@@ -563,10 +607,10 @@ if __name__ == '__main__':
         print("Running MPPI")
         ctrl = MPPI(
             task,
-            num_samples=1024,
+            num_samples=512,
             noise_level=0.3,
             temperature=0.1,
-            num_randomizations=1,
+            num_randomizations=2,
             seed=seed,
         )
     elif args.algorithm == "mtp":
@@ -576,11 +620,11 @@ if __name__ == '__main__':
                 num_samples=1024,
                 M=3, # horizon via control points
                 N=64, # samples 
-                num_elites=12,
                 sigma_min=0.15,
                 sigma_max=0.55,
-                sigma_start=0.3,
-                beta=0.15,
+                num_elites=12,
+                sigma_start=0.25,
+                beta=0.3,
                 alpha=0.1,
                 interpolation='bspline',
                 num_randomizations=1,
@@ -591,28 +635,47 @@ if __name__ == '__main__':
                 update_cov=False,
             )
     
-    controller = FR3_PushT(
-        ctrl=ctrl,
-        robot_ip="10.90.90.77",
-        seed=seed,
-    )
+    model = task.mj_model
+    data = mujoco.MjData(model)
 
-    executor = rclpy.executors.SingleThreadedExecutor()
-    executor.add_node(controller)
-    
-    path = get_data_path() / "real_pushT"  
-    run = "test_run"
-    log_file = str(path / f"{args.algorithm}_{run}_seed{seed}_log")
-    os.makedirs(path, exist_ok=True)
-    
-    try:
-        # threading.Thread(target=controller.control_loop, args=(10,), daemon=True).start()
-        executor.spin()
-    except KeyboardInterrupt:
-        print("Shutting down controller...")
-    finally:
-        with open(log_file + ".pkl", "wb") as f:
-            pickle.dump(controller.log, f)
-        executor.shutdown()
-        controller.destroy_node()
-        rclpy.shutdown()
+    with mujoco.viewer.launch_passive(model, data) as v:
+      
+        num_traces = 30
+
+        num_trace_sites = 1
+        for i in range(
+            num_trace_sites * num_traces * ctrl.task.planning_horizon
+        ):
+            mujoco.mjv_initGeom(
+                v.user_scn.geoms[i],
+                type=mujoco.mjtGeom.mjGEOM_LINE,
+                size=np.zeros(3),
+                pos=np.zeros(3),
+                mat=np.eye(3).flatten(),
+                rgba=np.array([1.0, 1.0, 1.0, 0.4]),
+            )
+            v.user_scn.ngeom += 1
+
+        controller = FR3_PushT(
+            ctrl=ctrl,
+            robot_ip="10.90.90.77",
+            seed=seed,
+            debug_model=model,
+            debug_data=data,
+            viewer=v,
+            num_traces=num_traces,
+        )
+
+
+        executor = rclpy.executors.SingleThreadedExecutor()
+        executor.add_node(controller)
+        
+        try:
+            # threading.Thread(target=controller.control_loop, args=(10,), daemon=True).start()
+            executor.spin()
+        except KeyboardInterrupt:
+            print("Shutting down controller...")
+        finally:
+            executor.shutdown()
+            controller.destroy_node()
+            rclpy.shutdown()

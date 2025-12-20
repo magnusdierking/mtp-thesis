@@ -94,7 +94,7 @@ det_init = {
 # Define the task (cost and dynamics)
 #velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=13,
+                    planning_horizon=11,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
                                  "u_max": jnp.array([0.45, 0.45])},

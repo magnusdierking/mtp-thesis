@@ -1,13 +1,13 @@
 <mujoco model="fr3 scene">
   <!-- NUmerical Stuff -->
-  <option impratio="0.15"
+  <option impratio="0.7"
           solver="Newton"
           jacobian="dense"
           cone="pyramidal"
           timestep="0.025" 
-          iterations="5"
-          ls_iterations="8"
-          ls_tolerance="0.001">
+          iterations="6"
+          ls_iterations="9"
+          ls_tolerance="0.0001">
   <flag eulerdamp="enable" 
         warmstart="enable"/>
   </option>
@@ -27,9 +27,9 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="0.5 0.002 0.0001" 
-            solref="0.055 1.0" 
-            margin="0.001"
+      <geom friction="0.05 0.002 0.0001" 
+            solref="0.04 1.0" 
+            margin="0.0001"
             solimp="0.8 0.99 0.005"
             condim="3"
             contype="2" 
@@ -44,9 +44,9 @@
 
     <default class="contact_sphere">
       <geom friction="0.8 0.002 0.0001"
-            solref="0.055 1.0"
-            solimp="0.8 0.95 0.001 0.5 2"
-            condim="3"
+            solref="0.075 1.0"
+            solimp="0.2 0.95 0.001 0.5 2"
+            condim="1"
             contype="2" conaffinity="4"/>
     </default>
   </default>
@@ -74,27 +74,27 @@
         <!-- Lower part of T -->
         <geom class="tblock" name="bottom" type="box" size=".025 0.051 0.025" pos="0.0 0.0005 0.0" mass="0.0655"/>
 
-          <geom class="contact_sphere" name="contact_1" type="sphere" size="0.02505" pos="0.0 0.0 0.0" rgba="1 0 0 0.4"/>
+          <!-- <geom class="contact_sphere" name="contact_1" type="sphere" size="0.02505" pos="0.0 0.0 0.0" rgba="1 0 0 0.4"/> -->
 
-          <geom class="contact_sphere" name="contact_2" type="sphere" size="0.02505" pos="0.015 -0.04 0.0" rgba="1 0 0 0.4"/>
-          <geom class="contact_sphere" name="contact_4" type="sphere" size="0.02505" pos="-0.015 -0.04 0.0" rgba="1 0 0 0.4"/>
+          <!-- <geom class="contact_sphere" name="contact_2" type="sphere" size="0.02505" pos="0.015 -0.04 0.0" rgba="1 0 0 0.4"/> -->
+          <!-- <geom class="contact_sphere" name="contact_4" type="sphere" size="0.02505" pos="-0.015 -0.04 0.0" rgba="1 0 0 0.4"/> -->
 
-          <geom class="contact_sphere" name="contact_5" type="sphere" size="0.02505" pos="0.015 0.04 0.0" rgba="1 0 0 0.4"/>
-          <geom class="contact_sphere" name="contact_6" type="sphere" size="0.02505" pos="-0.015 0.04 0.0" rgba="1 0 0 0.4"/>
+          <!-- <geom class="contact_sphere" name="contact_5" type="sphere" size="0.02505" pos="0.015 0.04 0.0" rgba="1 0 0 0.4"/> -->
+          <!-- <geom class="contact_sphere" name="contact_6" type="sphere" size="0.02505" pos="-0.015 0.04 0.0" rgba="1 0 0 0.4"/> -->
           
           <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
           <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>
         <!-- Upper part ot T -->
         <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"  mass="0.07855"/>
 
-            <geom class="contact_sphere" name="contact_7" type="sphere" size="0.02505" pos="0.02 0.075 0.0" rgba="0 1 0 0.4"/>
-            <geom class="contact_sphere" name="contact_8" type="sphere" size="0.02505" pos="-0.02 0.075 0.0" rgba="0 1 0 0.4"/>
+            <!-- <geom class="contact_sphere" name="contact_7" type="sphere" size="0.02505" pos="0.02 0.075 0.0" rgba="0 1 0 0.4"/> -->
+            <!-- <geom class="contact_sphere" name="contact_8" type="sphere" size="0.02505" pos="-0.02 0.075 0.0" rgba="0 1 0 0.4"/> -->
             
-            <geom class="contact_sphere" name="contact_9" type="sphere" size="0.02505" pos="0.05 0.09 0.0" rgba="0 1 0 0.4"/>
-            <geom class="contact_sphere" name="contact_10" type="sphere" size="0.02505" pos="-0.05 0.09 0.0" rgba="0 1 0 0.4"/>
+            <!-- <geom class="contact_sphere" name="contact_9" type="sphere" size="0.02505" pos="0.05 0.09 0.0" rgba="0 1 0 0.4"/> -->
+            <!-- <geom class="contact_sphere" name="contact_10" type="sphere" size="0.02505" pos="-0.05 0.09 0.0" rgba="0 1 0 0.4"/> -->
 
-            <geom class="contact_sphere" name="contact_11" type="sphere" size="0.02505" pos="0.05 0.06 0.0" rgba="0 1 0 0.4"/>
-            <geom class="contact_sphere" name="contact_12" type="sphere" size="0.02505" pos="-0.05 0.06 0.0" rgba="0 1 0 0.4"/>
+            <!-- <geom class="contact_sphere" name="contact_11" type="sphere" size="0.02505" pos="0.05 0.06 0.0" rgba="0 1 0 0.4"/> -->
+            <!-- <geom class="contact_sphere" name="contact_12" type="sphere" size="0.02505" pos="-0.05 0.06 0.0" rgba="0 1 0 0.4"/> -->
       </body>
   </worldbody>
 
@@ -122,7 +122,7 @@
     <!-- (Linear) equality constraint for end effector -->
     <connect site1="ee_site" site2="sphere_site"
              solref="0.04 1.0" 
-             solimp="1.0 0.99 0.001 0.1 6.0"/>
+             solimp="1.0 0.99 0.001 0.1 20.0"/>
     <!-- Full 6 DoF equality MoCAP vs free object -->
     <!-- <weld name="sensor_coupling" body1="block" body2="ghost_block" solref="0.055 1" solimp="0.9 0.99 0.001"/> -->
   </equality>
@@ -146,8 +146,8 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" type="plane" size="0 0 0.05" solref="0.06 1"
-          material="groundplane" friction="0.8 0.002 0.0001" condim="3"
+    <geom name="floor" type="plane" size="0 0 0.05" solref="0.05 1"
+          material="groundplane" friction="0.05 0.002 0.0001" condim="3"
           contype="4" conaffinity="3"/>  
   </worldbody>
 </mujoco>

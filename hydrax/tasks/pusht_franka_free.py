@@ -297,19 +297,18 @@ class PushTFranka(Task):
         # orientation_cost = jnp.norm(orientation_err)
         orientation_cost = jnp.linalg.norm(orientation_err)
         
-        total_goal_err = 12 * position_cost + 2 * orientation_cost
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
         ee_block_distance_cost = ee_block_distance#jnp.square(ee_block_distance)
         
-        # TODO velocity error for the T ?
-        # control_cost = jnp.sum(jnp.square(control))  # penalize large control inputs
         if self.block_type == 'joint' or self.block_type == 'spheres':
+            total_goal_err = 12 * position_cost + 2 * orientation_cost
             error = total_goal_err + 0.01 * ee_block_distance_cost 
         elif self.block_type == 'free':
-            # ? free T behaves differently because of the jitter
-            error = total_goal_err + 0.05 * jnp.square(ee_block_distance_cost) 
+            # problem jitter
+            total_goal_err = 16 * position_cost + 2 * orientation_cost
+            error = total_goal_err + 0.01 * ee_block_distance_cost 
         return error + safety_cost 
                                                                               
 

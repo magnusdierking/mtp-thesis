@@ -200,7 +200,7 @@ class FR3_PushT(FrankaPandaServer):
         ####################################
         self.finished_task = False
         self.servo_freq = 50  # Hz
-        self.plan_freq = 10
+        self.plan_freq = 8
         self.action = None
         self.start_time = self.get_clock().now().nanoseconds / 1e9
         
@@ -334,12 +334,12 @@ class FR3_PushT(FrankaPandaServer):
             )
             
             # jax fori loop over sim steps per control step
-            # mjx_data = jax.lax.fori_loop(
-            #     0, 
-            #     ctrl.task.sim_steps_per_control_step, 
-            #     lambda i, d: mjx.step(self.ctrl.task.model, d), 
-            #     mjx_data
-            # )
+            mjx_data = jax.lax.fori_loop(
+                0, 
+                ctrl.task.sim_steps_per_control_step, 
+                lambda i, d: mjx.step(self.ctrl.task.model, d), 
+                mjx_data
+            )
             planning_data = mjx_data
 
             # --- on device ---
@@ -462,6 +462,7 @@ class FR3_PushT(FrankaPandaServer):
             self.robot_q,
             self.robot_dq,
         )
+        jax.block_until_ready(self.policy_params)
         self.action = self.ctrl.get_action(self.policy_params, 0.0)   
         self.actions = np.array(self.policy_params.spline) 
         t2 = time.time()
@@ -484,7 +485,7 @@ class FR3_PushT(FrankaPandaServer):
             )
             return
         idx = np.floor((self.get_clock().now().nanoseconds / 1e9 - self.last_planning_time) / self.ctrl.task.dt)
-        action = self.action #self.actions[int(idx)]  # (vx, vy)
+        action = self.actions[int(idx)]  # (vx, vy)
         self.get_logger().warn(
                 f"Action: {action}"
             )
@@ -540,12 +541,12 @@ class FR3_PushT(FrankaPandaServer):
 if __name__ == '__main__':
     
     rclpy.init()
-
+    max_speed = 0.3
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=9,
-                    sim_steps_per_control_step=2,
-                    ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
-                                 "u_max": jnp.array([0.45, 0.45])},
+                    planning_horizon=12,
+                    sim_steps_per_control_step=3,
+                    ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
+                                 "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
                     sampling_space="velocity",
                     block_type = 'free',
