@@ -222,8 +222,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     print(f"Time to jit: {time.time() - st:.3f} seconds") 
     
     policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+    # print("Rollouts control shape:", rollouts.controls.shape)
     
-    num_traces = min(rollouts.controls.shape[1], max_traces)
+    num_traces = min(rollouts.controls.shape[0], max_traces)
 
     # Ghost reference setup
     if reference is not None:
@@ -281,7 +282,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     rgba=np.array(trace_color),
                 )
                 viewer.user_scn.ngeom += 1
-        
+        print("num trace sites:", num_traces)
         # Add geometry for the ghost reference
         if reference is not None:
             mujoco.mjv_addGeoms(

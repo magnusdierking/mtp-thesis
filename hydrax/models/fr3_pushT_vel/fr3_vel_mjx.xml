@@ -161,10 +161,10 @@
                                 size="0.015"
                                 pos="0 0 0"
                                 rgba="0 0 0 1"
-                                solref="0.04 1.0" 
+                                solref="0.05 1.0" 
                                 margin="0.001"
-                                solimp="0.8 0.99 0.005"
-                                friction="0.1 0.002 0.0001"
+                                solimp="0.95 0.99 0.005"
+                                friction="0.5 0.002 0.0001"
                                 condim="3"
                                 contype="1" conaffinity="4"/> 
                           <site name="ee_site" pos="0 0 0.0" size="0.015" rgba="0 0 0 1"/>

@@ -114,7 +114,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.55, 0.0, 0.158])   # 0,26
+        self.init_pos = np.array([0.55, 0.0, 0.156])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
         # self.init_pos[0] += np.random.uniform(-0.1, 0.05)   # x
@@ -125,7 +125,7 @@ class FR3_PushT(FrankaPandaServer):
         pose = np.eye(4)
         pose[:3, :3] = self.init_rot
         pose[:3, 3] = self.init_pos
-        # self.plan_and_move_to_pose(pose)
+        self.plan_and_move_to_pose(pose)
 
         
         ####################################
@@ -143,7 +143,7 @@ class FR3_PushT(FrankaPandaServer):
         for _ in range(15):
             self._step_debug_sim()
         self.create_timer(1.0 / self.sim_freq, self._step_debug_sim, callback_group=self.sim_group)
-        # self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.servo_group)
+        self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.servo_group)
         
 
     def _step_debug_sim(self):

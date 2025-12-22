@@ -33,6 +33,7 @@ from tf_transformations import quaternion_from_euler, quaternion_multiply, quate
 from tf2_geometry_msgs import do_transform_pose
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
+from pynput import keyboard
 
 
 
@@ -46,7 +47,7 @@ class FR3_PushT(FrankaPandaServer):
                  debug_model,
                  debug_data,
                  viewer,
-                 num_traces,
+                 trace_idxs,
                  ):
         
         super().__init__(robot_ip, 
@@ -55,6 +56,10 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().info(
             "Initializing SMPC Controller..."
         )
+        self.ctrl = ctrl
+        self.debug_model = debug_model
+        self.debug_data = debug_data
+        self.viewer = viewer
         
         ####################################
         ##    MoveIt Safety Constraints   ##    
@@ -120,7 +125,9 @@ class FR3_PushT(FrankaPandaServer):
 
         self.br = StaticTransformBroadcaster(self)
         self._publish_static_robot_tf()
-   
+
+        # mocap
+        self.eq_id = mujoco.mj_name2id(self.ctrl.task.mj_model, mujoco.mjtObj.mjOBJ_EQUALITY, "sensor_coupling")
 
         for _ in range(10):
             rclpy.spin_once(self, timeout_sec=0.1)
@@ -141,12 +148,7 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().info(
             "All states received, initializing controller..."
         )
-
-        self.ctrl = ctrl
-        self.debug_model = debug_model
-        self.debug_data = debug_data
-        self.viewer = viewer
-        self.trace_idxs = [i * num_traces for i in range(self.ctrl.num_samples // num_traces)]  # visualize every 10th point
+        self.trace_idxs = trace_idxs
   
         id = mujoco.mj_name2id(self.ctrl.task.mj_model, mujoco.mjtObj.mjOBJ_BODY, "ghost_block")
         self.ghost_id = self.ctrl.task.mj_model.body_mocapid[id]
@@ -207,21 +209,79 @@ class FR3_PushT(FrankaPandaServer):
         ####################################
         ##           Start Timer          ##    
         ####################################
+        self._key_lock = threading.Lock()
+        self.teleop_enabled = True 
+        self._key_vx = 0.0
+        self._key_vy = 0.0
+
+        # Start keyboard listener in background
+        threading.Thread(target=self._keyboard_loop, daemon=True).start()
+
 
         self.finished_task = False
         self.servo_freq = 50  # Hz
-        self.plan_freq = 8
+        self.plan_freq = 5
         self.action = None
         self.start_time = self.get_clock().now().nanoseconds / 1e9
         
         self.sim_group = MutuallyExclusiveCallbackGroup()
 
         self.create_timer(1.0 / 3, self._run_controller, callback_group=self.sim_group)
+        self.create_timer(1.0 / self.servo_freq, self._send_keyboard_command, callback_group=self.parallel_group)
         # time.sleep(0.2)
         # self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.parallel_group)
         
 
+    def _keyboard_loop(self):
+            """
+            Background key listener: updates desired vx/vy based on arrow keys.
+            Uses locks because pynput runs on its own thread.
+            """
 
+            def clamp(v, lo, hi):
+                return max(lo, min(hi, v))
+
+            def on_press(key):
+                # Toggle teleop with 't' (optional)
+                try:
+                    if key.char == 't':
+                        self.teleop_enabled = not self.teleop_enabled
+                        self.get_logger().info(f"teleop_enabled = {self.teleop_enabled}")
+                        return
+                    if key.char == ' ':
+                        # space = stop
+                        with self._key_lock:
+                            self._key_vx = 0.0
+                            self._key_vy = 0.0
+                        return
+                except AttributeError:
+                    pass
+
+                vx, vy = 0.0, 0.0
+
+                if key == keyboard.Key.up:
+                    vx = 0.02
+                elif key == keyboard.Key.down:
+                    vx = -0.02
+                elif key == keyboard.Key.left:
+                    vy = +0.02
+                elif key == keyboard.Key.right:
+                    vy = -0.02
+                else:
+                    return
+                with self._key_lock:
+                    self._key_vx = vx
+                    self._key_vy = vy
+
+            def on_release(key):
+                # When arrow key released -> stop (simple behavior)
+                if key in (keyboard.Key.up, keyboard.Key.down, keyboard.Key.left, keyboard.Key.right):
+                    with self._key_lock:
+                        self._key_vx = 0.0
+                        self._key_vy = 0.0
+
+            with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+                listener.join()
     
     def _publish_static_robot_tf(self):
         """
@@ -263,7 +323,7 @@ class FR3_PushT(FrankaPandaServer):
 
         t.transform.translation.x = 0.0
         t.transform.translation.y = +0.025
-        t.transform.translation.z = -0.025
+        t.transform.translation.z = -0.0251
 
         quat = quaternion_from_euler(0.0, 0.0, np.pi)
         t.transform.rotation.x = quat[0]
@@ -294,29 +354,23 @@ class FR3_PushT(FrankaPandaServer):
             robot_q = jnp.asarray(robot_q, dtype=jnp.float32)
             robot_dq = jnp.asarray(robot_dq, dtype=jnp.float32)
 
-            # new_mocap_pos = mjx_data.mocap_pos.at[self.ghost_id].set(jnp.array([
-            #     lin_t[0],
-            #     lin_t[1],
-            #     lin_t[2],
-            # ], dtype=jnp.float32))  
-            # new_mocap_quat = mjx_data.mocap_quat.at[self.ghost_id].set(jnp.array([
-            #     quat_t[3],
-            #     quat_t[0],
-            #     quat_t[1],
-            #     quat_t[2],
-            # ], dtype=jnp.float32))
-
-            # --- on device ---
-            # 0 - 6 is free object
-            # 7 - 13 is robot joints
-            new_qpos = mjx_data.qpos.at[jnp.array([0, 1, 3, 4 ,5, 6, 7, 8, 9, 10, 11, 12, 13])].set(jnp.array([
+            new_mocap_pos = mjx_data.mocap_pos.at[self.ghost_id].set(jnp.array([
                 lin_t[0],
                 lin_t[1],
-                # lin_t[2],
+                lin_t[2],
+            ], dtype=jnp.float32))  
+            new_mocap_quat = mjx_data.mocap_quat.at[self.ghost_id].set(jnp.array([
                 quat_t[3],
                 quat_t[0],
                 quat_t[1],
                 quat_t[2],
+            ], dtype=jnp.float32))
+
+            # --- on device ---
+            # 0 - 6 is free object
+            # 7 - 13 is robot joints
+            # new_qpos = mjx_data.qpos.at[jnp.array([0, 1, 3, 4 ,5, 6, 7, 8, 9, 10, 11, 12, 13])].set(jnp.array([
+            new_qpos = mjx_data.qpos.at[jnp.array([7, 8, 9, 10, 11, 12, 13])].set(jnp.array([
                 robot_q[0],
                 robot_q[1],
                 robot_q[2],
@@ -339,18 +393,23 @@ class FR3_PushT(FrankaPandaServer):
             mjx_data = mjx_data.replace(
                 qpos=new_qpos,
                 qvel=new_qvel,
-                # mocap_pos=new_mocap_pos,
-                # mocap_quat=new_mocap_quat,
+                mocap_pos=new_mocap_pos,
+                mocap_quat=new_mocap_quat,
             )
             
-            # jax fori loop over sim steps per control step
+            # resolve mocap constraint to update state
             mjx_data = jax.lax.fori_loop(
                 0, 
-                ctrl.task.sim_steps_per_control_step, 
+                3, 
                 lambda i, d: mjx.step(self.ctrl.task.model, d), 
                 mjx_data
             )
+
             planning_data = mjx_data
+            # deactivate mocap constraint for planning
+            planning_data = planning_data.replace(
+                eq_active=planning_data.eq_active.at[self.eq_id].set(0)
+            )
 
             # --- on device ---
             new_policy_params, rollouts = ctrl.optimize(planning_data, policy_params)
@@ -478,24 +537,45 @@ class FR3_PushT(FrankaPandaServer):
 
 
         # old_z = self.debug_data.qpos[2]
+        self.debug_data.mocap_pos[self.ghost_id] = np.array([ 
+            self.lin_t[0],
+            self.lin_t[1],
+            self.lin_t[2],
+        ])
+        self.debug_data.mocap_quat[self.ghost_id] = np.array([
+            self.quat_t[3],
+            self.quat_t[0],
+            self.quat_t[1],
+            self.quat_t[2],
+        ])
         self.debug_data.qpos[0:7] = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
                                              self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
         self.debug_data.qpos[7:14] = self.robot_q
         self.debug_data.qvel[6:13] = self.robot_dq
-        mujoco.mj_step(self.debug_model, self.debug_data)
+        for _ in range(3):
+             mujoco.mj_step(self.debug_model, self.debug_data)
 
         ii = 0
-        k = 0
-        for i in range(len(self.trace_idxs)):
-            for j in range(self.ctrl.task.planning_horizon):
-                mujoco.mjv_connector(
-                    self.viewer.user_scn.geoms[ii],
-                    mujoco.mjtGeom.mjGEOM_LINE,
-                    0.2,
-                    rollouts.trace_sites[0, i, j, k, :3],        # ! 
-                    rollouts.trace_sites[0, i, j + 1, k, :3],    # !
-                )
-                ii += 1
+        colors = np.array([
+            [0.25, 0.0, 0.0, 0.4],
+            [0.0, 0.25, 0.0, 0.4],
+            [0.0, 0.0, 0.25, 0.4],
+        ])  
+        
+        for k in [0,1,2]:  # 
+            for i in self.trace_idxs:
+                for j in range(self.ctrl.task.planning_horizon):
+                    geom =self.viewer.user_scn.geoms[ii]
+                    mujoco.mjv_connector(
+                        geom,
+                        # self.viewer.user_scn.geoms[ii],
+                        mujoco.mjtGeom.mjGEOM_LINE,
+                        0.4,
+                        rollouts.trace_sites[0, i, j, k, :3],        # ! 
+                        rollouts.trace_sites[0, i, j + 1, k, :3],    # !
+                    )
+                    geom.rgba[:] = colors[k, :]
+                    ii += 1
 
         self.viewer.sync()
         t3 = time.time()
@@ -557,6 +637,23 @@ class FR3_PushT(FrankaPandaServer):
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
         #self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
 
+    def _send_keyboard_command(self):
+        """
+        Send velocity command (twist) to moveit servo based on keyboard input.
+        
+        :param self: Description
+        """
+        if not self.teleop_enabled:
+            return
+
+        with self._key_lock:
+            vx = self._key_vx
+            vy = self._key_vy
+
+        # self.get_logger().info(
+        #     f"Keyboard command: vx={vx}, vy={vy}"
+        # )
+        self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
     
     def _states_received(self):
         """
@@ -599,6 +696,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     seed = 42
+    num_samples = 256
 
     # Set the controller based on command-line arguments
     if args.algorithm is None: 
@@ -607,7 +705,7 @@ if __name__ == '__main__':
         print("Running MPPI")
         ctrl = MPPI(
             task,
-            num_samples=512,
+            num_samples=num_samples,
             noise_level=0.3,
             temperature=0.1,
             num_randomizations=2,
@@ -617,7 +715,7 @@ if __name__ == '__main__':
         print("Running MTP")
         ctrl = MTP(
                 task,
-                num_samples=1024,
+                num_samples=num_samples,
                 M=3, # horizon via control points
                 N=64, # samples 
                 sigma_min=0.15,
@@ -631,6 +729,8 @@ if __name__ == '__main__':
                 seed=seed,
                 savgol_filter=False,
                 keep_elites=1,
+                shift=True,
+                planning_freq=5,
                 default_zero_controls=True,
                 update_cov=False,
             )
@@ -641,10 +741,11 @@ if __name__ == '__main__':
     with mujoco.viewer.launch_passive(model, data) as v:
       
         num_traces = 30
-
-        num_trace_sites = 1
+        trace_idxs = [i * num_traces for i in range( num_samples // num_traces)]  
+        
+        num_trace_sites = 3
         for i in range(
-            num_trace_sites * num_traces * ctrl.task.planning_horizon
+            num_trace_sites * len(trace_idxs) * ctrl.task.planning_horizon
         ):
             mujoco.mjv_initGeom(
                 v.user_scn.geoms[i],
@@ -652,7 +753,7 @@ if __name__ == '__main__':
                 size=np.zeros(3),
                 pos=np.zeros(3),
                 mat=np.eye(3).flatten(),
-                rgba=np.array([1.0, 1.0, 1.0, 0.4]),
+                rgba=np.array([0.6, 0.6, 0.6, 0.3], dtype=np.float32),
             )
             v.user_scn.ngeom += 1
 
@@ -663,7 +764,7 @@ if __name__ == '__main__':
             debug_model=model,
             debug_data=data,
             viewer=v,
-            num_traces=num_traces,
+            trace_idxs=trace_idxs,
         )
 
 

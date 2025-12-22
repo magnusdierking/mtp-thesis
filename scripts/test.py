@@ -70,8 +70,8 @@ def differential_IK(
 
 
 # xml_path = "./../hydrax/models/g1/scene.xml"
-# xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
-xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_spheres.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
+# xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_spheres.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
@@ -200,6 +200,10 @@ def quat_to_yaw(qx, qy, qz, qw):
     siny = 2.0 * (qw * qz + qx * qy)
     cosy = 1.0 - 2.0 * (qy * qy + qz * qz)
     return np.arctan2(siny, cosy)
+
+
+eq_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, "sensor_coupling")
+data.eq_active[eq_id] = 0
 
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():

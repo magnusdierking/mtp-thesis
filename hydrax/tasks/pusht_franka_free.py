@@ -108,6 +108,14 @@ class PushTFranka(Task):
         self.ee_goal_sensor = mujoco.mj_name2id(
             mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "safety"
         )
+        self.ee_t1_sensor = mujoco.mj_name2id(
+            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_t1"
+        )   
+        self.ee_t2_sensor = mujoco.mj_name2id(
+            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_t2"
+        )   
+
+         # Get block body id
         
         self.T_bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
         self.block_type = block_type
@@ -257,13 +265,18 @@ class PushTFranka(Task):
     
     def _get_ee_block_distance(self, state: mjx.Data) -> jax.Array:
         """Get the distance between the end effector and the block."""
-        sensor_adr = self.model.sensor_adr[self.ee_position_sensor]
-        ee_pos = state.sensordata[sensor_adr : sensor_adr + 3]
+        # sensor_adr = self.model.sensor_adr[self.ee_position_sensor]
+        # ee_pos = state.sensordata[sensor_adr : sensor_adr + 3]
         
-        sensor_adr_block = self.model.sensor_adr[self.block_global_position_sensor]
-        block_pos = state.sensordata[sensor_adr_block : sensor_adr_block + 3]
-        # Calculate the Euclidean distance between the end effector and the block        
-        return jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) # only x,y
+        # sensor_adr_block = self.model.sensor_adr[self.block_global_position_sensor]
+        # block_pos = state.sensordata[sensor_adr_block : sensor_adr_block + 3]
+        # return jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) 
+    
+        ee_t1_adr = self.model.sensor_adr[self.ee_t1_sensor]    
+        ee_t1_pos = state.sensordata[ee_t1_adr : ee_t1_adr + 3]
+        ee_t2_adr = self.model.sensor_adr[self.ee_t2_sensor]
+        ee_t2_pos = state.sensordata[ee_t2_adr : ee_t2_adr + 3]
+        return jnp.linalg.norm(ee_t1_pos) + jnp.linalg.norm(ee_t2_pos)
 
         
     # def _get_ee_orientation_err(self, state: mjx.Data) -> jax.Array:
@@ -282,7 +295,7 @@ class PushTFranka(Task):
         distance = state.sensordata[sensor_adr : sensor_adr + 3]
         
         distance = jnp.linalg.norm(distance)
-        cost = jnp.where(distance > 0.32, 100.0, 0.0)
+        cost = jnp.where(distance > 0.32, 10.0, 0.0)
         return cost
     
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
@@ -290,7 +303,7 @@ class PushTFranka(Task):
         # Goal error terms 
         position_err = self._get_position_err(state)
         orientation_err = self._get_orientation_err(state)
-        position_cost = jnp.linalg.norm(position_err)
+        position_cost = jnp.square(jnp.linalg.norm(position_err))
 
         safety_cost = self._safety_zone_cost(state) 
         
@@ -300,10 +313,10 @@ class PushTFranka(Task):
         
         # safety based
         ee_block_distance = self._get_ee_block_distance(state)
-        ee_block_distance_cost = ee_block_distance#jnp.square(ee_block_distance)
+        ee_block_distance_cost = jnp.square(ee_block_distance)
         
         if self.block_type == 'joint' or self.block_type == 'spheres':
-            total_goal_err = 12 * position_cost + 2 * orientation_cost
+            total_goal_err = 30 * position_cost + 5 * orientation_cost
             error = total_goal_err + 0.01 * ee_block_distance_cost 
         elif self.block_type == 'free':
             # problem jitter
