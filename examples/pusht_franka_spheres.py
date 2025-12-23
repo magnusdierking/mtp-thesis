@@ -79,13 +79,21 @@ seed = 445
 update_cov = False
 sigma_max = 0.55
 sigma_min = 0.15
-sigma_start = 0.3
+sigma_start = 0.1
+# det_init = {
+#     "block_pos_x": 0.1 + np.random.uniform(-0.05, 0.05),
+#     "block_pos_y": 0.1 + np.random.uniform(-0.05, 0.05),
+#     "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/8, np.pi/8),
+#     "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
+#                     0.1 + np.random.uniform(-0.05, 0.05), 
+#                     0.032]
+# }
 det_init = {
-    "block_pos_x": 0.1 + np.random.uniform(-0.05, 0.05),
-    "block_pos_y": 0.1 + np.random.uniform(-0.05, 0.05),
-    "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/8, np.pi/8),
-    "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
-                    0.1 + np.random.uniform(-0.05, 0.05), 
+    "block_pos_x": 0.1 ,
+    "block_pos_y": 0.1 ,
+    "block_angle": 3*np.pi/4 ,
+    "ee_goal_pos": [0.6 , 
+                    -0.2 , 
                     0.032]
 }
 
@@ -193,6 +201,9 @@ elif args.algorithm == "mtp":
         num_randomizations=num_randomizations,
         seed=seed,
         update_cov=update_cov,
+        savgol_filter=True,
+        shift=True,
+        planning_freq=10,
         default_zero_controls=True,
     )
     error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
@@ -209,12 +220,13 @@ elif args.algorithm == "anmtp":
             sigma_start=sigma_start,
             num_elites=12,
             keep_elites=1,   # !experimental
-            beta = 0.25,
+            beta = 0.05,
             beta_lr = 0.1,        # adaptation step size
             beta_min = 0.0,
             beta_max = 0.35,
             alpha=0.1,
             interpolation='bspline',
+            savgol_filter=True,
             shift = False,
             num_randomizations=num_randomizations,
             seed=seed,
@@ -226,8 +238,8 @@ elif args.algorithm == "anmtp":
 mj_model, mj_data = task.reset(seed=seed)
 
 # Run the interactive simulation
-max_traces = 10
-trace_idxs = [i for i in range(0, num_samples, num_samples // max_traces)]
+max_traces = 20
+trace_idxs = [i * max_traces for i in range(num_samples // max_traces)]
 print("Tracing indices:", trace_idxs)
 run_interactive(
     ctrl,
@@ -235,7 +247,7 @@ run_interactive(
     mj_data,
     frequency=10,
     show_traces=True,
-    trace_width=0.55,
+    trace_width=0.35,
     max_traces=max_traces,
     fixed_camera_id=mj_model.camera("video_view").id,
     show_ui=True,

@@ -123,6 +123,7 @@ class MTP(SamplingBasedController):
         # shift
         self.shift = shift
         self.last_a_idx = int(self.task.dt * planning_freq)
+        print(f"MTP Controller initialized with last_a_idx = {self.last_a_idx}")
         
         self.default_zero_controls = default_zero_controls
 

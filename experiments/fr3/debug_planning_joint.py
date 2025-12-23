@@ -31,6 +31,8 @@ from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallb
 from tf2_ros import Buffer, TransformListener, LookupException, ConnectivityException, ExtrapolationException
 from tf_transformations import quaternion_from_euler, quaternion_multiply, quaternion_matrix
 from tf2_geometry_msgs import do_transform_pose
+from control_msgs.msg import JointTrajectoryControllerState
+
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 from pynput import keyboard
@@ -56,6 +58,8 @@ class FR3_PushT(FrankaPandaServer):
         
         super().__init__(robot_ip, 
                          None) 
+        
+
         
         self.get_logger().info(
             "Initializing SMPC Controller..."
@@ -101,7 +105,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.6, 0.2, 0.156])   # 0,26
+        self.init_pos = np.array([0.6, -0.2, 0.032])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
         self.init_pos[0] += np.random.uniform(-0.03 , 0.03)   # x
@@ -122,6 +126,7 @@ class FR3_PushT(FrankaPandaServer):
         self.quat_t = None
         self.robot_q = None
         self.robot_dq = None
+
 
         # Fix, already initialized in RobotServer
         self.tf_buffer = self._tf_buffer
@@ -178,6 +183,7 @@ class FR3_PushT(FrankaPandaServer):
 
         # Do a forward once (host side is fine here)
         self.mjx_data = mjx.forward(self.ctrl.task.model, self.mjx_data)
+        self.dt = self.ctrl.task.mj_model.opt.timestep
 
         # Make unified jitted step function
         self.jit_step = self.make_jitted_step(ctrl)
@@ -194,7 +200,8 @@ class FR3_PushT(FrankaPandaServer):
         # One call to transfer mjx_data & policy_params to GPU and compile
         self.jit_step = self.jit_step.lower(
             self.mjx_data, self.policy_params,
-            self.lin_t, self.quat_t, self.robot_q, self.robot_dq
+            self.lin_t, self.quat_t, self.robot_q, self.robot_dq,
+            self.get_clock().now().nanoseconds / 1e9
         ).compile()
         
         # warmstart simulation
@@ -205,7 +212,8 @@ class FR3_PushT(FrankaPandaServer):
         for _ in range(5):
             self.mjx_data, self.policy_params, _ = self.jit_step(
                 self.mjx_data, self.policy_params,
-                self.lin_t, self.quat_t, self.robot_q, self.robot_dq
+                self.lin_t, self.quat_t, self.robot_q, self.robot_dq,
+                self.get_clock().now().nanoseconds / 1e9
             )
         
         self.get_logger().info(f"Time to jit and warmstart: {time.time() - st:.3f} s")
@@ -226,15 +234,17 @@ class FR3_PushT(FrankaPandaServer):
         self.servo_freq = 50  # Hz
         self.plan_freq = 5
         self.action = None
-        self.start_time = self.get_clock().now().nanoseconds / 1e9
+        self.actions = None
         
         self.sim_group = MutuallyExclusiveCallbackGroup()
 
+        self.start_time = self.get_clock().now().nanoseconds / 1e9
         self.create_timer(1.0 / 3, self._run_controller, callback_group=self.sim_group)
         self.create_timer(1.0 / self.servo_freq, self._send_keyboard_command, callback_group=self.parallel_group)
         # time.sleep(0.2)
         # self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.parallel_group)
         
+
 
     def _keyboard_loop(self):
             """
@@ -264,13 +274,13 @@ class FR3_PushT(FrankaPandaServer):
                 vx, vy = 0.0, 0.0
 
                 if key == keyboard.Key.up:
-                    vx = 0.05
+                    vx = 0.1
                 elif key == keyboard.Key.down:
-                    vx = -0.05
+                    vx = -0.1
                 elif key == keyboard.Key.left:
-                    vy = +0.05
+                    vy = +0.1
                 elif key == keyboard.Key.right:
-                    vy = -0.05
+                    vy = -0.1
                 else:
                     return
                 with self._key_lock:
@@ -287,6 +297,7 @@ class FR3_PushT(FrankaPandaServer):
             with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
                 listener.join()
     
+
     def _publish_static_robot_tf(self):
         """
         Publish static transforms:
@@ -339,12 +350,12 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().info('Published static TF objectPushT -> objectPushT_MuJoCo')
     
 
-
     def make_jitted_step(self, ctrl):
 
         def step(mjx_data, policy_params,
                 lin_t, quat_t,
-                robot_q, robot_dq):
+                robot_q, robot_dq,
+                start_time):
             """
             mjx_data, policy_params: persistent state (kept on device)
             lin_t: (3,) position (np or jnp)
@@ -366,11 +377,10 @@ class FR3_PushT(FrankaPandaServer):
             
             # 0 - 3 is joint
             # 7 - 13 is robot joints
-                
             new_qpos = mjx_data.qpos.at[:-2].set(jnp.array([
                 -lin_t[1],
                 lin_t[0] -0.4,
-                yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]) ,
+                yaw_from_quat(x=quat_t[0], y=quat_t[1], z=quat_t[2], w=quat_t[3]),
                 robot_q[0],
                 robot_q[1],
                 robot_q[2],
@@ -380,23 +390,7 @@ class FR3_PushT(FrankaPandaServer):
                 robot_q[6],
             ], dtype=jnp.float32))
             # zero velocit
-            new_qvel = mjx_data.qvel.at[:].set(jnp.zeros(mjx_data.qvel[:].shape, dtype=jnp.float32))
-            mjx_data = mjx_data.replace(
-                qpos=new_qpos,
-                qvel=new_qvel,
-                # mocap_pos=new_mocap_pos,
-                # mocap_quat=new_mocap_quat,
-            )
-
-            # resolve upadte discrepancy
-            # mjx_data = jax.lax.fori_loop(
-            #     0, 
-            #     3, 
-            #     lambda i, d: mjx.step(self.ctrl.task.model, d), 
-            #     mjx_data
-            # )
-
-            # ! free object has only 6 DoF, axis angle instead of quaternion
+            # new_qvel = mjx_data.qvel.at[:].set(jnp.zeros(mjx_data.qvel[:].shape, dtype=jnp.float32))
             new_qvel = mjx_data.qvel.at[3:-2].set(jnp.array([
                 robot_dq[0],
                 robot_dq[1],
@@ -407,13 +401,37 @@ class FR3_PushT(FrankaPandaServer):
                 robot_dq[6],
             ], dtype=jnp.float32))
 
-            mjx_data = mjx_data.replace(    
+            # update time
+            current_time = jnp.asarray(self.get_clock().now().nanoseconds / 1e9)
+            delta = current_time - jnp.asarray(start_time)
+            # multiples of self.dt
+            delta = jnp.floor(delta / self.dt) * self.dt
+            new_time = start_time + delta   
+
+            mjx_data = mjx_data.replace(
+                qpos=new_qpos,
                 qvel=new_qvel,
+                # mocap_pos=new_mocap_pos,
+                # mocap_quat=new_mocap_quat,
+                time=new_time,
             )
-            planning_data = mjx_data
+
+            # resolve upadte discrepancy
+            # mjx_data = jax.lax.fori_loop(
+            #     0, 
+            #     0, 
+            #     lambda i, d: mjx.step(self.ctrl.task.model, d), 
+            #     mjx_data
+            # )
+
+
+            # mjx_data = mjx_data.replace(    
+            #     qvel=new_qvel,
+            # )
+            # planning_data = mjx_data
 
             # --- on device ---
-            new_policy_params, rollouts = ctrl.optimize(planning_data, policy_params)
+            new_policy_params, rollouts = ctrl.optimize(mjx_data, policy_params)
 
             return mjx_data, new_policy_params, rollouts
 
@@ -531,9 +549,10 @@ class FR3_PushT(FrankaPandaServer):
             self.quat_t,
             self.robot_q,
             self.robot_dq,
+            self.start_time
         )
         self.action = self.ctrl.get_action(self.policy_params, 0.0)   
-        # self.actions = np.array(self.policy_params.spline) 
+        self.actions = np.array(self.policy_params.spline) 
         t2 = time.time()
 
 
@@ -577,6 +596,7 @@ class FR3_PushT(FrankaPandaServer):
             f" (Visualization: {t3 - t2:.3f} s)"
         )
         self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
+        self.start_time = self.get_clock().now().nanoseconds / 1e9
     
 
     def _send_command(self):
@@ -593,7 +613,7 @@ class FR3_PushT(FrankaPandaServer):
         idx = np.floor((self.get_clock().now().nanoseconds / 1e9 - self.last_planning_time) / self.ctrl.task.dt)
         action = self.action #self.actions[int(idx)]  # (vx, vy)
         self.get_logger().warn(
-                f"Action: {action}"
+                f"Action: {self.actions}"
             )
         pose_T = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
                            self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
@@ -640,10 +660,21 @@ class FR3_PushT(FrankaPandaServer):
         with self._key_lock:
             vx = self._key_vx
             vy = self._key_vy
+        if self.actions is not None:
+            vel = np.zeros(6)
+            site_id = mujoco.mj_name2id(self.debug_model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
 
-        # self.get_logger().info(
-        #     f"Keyboard command: vx={vx}, vy={vy}"
-        # )
+            mujoco.mj_objectVelocity(
+                self.debug_model,
+                self.debug_data,
+                mujoco.mjtObj.mjOBJ_SITE,
+                site_id,
+                vel,
+                0  # world frame
+            )
+            self.get_logger().warn(
+                    f"ee vel: {vel[:2]}"
+                )
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
     
     def _states_received(self):
@@ -716,7 +747,7 @@ if __name__ == '__main__':
                 beta=0.2,
                 alpha=0.1,
                 temperature=0.1,
-                interpolation='bspline',
+                interpolation='akima',
                 num_randomizations=1,
                 seed=seed,
                 savgol_filter=True,

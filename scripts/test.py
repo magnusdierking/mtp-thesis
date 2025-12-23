@@ -70,8 +70,8 @@ def differential_IK(
 
 
 # xml_path = "./../hydrax/models/g1/scene.xml"
-xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
-# xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_spheres.xml"
+# xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_spheres.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
@@ -202,16 +202,16 @@ def quat_to_yaw(qx, qy, qz, qw):
     return np.arctan2(siny, cosy)
 
 
-eq_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, "sensor_coupling")
-data.eq_active[eq_id] = 0
+# eq_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, "sensor_coupling")
+# data.eq_active[eq_id] = 0
 
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
         # data.ctrl[0] = 0.01 #q
         mujoco.mj_step(model, data)
         # sinusoidal control
-        velocity_x = - 0.2 * np.sin(0.01 * step)
-        velocity_y = -0.002#0.02 * np.sin(0.01 * step)
+        velocity_x = - 0.1 * np.sin(0.03 * step)
+        velocity_y = -0.0005#0.02 * np.sin(0.01 * step)
         dq = differential_IK(
             model,
             data,
@@ -219,11 +219,25 @@ with mujoco.viewer.launch_passive(model, data) as v:
             world_site_vel_desired=np.array([velocity_x, velocity_y]),
             with_null_space=True,
         )
-        data.qvel[np.array(dof_adr)] = dq
+        # data.qvel[np.array(dof_adr)] = dq
+        # data.ctrl[:] = dq  # set control to joint velocity commands
         step += 1
+        vel = np.zeros(6)
+        site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
 
-        sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ}")
+        mujoco.mj_objectVelocity(
+            model,
+            data,
+            mujoco.mjtObj.mjOBJ_SITE,
+            site_id,
+            vel,
+            0  # world frame
+        )
+
+        sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ} | time: {data.time:.4f}s | ee vel: {vel} ")
         sys.stdout.flush()
+
+
         
         # # print site position
         # site_rot = data.site_xmat[site_id1].reshape(3,3)

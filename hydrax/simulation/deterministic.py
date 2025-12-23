@@ -222,7 +222,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     print(f"Time to jit: {time.time() - st:.3f} seconds") 
     
     policy_params, rollouts = jit_optimize(mjx_data, policy_params)
-    # print("Rollouts control shape:", rollouts.controls.shape)
+    print("Rollouts control shape:", rollouts.controls.shape)
     
     num_traces = min(rollouts.controls.shape[0], max_traces)
 
@@ -414,7 +414,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                         mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
                         # Apply the control to the simulation
                     # mj_data.ctrl[:] = np.array(mj_data.qpos[np.array(controller.task.actuator_joint_idxs)])
-                    mj_data.ctrl[:] = np.array(u)
+                    mj_data.ctrl[:] = np.zeros_like(u)#np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
             # data    
