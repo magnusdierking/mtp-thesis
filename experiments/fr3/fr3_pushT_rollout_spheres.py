@@ -89,7 +89,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.6, 0.2, 0.156])   # 0,26
+        self.init_pos = np.array([0.6, 0.2, 0.032])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
         self.init_pos[0] += np.random.uniform(-0.03 , 0.03)   # x

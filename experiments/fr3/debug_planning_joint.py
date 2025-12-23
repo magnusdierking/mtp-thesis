@@ -417,12 +417,12 @@ class FR3_PushT(FrankaPandaServer):
             )
 
             # resolve upadte discrepancy
-            # mjx_data = jax.lax.fori_loop(
-            #     0, 
-            #     0, 
-            #     lambda i, d: mjx.step(self.ctrl.task.model, d), 
-            #     mjx_data
-            # )
+            mjx_data = jax.lax.fori_loop(
+                0, 
+                1, 
+                lambda i, d: mjx.step(self.ctrl.task.model, d), 
+                mjx_data
+            )
 
 
             # mjx_data = mjx_data.replace(    
@@ -552,7 +552,7 @@ class FR3_PushT(FrankaPandaServer):
             self.start_time
         )
         self.action = self.ctrl.get_action(self.policy_params, 0.0)   
-        self.actions = np.array(self.policy_params.spline) 
+        # self.actions = np.array(self.policy_params.spline) 
         t2 = time.time()
 
 
@@ -660,21 +660,21 @@ class FR3_PushT(FrankaPandaServer):
         with self._key_lock:
             vx = self._key_vx
             vy = self._key_vy
-        if self.actions is not None:
-            vel = np.zeros(6)
-            site_id = mujoco.mj_name2id(self.debug_model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
+        # if self.action is not None:
+        #     vel = np.zeros(6)
+        #     site_id = mujoco.mj_name2id(self.debug_model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
 
-            mujoco.mj_objectVelocity(
-                self.debug_model,
-                self.debug_data,
-                mujoco.mjtObj.mjOBJ_SITE,
-                site_id,
-                vel,
-                0  # world frame
-            )
-            self.get_logger().warn(
-                    f"ee vel: {vel[:2]}"
-                )
+        #     mujoco.mj_objectVelocity(
+        #         self.debug_model,
+        #         self.debug_data,
+        #         mujoco.mjtObj.mjOBJ_SITE,
+        #         site_id,
+        #         vel,
+        #         0  # world frame
+        #     )
+        #     self.get_logger().warn(
+        #             f"ee vel: {vel[:2]}"
+        #         )
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
     
     def _states_received(self):
@@ -728,35 +728,35 @@ if __name__ == '__main__':
         ctrl = MPPI(
             task,
             num_samples=num_samples,
-            noise_level=0.3,
-            temperature=0.6,
-            num_randomizations=2,
+            noise_level=0.2,
+            temperature=0.1,
+            num_randomizations=1,
             seed=seed,
         )
     elif args.algorithm == "mtp":
         print("Running MTP")
         ctrl = MTP(
-                task,
-                num_samples=num_samples,
-                M=3, # horizon via control points
-                N=64, # samples 
-                sigma_min=0.15,
-                sigma_max=0.55,
-                num_elites=12,
-                sigma_start=0.3,
-                beta=0.2,
-                alpha=0.1,
-                temperature=0.1,
-                interpolation='akima',
-                num_randomizations=1,
-                seed=seed,
-                savgol_filter=True,
-                shift=True,
-                planning_freq=5,
-                keep_elites=1,
-                default_zero_controls=True,
-                update_cov=False,
-            )
+            task,
+            num_samples=num_samples,
+            M=3, # horizon via control points
+            N=64, # samples 
+            sigma_min=0.15,
+            sigma_max=0.55,
+            num_elites=12,
+            sigma_start=0.3,
+            beta=0.2,
+            alpha=0.1,
+            temperature=0.1,
+            interpolation='bspline',
+            num_randomizations=1,
+            seed=seed,
+            savgol_filter=True,
+            shift=False,
+            planning_freq=5,
+            keep_elites=1,
+            default_zero_controls=False,
+            update_cov=False,
+        )
     
     model = task.mj_model
     data = mujoco.MjData(model)
