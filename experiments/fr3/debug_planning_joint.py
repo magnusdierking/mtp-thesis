@@ -105,7 +105,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.6, -0.2, 0.032])   # 0,26
+        self.init_pos = np.array([0.6, 0.2, 0.032])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
         self.init_pos[0] += np.random.uniform(-0.03 , 0.03)   # x
@@ -695,10 +695,10 @@ class FR3_PushT(FrankaPandaServer):
 if __name__ == '__main__':
     
     rclpy.init()
-    max_speed = 0.3
+    max_speed = 0.35
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=11,
-                    sim_steps_per_control_step=2,
+                    planning_horizon=21,
+                    sim_steps_per_control_step=1,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
@@ -746,11 +746,10 @@ if __name__ == '__main__':
             sigma_start=0.3,
             beta=0.2,
             alpha=0.1,
-            temperature=0.1,
             interpolation='bspline',
             num_randomizations=1,
             seed=seed,
-            savgol_filter=True,
+            savgol_filter=False,
             shift=False,
             planning_freq=5,
             keep_elites=1,

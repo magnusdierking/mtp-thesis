@@ -217,6 +217,7 @@ class MTP(SamplingBasedController):
             # add last_a_index of spline as first control point
             # !! Double Check
             init_sample = jnp.repeat(params.spline[self.last_a_idx][None, None, :], self.nbr_mtp_samples, axis=0)
+            
             control_points = jnp.concatenate(
                 [init_sample, control_points], axis=1
             )

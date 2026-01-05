@@ -529,12 +529,12 @@ class FR3_PushT(FrankaPandaServer):
 if __name__ == '__main__':
     
     rclpy.init()
-
+    max_speed = 0.35  # m/s
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=13,
-                    sim_steps_per_control_step=2,
-                    ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), 
-                                 "u_max": jnp.array([0.45, 0.45])},
+                    planning_horizon=7,
+                    sim_steps_per_control_step=3,
+                    ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
+                                 "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
                     sampling_space="velocity",
                     block_type = 'spheres',
@@ -552,6 +552,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     seed = 42
+    num_samples = 512
 
     # Set the controller based on command-line arguments
     if args.algorithm is None: 
@@ -560,7 +561,7 @@ if __name__ == '__main__':
         print("Running MPPI")
         ctrl = MPPI(
             task,
-            num_samples=1024,
+            num_samples=num_samples,
             noise_level=0.3,
             temperature=0.1,
             num_randomizations=1,
@@ -570,19 +571,19 @@ if __name__ == '__main__':
         print("Running MTP")
         ctrl = MTP(
                 task,
-                num_samples=1024,
+                num_samples=num_samples,
                 M=3, # horizon via control points
                 N=64, # samples 
                 num_elites=12,
                 sigma_min=0.15,
                 sigma_max=0.55,
-                sigma_start=0.3,
-                beta=0.15,
+                sigma_start=0.2,
+                beta=0.25,
                 alpha=0.1,
                 interpolation='bspline',
                 num_randomizations=1,
                 seed=seed,
-                savgol_filter=False,
+                savgol_filter=True,
                 keep_elites=1,
                 default_zero_controls=True,
                 update_cov=False,

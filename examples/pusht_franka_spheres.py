@@ -79,32 +79,32 @@ seed = 445
 update_cov = False
 sigma_max = 0.55
 sigma_min = 0.15
-sigma_start = 0.1
-# det_init = {
-#     "block_pos_x": 0.1 + np.random.uniform(-0.05, 0.05),
-#     "block_pos_y": 0.1 + np.random.uniform(-0.05, 0.05),
-#     "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/8, np.pi/8),
-#     "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
-#                     0.1 + np.random.uniform(-0.05, 0.05), 
-#                     0.032]
-# }
+sigma_start = 0.2
 det_init = {
-    "block_pos_x": 0.1 ,
-    "block_pos_y": 0.1 ,
-    "block_angle": 3*np.pi/4 ,
-    "ee_goal_pos": [0.6 , 
-                    -0.2 , 
+    "block_pos_x": -0.1 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": 0.3 + np.random.uniform(-0.05, 0.05),
+    "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/10, np.pi/10),
+    "ee_goal_pos": [0.6 + np.random.uniform(-0.05, 0.05), 
+                    0.2 + np.random.uniform(-0.05, 0.05), 
                     0.032]
 }
+# det_init = {
+#     "block_pos_x": 0.1 ,
+#     "block_pos_y": 0.1 ,
+#     "block_angle": 3*np.pi/4 ,
+#     "ee_goal_pos": [0.6 , 
+#                     -0.2 , 
+#                     0.032]
+# }
 
 
 
 # Define the task (cost and dynamics)
 #velocity control
-max_speed = 0.3
+max_speed = 0.35
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=11,
-                    sim_steps_per_control_step=2,
+                    planning_horizon=21,
+                    sim_steps_per_control_step=1,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     trace_sites=["ee_site"],
@@ -138,7 +138,7 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 1048
+num_samples = 512
 num_randomizations = 1
 
 
@@ -194,17 +194,17 @@ elif args.algorithm == "mtp":
         sigma_min=sigma_min,
         sigma_max=sigma_max,
         sigma_start=sigma_start,
-        num_elites=24,
-        beta=0.25,
+        num_elites=12,
+        beta=0.2,
         alpha=0.1,
         interpolation='bspline',
         num_randomizations=num_randomizations,
         seed=seed,
         update_cov=update_cov,
         savgol_filter=True,
-        shift=True,
+        shift=False,
         planning_freq=10,
-        default_zero_controls=True,
+        default_zero_controls=False,
     )
     error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
     

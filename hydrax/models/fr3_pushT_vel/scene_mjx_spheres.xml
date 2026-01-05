@@ -1,13 +1,12 @@
 <mujoco model="fr3 scene">
   <!-- NUmerical Stuff -->
-  <option impratio="1.2"
+  <option impratio="2.0"
           solver="Newton"
           jacobian="dense"
-          cone="pyramidal"
+          cone="elliptic"
           timestep="0.025" 
           iterations="6"
-          ls_iterations="9"
-          ls_tolerance="0.0001">
+          ls_iterations="8">
   <flag eulerdamp="enable" 
         warmstart="enable"/>
   </option>
@@ -27,10 +26,10 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="1.0 1.00 0.000" 
+      <geom friction="0.3 0.005 0.0001" 
             solref="0.04 1.0" 
             margin="0.00001"
-            solimp="0.8 0.99 0.005"
+            solimp="0.95 0.99 0.001"
             condim="3"
             contype="2" 
             conaffinity="5"/>  
@@ -58,7 +57,7 @@
     <camera name="video_view" pos="1.455 -0.774 1.133" xyaxes="0.469 0.883 0.000 -0.500 0.266 0.824"/>
 
 
-      <body name="goal" mocap="true" pos="0.45 0.0 0.009" quat="1 0 0 -1">
+      <body name="goal" mocap="true" pos="0.5 0.0 0.009" quat="1 0 0 -1">
         <geom class="goal" name="goal_bottom" type="box" size=".025 0.05 0.025"/>
         <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
       </body>
@@ -150,9 +149,9 @@
   <worldbody>
     <light pos="0 1 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="0 0 0.05" 
-          solref="0.08 1"
-          solimp="0.55 0.99 0.001"
-          material="groundplane" friction="0.5 0.000 0.0000" condim="3"
+          solref="0.05 1"
+          solimp="0.95 0.95 0.001"
+          material="groundplane" friction="0.3 0.005 0.0001" condim="3"
           contype="4" conaffinity="3"/>  
   </worldbody>
 </mujoco>
