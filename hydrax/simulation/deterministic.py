@@ -414,7 +414,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                         mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
                         # Apply the control to the simulation
                     # mj_data.ctrl[:] = np.array(mj_data.qpos[np.array(controller.task.actuator_joint_idxs)])
-                    mj_data.ctrl[:] = np.zeros_like(u)#np.array(u)
+                    mj_data.ctrl[:] = np.zeros_like(np.array(u))
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
             # data    

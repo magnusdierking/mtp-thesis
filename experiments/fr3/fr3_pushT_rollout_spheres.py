@@ -165,6 +165,9 @@ class FR3_PushT(FrankaPandaServer):
 
         # Do a forward once (host side is fine here)
         self.mjx_data = mjx.forward(self.ctrl.task.model, self.mjx_data)
+        self.dt = self.ctrl.task.mj_model.opt.timestep
+        self.time_per_command = self.ctrl.task.dt  
+        
 
         # Make unified jitted step function
         self.jit_step = self.make_jitted_step(ctrl)
@@ -175,7 +178,8 @@ class FR3_PushT(FrankaPandaServer):
         # One call to transfer mjx_data & policy_params to GPU and compile
         self.jit_step = self.jit_step.lower(
             self.mjx_data, self.policy_params,
-            self.lin_t, self.quat_t, self.robot_q, self.robot_dq
+            self.lin_t, self.quat_t, self.robot_q, self.robot_dq,
+            self.get_clock().now().nanoseconds / 1e9
         ).compile()
         
         # warmstart simulation
@@ -186,7 +190,8 @@ class FR3_PushT(FrankaPandaServer):
         for _ in range(5):
             self.mjx_data, self.policy_params = self.jit_step(
                 self.mjx_data, self.policy_params,
-                self.lin_t, self.quat_t, self.robot_q, self.robot_dq
+                self.lin_t, self.quat_t, self.robot_q, self.robot_dq,
+                self.get_clock().now().nanoseconds / 1e9
             )
         
         self.get_logger().info(f"Time to jit and warmstart: {time.time() - st:.3f} s")
@@ -195,20 +200,19 @@ class FR3_PushT(FrankaPandaServer):
         ##           Start Timer          ##    
         ####################################
         self.finished_task = False
-        self.servo_freq = 50  # Hz
+        self.servo_freq = 30  # Hz
         self.plan_freq = 10
         self.action = None
-        self.start_time = self.get_clock().now().nanoseconds / 1e9
-        
+        self.actions = None
 
         # Logs 
         self.log = []
         
         # self.servo_group = ReentrantCallbackGroup()
         self.sim_group = MutuallyExclusiveCallbackGroup()
-
+        self.start_time = self.get_clock().now().nanoseconds / 1e9
+        self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
         self.create_timer(1.0 / self.plan_freq, self._run_controller, callback_group=self.sim_group)
-        time.sleep(0.2)
         self.create_timer(1.0 / self.servo_freq, self._send_command, callback_group=self.parallel_group)
         
 
@@ -270,7 +274,8 @@ class FR3_PushT(FrankaPandaServer):
 
         def step(mjx_data, policy_params,
                  lin_t, quat_t,
-                 robot_q, robot_dq):
+                 robot_q, robot_dq,
+                 start_time):
             """
             mjx_data, policy_params: persistent state (kept on device)
             lin_t: (3,) position (np or jnp)
@@ -327,22 +332,23 @@ class FR3_PushT(FrankaPandaServer):
                 robot_dq[6],
             ], dtype=jnp.float32))
 
+            # update time
+            current_time = jnp.asarray(self.get_clock().now().nanoseconds / 1e9)
+            delta = current_time - jnp.asarray(start_time)
+            # multiples of self.dt
+            delta = jnp.floor(delta / self.dt) * self.dt
+            new_time = start_time + delta   
+
             mjx_data = mjx_data.replace(
                 qpos=new_qpos,
                 qvel=new_qvel,
                 # mocap_pos=new_mocap_pos,
                 # mocap_quat=new_mocap_quat,
+                time=new_time,
             )
-            # resolve upadte discrepancy
-            mjx_data = jax.lax.fori_loop(
-                0, 
-                3, 
-                lambda i, d: mjx.step(self.ctrl.task.model, d), 
-                mjx_data
-            )
-            planning_data = mjx_data
-
+            
             # --- on device ---
+            planning_data = mjx_data
             new_policy_params, rollouts = ctrl.optimize(planning_data, policy_params)
 
             return mjx_data, new_policy_params
@@ -441,6 +447,7 @@ class FR3_PushT(FrankaPandaServer):
             self.quat_t,
             self.robot_q,
             self.robot_dq,
+            self.start_time
         )
         self.action = self.ctrl.get_action(self.policy_params, 0.0)
         self.actions = np.array(self.policy_params.spline) #self.ctrl.get_action(self.policy_params, 0.0)   
@@ -450,7 +457,7 @@ class FR3_PushT(FrankaPandaServer):
             f"Controller step time: {t2 - t1:.3f} s"
             f" (State update: {t1 - t0:.3f} s)"
         )
-        self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
+        
         self.log.append({
             'time': self.last_planning_time- self.start_time,
             'planning_time': t2 - t1,
@@ -459,6 +466,8 @@ class FR3_PushT(FrankaPandaServer):
             'object_pos': self.lin_t.tolist(),
             'object_quat': self.quat_t.tolist(),
         })
+        self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
+        self.start_time = self.get_clock().now().nanoseconds / 1e9
 
 
     def _send_command(self):
@@ -472,11 +481,13 @@ class FR3_PushT(FrankaPandaServer):
                 "No action available to send."
             )
             return
-        idx = np.floor((self.get_clock().now().nanoseconds / 1e9 - self.last_planning_time) / self.ctrl.task.dt)
-        action = self.actions[int(idx)]  # (vx, vy)
+        curr_time = self.get_clock().now().nanoseconds / 1e9
+        idx = np.floor((curr_time - self.last_planning_time) / self.time_per_command)
         self.get_logger().warn(
-                f"Action: {action}"
+                f"Current time: {curr_time - self.last_planning_time:.6f} s, "
+                f"Action index: {idx}"
             )
+        action = self.action #self.actions[int(idx)]  # (vx, vy)
         pose_T = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
                            self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
       
@@ -504,9 +515,7 @@ class FR3_PushT(FrankaPandaServer):
         else:
             vx = 1.0 * float(action[0])
             vy = 1.0 * float(action[1])
-            self.get_logger().warn(
-                f"Action: {self.action}"
-            )
+
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
         #self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
 
@@ -531,8 +540,8 @@ if __name__ == '__main__':
     rclpy.init()
     max_speed = 0.35  # m/s
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=7,
-                    sim_steps_per_control_step=3,
+                    planning_horizon=21,
+                    sim_steps_per_control_step=1,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
@@ -585,7 +594,7 @@ if __name__ == '__main__':
                 seed=seed,
                 savgol_filter=True,
                 keep_elites=1,
-                default_zero_controls=True,
+                default_zero_controls=False,
                 update_cov=False,
             )
     

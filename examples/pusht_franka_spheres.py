@@ -82,7 +82,7 @@ sigma_min = 0.15
 sigma_start = 0.2
 det_init = {
     "block_pos_x": -0.1 + np.random.uniform(-0.05, 0.05),
-    "block_pos_y": 0.3 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": 0.1 + np.random.uniform(-0.05, 0.05),
     "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/10, np.pi/10),
     "ee_goal_pos": [0.6 + np.random.uniform(-0.05, 0.05), 
                     0.2 + np.random.uniform(-0.05, 0.05), 
@@ -195,7 +195,7 @@ elif args.algorithm == "mtp":
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=12,
-        beta=0.2,
+        beta=0.35,
         alpha=0.1,
         interpolation='bspline',
         num_randomizations=num_randomizations,

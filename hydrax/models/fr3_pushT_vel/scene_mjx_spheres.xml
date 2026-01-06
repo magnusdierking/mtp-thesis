@@ -1,10 +1,10 @@
 <mujoco model="fr3 scene">
   <!-- NUmerical Stuff -->
-  <option impratio="2.0"
+  <option impratio="0.5"
           solver="Newton"
           jacobian="dense"
           cone="elliptic"
-          timestep="0.025" 
+          timestep="0.015" 
           iterations="6"
           ls_iterations="8">
   <flag eulerdamp="enable" 
@@ -27,9 +27,10 @@
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
       <geom friction="0.3 0.005 0.0001" 
-            solref="0.04 1.0" 
-            margin="0.00001"
-            solimp="0.95 0.99 0.001"
+            solref="0.04 0.9" 
+            margin="0.001"
+            gap="0.0005"
+            solimp="0.7 0.95 0.001 0.5 2"
             condim="3"
             contype="2" 
             conaffinity="5"/>  
@@ -62,9 +63,9 @@
         <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
       </body>
 
-      <!-- <body name="ghost_sphere" mocap="true" pos="0.5 0.0 0.035" quat="0 0.7071068 0.7071068 0">
-        <site type="sphere" size="0.32" rgba="0 1 0 0.05"/>
-      </body> -->
+      <body name="ghost_sphere" mocap="true" pos="0.5 0.0 0.035" quat="0 0.7071068 0.7071068 0">
+        <site type="sphere" size="0.4" rgba="0 1 0 0.05"/>
+      </body>
 
       <body name="block" pos="0.4 0.0 0.025" quat="1 0 0 -1" >
         <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" frictionloss="0.0" damping="0.0"/>
@@ -119,9 +120,9 @@
 
   <equality>
     <!-- (Linear) equality constraint for end effector -->
-    <!-- <connect site1="ee_site" site2="sphere_site"
+    <connect site1="ee_site" site2="sphere_site"
              solref="0.04 1.0" 
-             solimp="0.9 0.99 0.001 0.1 3.0"/> -->
+             solimp="0.9 0.99 0.001 0.1 3.0"/>
     <!-- Full 6 DoF equality MoCAP vs free object -->
     <!-- <weld name="sensor_coupling" body1="block" body2="ghost_block" solref="0.055 1" solimp="0.9 0.99 0.001"/> -->
   </equality>
@@ -149,9 +150,9 @@
   <worldbody>
     <light pos="0 1 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="0 0 0.05" 
-          solref="0.05 1"
-          solimp="0.95 0.95 0.001"
-          material="groundplane" friction="0.3 0.005 0.0001" condim="3"
+          solref="0.04 0.95"
+          solimp="0.7 0.95 0.001 0.5 2"
+          material="groundplane" friction="0.4 0.005 0.0001" condim="3"
           contype="4" conaffinity="3"/>  
   </worldbody>
 </mujoco>

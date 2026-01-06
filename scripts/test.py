@@ -102,7 +102,13 @@ for i in range(model.njnt):
 for i in range(model.nsite):
     name = model.site(i).name
     print(f"Site {i}: {name}")
-    
+
+for bid in range(model.nbody):
+    mocap_id = model.body_mocapid[bid]
+    if mocap_id >= 0:
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+        print(f"mocap_id={mocap_id}, body_id={bid}, name={name}")
+
 # actuatros
 print("Number of actuators:", model.nu)
     # for i in range(model.ngeom):

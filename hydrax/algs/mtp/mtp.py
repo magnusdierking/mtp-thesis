@@ -209,7 +209,7 @@ class MTP(SamplingBasedController):
             )
             # sample points from the graph
             rng, sample_rng = jax.random.split(rng)
-            layer_indices = jax.random.randint(sample_rng, (self.nbr_mtp_samples, self.M), 0, self.N - 1)
+            layer_indices = jax.random.randint(sample_rng, (self.nbr_mtp_samples, self.M), 0, self.N -1)
             def get_path(path_id: jax.Array) -> jax.Array:
                 return control_points[jnp.arange(self.M), path_id]
             control_points = jax.vmap(get_path)(layer_indices)
