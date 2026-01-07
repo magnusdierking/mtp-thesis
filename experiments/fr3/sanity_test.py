@@ -11,7 +11,7 @@ from mujoco import mjx
 
 from hydrax.algs import MPPI, MTP, AnMTP
 from hydrax.alg_base import SamplingBasedController
-from hydrax.tasks.pusht_franka_free import PushTFranka
+from hydrax.tasks.pusht_franka import PushTFranka
 
 
 def make_jitted_step(ctrl):

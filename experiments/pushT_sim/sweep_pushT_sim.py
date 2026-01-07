@@ -7,7 +7,7 @@ from hydrax.algs import MPPI, MTP, CEM
 from hydrax.utils.files import get_data_path
 from hydrax.algs.mtp.an_mtp_dr import AnMTP
 from deterministic_headless_pushT_sweep import run_headless_simulation
-from hydrax.tasks.pusht_franka import PushTFranka
+from hydrax.tasks.pusht_franka_old import PushTFranka
 
 """
 Run an interactive simulation of the push-T task with predictive sampling.

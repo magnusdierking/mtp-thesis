@@ -6,7 +6,7 @@ import argparse
 from math import sin, cos
 
 from hydrax.algs import MPPI, MTP, AnMTP
-from hydrax.tasks.pusht_franka_free import PushTFranka
+from hydrax.tasks.pusht_franka import PushTFranka
 
 from hydrax.alg_base import SamplingBasedController
 

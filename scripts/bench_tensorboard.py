@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from mujoco import mjx
 
-from hydrax.tasks.pusht_franka import PushTFranka
+from hydrax.tasks.pusht_franka_old import PushTFranka
 from hydrax.algs import MTP
 
 def main():

@@ -9,7 +9,7 @@ from hydrax.simulation.deterministic import run_interactive
 # from hydrax.simulation.deterministic_dr import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
 
-from hydrax.tasks.pusht_franka_free import PushTFranka
+from hydrax.tasks.pusht_franka import PushTFranka
 import jax
 import jax.numpy as jnp
 import numpy as np

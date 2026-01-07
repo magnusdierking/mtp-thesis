@@ -2,7 +2,7 @@ from pyexpat import model
 import time
 import numpy as np
 from hydrax.simulation.asynchronous import run_interactive
-from hydrax.tasks.pusht_franka import PushTFranka
+from hydrax.tasks.pusht_franka_old import PushTFranka
 import mujoco
 import jax.numpy as jnp
 import jax.scipy as jsp

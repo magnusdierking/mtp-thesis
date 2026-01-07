@@ -8,7 +8,7 @@ from math import sin, cos
 
 from hydrax.algs import MPPI, MTP, AnMTP
 from hydrax.utils.utils import se3_left_invariant_metric
-from hydrax.tasks.pusht_franka_free import PushTFranka
+from hydrax.tasks.pusht_franka import PushTFranka
 
 from hydrax.alg_base import SamplingBasedController
 
@@ -856,7 +856,7 @@ if __name__ == '__main__':
                                  "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    block_type = 'spheres',
+                    block_type = 'sim-real',
                 )
     
     # Parse command-line arguments

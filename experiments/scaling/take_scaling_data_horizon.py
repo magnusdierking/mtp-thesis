@@ -6,7 +6,7 @@ from hydrax.utils.files import get_data_path
 from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
 
 
-from hydrax.tasks.pusht_franka import PushTFranka
+from hydrax.tasks.pusht_franka_old import PushTFranka
 import jax
 import jax.numpy as jnp
 import numpy as np
