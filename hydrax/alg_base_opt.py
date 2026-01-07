@@ -293,7 +293,7 @@ class SamplingBasedController(ABC):
                     return mjx.step(model, x_pre)
             else:
                 def _micro_step(i, x_cur):
-                    x_pre = x_cur.replace(qfrc_applied=self._qfrc0, xfrc_applied=self._xfrc0)
+                    x_pre = x_cur#.replace(qfrc_applied=self._qfrc0, xfrc_applied=self._xfrc0)
                     return mjx.step(model, x_pre)
 
             x_next = jax.lax.fori_loop(0, sim_steps, _micro_step, x.replace(ctrl=u_mapped))

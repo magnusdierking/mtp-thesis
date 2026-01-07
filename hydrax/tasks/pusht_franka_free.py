@@ -142,7 +142,7 @@ class PushTFranka(Task):
         self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, -1.0])  # [w, x, y, z]
         # initial end effector
         self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-        self.goal_pos_ee = jnp.array([0.3, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
+        self.goal_pos_ee = jnp.array([0.3, 0.0, 0.03]) #np.array([0.3, 0.0, 0.05])
 
         self.det_init = det_init
 
@@ -491,8 +491,8 @@ class PushTFranka(Task):
 
             # Commanded planar twist + corrective twist
             twist_cmd = jnp.concatenate([control_xy, jnp.zeros(4)])     # [vx, vy, 0, 0, 0, 0]
-            temp = jnp.concatenate([control_xy, jnp.array([0.035-ee_pos[2]])]) #!
-            # temp = jnp.concatenate([control_xy, jnp.array([0.0])])
+            # temp = jnp.concatenate([control_xy, jnp.array([0.03-ee_pos[2]])]) #!
+            temp = jnp.concatenate([control_xy, jnp.array([0.0])])
             twist_err = jnp.concatenate([temp, e_rot])                 # [ex, ey, ez, ewx, ewy, ewz]
             twist = twist_cmd # twist_err
 
@@ -503,12 +503,12 @@ class PushTFranka(Task):
             qnow = qpos[jnp.array(self.actuator_joint_idxs )]
             qhome = jnp.array([ 0.51199203,  0.1014329,  -0.36340348, -2.9813132,   0.50339095,  3.06692214, -1.92271156])
 
-            dq = jnp.linalg.pinv(J) @ twist_err + N @ (kp_ori * (qhome - qnow))
+            dq = jnp.linalg.pinv(J) @ twist_err #+ N @ (kp_ori * (qhome - qnow))
 
             if self.sampling_space == 'position':
                 return qpos[self.actuator_joint_idxs] + self.mj_model.opt.timestep * dq
             elif self.sampling_space == 'velocity':
-                return dq
+                return dq 
 
 
         if type == 'transpose':

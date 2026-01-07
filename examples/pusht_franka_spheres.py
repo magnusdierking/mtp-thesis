@@ -103,8 +103,8 @@ det_init = {
 #velocity control
 max_speed = 0.35
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=21,
-                    sim_steps_per_control_step=1,
+                    planning_horizon=12,
+                    sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     trace_sites=["ee_site"],

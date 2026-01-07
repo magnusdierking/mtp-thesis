@@ -1,10 +1,10 @@
 <mujoco model="fr3 scene">
   <!-- NUmerical Stuff -->
-  <option impratio="0.5"
+  <option impratio="0.75"
           solver="Newton"
           jacobian="dense"
           cone="elliptic"
-          timestep="0.015" 
+          timestep="0.02" 
           iterations="6"
           ls_iterations="8">
   <flag eulerdamp="enable" 
@@ -26,11 +26,11 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="0.3 0.005 0.0001" 
+      <geom friction="0.1 0.001 0.0001" 
             solref="0.04 0.9" 
             margin="0.001"
             gap="0.0005"
-            solimp="0.7 0.95 0.001 0.5 2"
+            solimp="0.9 0.95 0.001 0.5 2"
             condim="3"
             contype="2" 
             conaffinity="5"/>  
@@ -152,7 +152,7 @@
     <geom name="floor" type="plane" size="0 0 0.05" 
           solref="0.04 0.95"
           solimp="0.7 0.95 0.001 0.5 2"
-          material="groundplane" friction="0.4 0.005 0.0001" condim="3"
+          material="groundplane" friction="0.1 0.001 0.0001" condim="3"
           contype="4" conaffinity="3"/>  
   </worldbody>
 </mujoco>

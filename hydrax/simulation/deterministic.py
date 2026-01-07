@@ -313,12 +313,18 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
             # Set the start state for the controller
             mjx_data = mjx_data.replace(
-                qpos=jnp.array(mj_data.qpos),
-                qvel=jnp.array(mj_data.qvel),
+                # qpos=jnp.array(mj_data.qpos),
+                # qvel=jnp.array(mj_data.qvel),
+                qpos=jnp.array([-0.03134813,  0.1419768,   0.55034316,  1.09894979,  0.9341616,  -0.84321517,
+ -1.80435085,  0.9232738,   2.29301023, -0.20952459,  0.,         0.        ]),
+                qvel=jnp.array( [ 0.,          0.,          0.,         -0.00073988, -0.00054125,  0.00021019,
+  0.00040294, -0.00051776, -0.00104753,  0.00055801,  0.,         0.        ])*0,
                 mocap_pos=jnp.array(mj_data.mocap_pos),
                 mocap_quat=jnp.array(mj_data.mocap_quat),
                 time=mj_data.time,
             )
+            print("qpos:", mj_data.qpos)
+            print("qvel:", mj_data.qvel)
 
 
             # Do a replanning step

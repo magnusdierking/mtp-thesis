@@ -259,6 +259,8 @@ class MTP(SamplingBasedController):
             else:
                 raise ValueError(f"Invalid sampling strategy: {self.interpolation}")
             # controls = jnp.concatenate([controls, mtp_controls], axis=0)
+            # mtp_controls_full = mtp_controls_full.at[... , 0].set(0.0)  # 
+            # mtp_controls_full = mtp_controls_full.at[... , 1].set(0.5)  #
             out = out.at[1:1+self.nbr_mtp_samples].set(mtp_controls_full)
 
         if self.nbr_mppi_samples > 0:

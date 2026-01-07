@@ -105,7 +105,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         
-        self.init_pos = np.array([0.6, 0.2, 0.032])   # 0,26
+        self.init_pos = np.array([0.6, 0.2, 0.03])   # 0,26
         # self.init_pos = np.array([0.5, 0.0, 0.255])   # 0,26
         # add small noise: keep x small, increase variance in y
         self.init_pos[0] += np.random.uniform(-0.03 , 0.03)   # x
@@ -465,14 +465,14 @@ class FR3_PushT(FrankaPandaServer):
 
     def make_jitted_step_2(self, ctrl):
 
-        def step(mjx_data, policy_params, q, dq, mocap_pos, mocap_quat, start_time):
+        def step(mjx_data, policy_params, q, dq, mocap_pos, mocap_quat, curr_time):
             
             mjx_data = mjx_data.replace(
                 qpos=jnp.array(q),
                 qvel=jnp.array(dq),
                 mocap_pos=jnp.array(mocap_pos),
                 mocap_quat=jnp.array(mocap_quat),
-                time=start_time,
+                time=curr_time,
             )
             mjx_data = mjx.forward(self.ctrl.task.model, mjx_data)
             planning_data = mjx_data
@@ -480,7 +480,7 @@ class FR3_PushT(FrankaPandaServer):
             # --- on device ---
             new_policy_params, rollouts = ctrl.optimize(planning_data, policy_params)
 
-            return mjx_data,new_policy_params, rollouts
+            return mjx_data, new_policy_params, rollouts
 
         return jax.jit(step, donate_argnums=(1,))
 
@@ -609,9 +609,9 @@ class FR3_PushT(FrankaPandaServer):
                                               ])
         self.debug_data.qpos[3:-2] = self.robot_q
         self.debug_data.qvel[3:-2] = self.robot_dq
-        for _ in range(1):
-             mujoco.mj_step(self.debug_model, self.debug_data)
-
+        # for _ in range(1):
+        #      mujoco.mj_step(self.debug_model, self.debug_data)
+        mujoco.mj_forward(self.debug_model, self.debug_data)
         ii = 0
         colors = np.array([
             [0.25, 0.0, 0.0, 0.4],
@@ -678,8 +678,15 @@ class FR3_PushT(FrankaPandaServer):
                                               np_yaw_from_quat(x=self.quat_t[0], y=self.quat_t[1], z=self.quat_t[2], w=self.quat_t[3])
                                               ])
         self.debug_data.qpos[3:-2] = self.robot_q
+#         self.debug_data.qpos = [-0.05763561,  0.12941449,  2.46759872,  0.58360135,  0.6057462,  -0.17907997, -1.992412,    0.19228531,  2.58215909, -1.29849313,  0.23575178,  0.10676836]
+#         self.debug_data.qvel[ 0.00000000e+00  0.00000000e+00  0.00000000e+00 -9.67995420e-11
+#   8.92347448e-07  3.99950130e-07 -1.64096773e-06  1.26333498e-10
+#  -1.00697099e-06 -2.13044990e-12 -3.82332934e-07 -1.30720732e-06]
         self.debug_data.qvel[3:-2] = self.robot_dq
         self.debug_data.time = current_time
+
+        # print("Robot q:", self.debug_data.qpos)
+        # print("Robot dq:", self.debug_data.qvel)
 
         mujoco.mj_forward(self.debug_model, self.debug_data)
         # for _ in range(1):
@@ -720,7 +727,7 @@ class FR3_PushT(FrankaPandaServer):
                         rollouts.trace_sites[0, i, j, k, :3],        # ! 
                         rollouts.trace_sites[0, i, j + 1, k, :3],    # !
                     )
-                    geom.rgba[:] = colors[k, :]
+                    # geom.rgba[:] = colors[k, :]
                     ii += 1
 
         t3 = time.time()
@@ -843,8 +850,8 @@ if __name__ == '__main__':
     rclpy.init()
     max_speed = 0.35
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=21,
-                    sim_steps_per_control_step=1,
+                    planning_horizon=12,
+                    sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
@@ -863,7 +870,7 @@ if __name__ == '__main__':
     subparsers.add_parser("mtp", help="MTP")
     args = parser.parse_args()
 
-    seed = 42
+    seed = 12
     num_samples = 256
 
     # Set the controller based on command-line arguments
@@ -890,7 +897,7 @@ if __name__ == '__main__':
             sigma_max=0.55,
             num_elites=12,
             sigma_start=0.2,
-            beta=0.1,
+            beta=0.7,
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,
@@ -908,9 +915,9 @@ if __name__ == '__main__':
 
     with mujoco.viewer.launch_passive(model, data) as v:
       
-        num_traces = 10
-        trace_idxs = [0]
-        trace_idxs.extend( [i * (num_samples // (num_traces -1)) for i in range(1, num_traces -1)] )
+        num_traces = 12
+        trace_idxs = np.linspace(0, num_samples -1, num=num_traces, dtype=int).tolist()
+        # trace_idxs.extend( [i * (num_samples // (num_traces -1)) for i in range(1, num_traces -1)] )
         # trace_idxs = [i * num_traces for i in range( num_samples // num_traces)]  
         print("Indexes of traces to visualize:", trace_idxs)
         # first 50 samples
