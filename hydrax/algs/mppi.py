@@ -24,7 +24,7 @@ class MPPIParams:
         rng: The pseudo-random number generator key.
     """
     rng: jax.Array
-    mean: jax.Array
+    spline: jax.Array
 
 
 class MPPI(SamplingBasedController):
@@ -90,8 +90,8 @@ class MPPI(SamplingBasedController):
     def init_params(self, seed: int = 0) -> MPPIParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
-        mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
-        return MPPIParams(mean=mean, rng=rng)
+        spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
+        return MPPIParams(spline=spline, rng=rng)
 
     def sample_controls(
         self, params: MPPIParams
@@ -99,7 +99,6 @@ class MPPI(SamplingBasedController):
         """Sample a control sequence."""
         if self.shift:
             params = params.replace(
-                mean=shift_tensor(params.mean, self.last_a_idx+1),
                 spline=shift_tensor(params.spline, self.last_a_idx+1),
             )
         rng, sample_rng = jax.random.split(params.rng)
@@ -114,7 +113,7 @@ class MPPI(SamplingBasedController):
         # colorize noise
         if self.colorize_noise:
             noise = colorize_time_series(noise, remove_dc=False, alpha_noise=self.alpha_noise) # !experimental
-        controls = params.mean + self.noise_level * noise
+        controls = params.spline + self.noise_level * noise
         
         # default zero controls
         if self.default_zero_controls:
@@ -135,14 +134,14 @@ class MPPI(SamplingBasedController):
         costs = jnp.sum(rollouts.costs, axis=1)  # sum over time steps
         # N.B. jax.nn.softmax takes care of details like baseline subtraction.
         weights = jnp.nan_to_num(jax.nn.softmax(-costs / self.temperature, axis=0))
-        mean = jnp.sum(weights[:, None, None] * rollouts.controls, axis=0)
-        mean = mean + self.alpha * (params.mean - mean)
-        return params.replace(mean=mean)
+        spline = jnp.sum(weights[:, None, None] * rollouts.controls, axis=0)
+        spline = spline + self.alpha * (params.spline - spline)
+        return params.replace(spline=spline)
 
     def get_action(self, params: MPPIParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""
         idx_float = t / self.task.dt 
         idx = jnp.floor(idx_float).astype(jnp.int32)
-        action = params.mean[idx]
+        action = params.spline[idx]
         return action
     

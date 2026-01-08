@@ -5,6 +5,7 @@ import copy
 from pprint import pformat
 import argparse
 from math import sin, cos
+from xml.parsers.expat import model
 
 from hydrax.algs import MPPI, MTP, AnMTP
 from hydrax.utils.utils import se3_left_invariant_metric
@@ -68,6 +69,9 @@ class FR3_PushT(FrankaPandaServer):
         )
         self.ctrl = ctrl
         self.seed = seed
+
+        self.mj_model = self.ctrl.task.mj_model
+        self.mj_data = mujoco.MjData(self.mj_model)
         
         ####################################
         ##    MoveIt Safety Constraints   ##    
@@ -178,20 +182,33 @@ class FR3_PushT(FrankaPandaServer):
         self.dt = self.ctrl.task.mj_model.opt.timestep
 
         # Make unified jitted step function
-        self.jit_step = self.make_jitted_step(ctrl)
+        self.jit_step = self.make_jitted_step_2(ctrl)
 
         self.get_logger().info("Jitting controller...")
         st = time.time()
+        self.mj_data.qpos[[0, 1, 2]] = np.array([-self.lin_t[1],
+                                              self.lin_t[0] - 0.4,
+                                              np_yaw_from_quat(x=self.quat_t[0], y=self.quat_t[1], z=self.quat_t[2], w=self.quat_t[3])
+                                              ])
+        self.mj_data.qpos[3:-2] = self.robot_q
+        self.mj_data.qvel[3:-2] = self.robot_dq
+        self.mj_data.time = self.get_clock().now().nanoseconds / 1e9
+        # update sites etc.
+        mujoco.mj_forward(self.ctrl.task.mj_model, self.mj_data)
 
         # One call to transfer mjx_data & policy_params to GPU and 
         # JIT compile
-        self.jit_step = self.jit_step.lower(
-            self.mjx_data, self.policy_params,
-            self.lin_t, self.quat_t,
-            self.robot_q, self.robot_dq,
-            self.get_clock().now().nanoseconds / 1e9
-        ).compile()
-        
+        self.mjx_data, self.policy_params, rollouts = self.jit_step(
+            self.mjx_data,
+            self.policy_params,
+            self.mj_data.qpos,
+            self.mj_data.qvel,
+            self.mj_data.mocap_pos,
+            self.mj_data.mocap_quat,
+            self.mj_data.time    
+        )
+        self.action = self.ctrl.get_action(self.policy_params, 0.0)   
+        self.actions = np.array(self.policy_params.spline) 
         # warmstart simulation
         for _ in range(5):
             self.mjx_data = mjx.step(self.ctrl.task.model, self.mjx_data)
@@ -223,7 +240,7 @@ class FR3_PushT(FrankaPandaServer):
         self.sim_group = MutuallyExclusiveCallbackGroup()
 
         self.start_time = self.last_planning_time =self.get_clock().now().nanoseconds / 1e9
-        self.create_timer(1.0 / self.plan_freq, self._run_controller, callback_group=self.sim_group)
+        self.create_timer(1.0 / self.plan_freq, self._run_controller_2, callback_group=self.sim_group)
         self.create_timer(1.0 / self.servo_freq, self._send_keyboard_command, callback_group=self.parallel_group)
 
 
@@ -377,8 +394,7 @@ class FR3_PushT(FrankaPandaServer):
                 robot_q[5],
                 robot_q[6],
             ], dtype=jnp.float32))
-            # zero velocit
-            # new_qvel = mjx_data.qvel.at[:].set(jnp.zeros(mjx_data.qvel[:].shape, dtype=jnp.float32))
+    
             new_qvel = mjx_data.qvel.at[3:-2].set(jnp.array([
                 robot_dq[0],
                 robot_dq[1],
@@ -403,6 +419,27 @@ class FR3_PushT(FrankaPandaServer):
 
         return jax.jit(step, donate_argnums=(1,))
 
+    def make_jitted_step_2(self, ctrl):
+
+        def step(mjx_data, policy_params, q, dq, mocap_pos, mocap_quat, curr_time):
+            
+            mjx_data = mjx_data.replace(
+                qpos=jnp.array(q),
+                qvel=jnp.array(dq),
+                mocap_pos=jnp.array(mocap_pos),
+                mocap_quat=jnp.array(mocap_quat),
+                time=curr_time,
+            )
+            mjx_data = mjx.forward(self.ctrl.task.model, mjx_data)
+            planning_data = mjx_data
+
+            # --- on device ---
+            new_policy_params, rollouts = ctrl.optimize(planning_data, policy_params)
+
+            return mjx_data, new_policy_params, rollouts
+
+        return jax.jit(step, donate_argnums=(1,))
+    
 
     def _update_T(self):
         """
@@ -534,56 +571,80 @@ class FR3_PushT(FrankaPandaServer):
             f" (Logging: {t3 - t2:.3f} s)"
         )
 
-
-    def _send_command(self):
+    def _run_controller_2(self):
         """
-        Send velocity command (twist) to moveit servo
-        
-        :param self: Description
+        Execute a single SMPC planning step.
+        This method performs the following operations in sequence:
+        1. Updates the T linear position and quaternion orientation
+        2. Retrieves the current robot joint positions and velocities
+        3. Validates that both object and robot states are available
+        4. Executes the JIT-compiled policy step to update MuJoCo state and policy parameters
+        5. Computes the control action from the updated policy parameters
+      
+        Returns:
+            None
         """
-        if self.actions is None:
+        t0 = time.time()
+        self.lin_t, self.quat_t = self._update_T()  
+        self.robot_q, self.robot_dq = self._get_robot_state_np()
+        if self.lin_t is None or self.quat_t is None:
             self.get_logger().warn(
-                "No action available to send."
+                "Skipping control step: missing object state."
             )
             return
-        curr_time = self.get_clock().now().nanoseconds / 1e9
-        idx = np.floor((curr_time - self.last_planning_time) / self.ctrl.task.dt)
-        action = self.action #self.actions[int(idx)]  # (vx, vy)
-        self.get_logger().warn(
-                f"Action: {self.actions}"
-                f", idx: {idx}"
-            )
-        pose_T = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
-                           self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
-      
-        # self.get_logger().info(f"Current pose_T: {pose_T}")
-        pose_goal = np.array([0.5, 0.0, 0.032,
-                              1.0, 0.0, 0.0, -1.0])  
-        error = se3_left_invariant_metric(pose_T, pose_goal, rot_weight=1.0, trans_weight=10.0)
-        self.get_logger().info(f"Pose error: {error}")
-
-        if self.finished_task:
-            if error > 1.0:
-                self.finished_task = False
-                self.get_logger().info("Resuming task...")
-        else:
-            if error < 0.5:
-                self.finished_task = True
-                self.get_logger().info("Task finished!")
-
-        if self.finished_task:
-            vx = 0.0
-            vy = 0.0
+        if self.robot_dq is None or self.robot_q is None:
             self.get_logger().warn(
-                f"Finished task."
+                "Skipping control step: missing robot state."
             )
-        else:
-            vx = 1.0 * float(action[0])
-            vy = 1.0 * float(action[1])
-            self.get_logger().warn(
-                f"Action: {self.action}"
-            )
-        self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+            return
+        current_time = self.get_clock().now().nanoseconds / 1e9
+
+        self.mj_data.qpos[[0, 1, 2]] = np.array([-self.lin_t[1],
+                                              self.lin_t[0] - 0.4,
+                                              np_yaw_from_quat(x=self.quat_t[0], y=self.quat_t[1], z=self.quat_t[2], w=self.quat_t[3])
+                                              ])
+        self.mj_data.qpos[3:-2] = self.robot_q
+        self.mj_data.qvel[3:-2] = self.robot_dq
+        self.mj_data.time = current_time
+        # update sites etc.
+        mujoco.mj_forward(self.mj_model, self.mj_data)
+        
+        t1 = time.time()
+        self.mjx_data, self.policy_params, rollouts = self.jit_step(
+            self.mjx_data,
+            self.policy_params,
+            self.mj_data.qpos,
+            self.mj_data.qvel,
+            self.mj_data.mocap_pos,
+            self.mj_data.mocap_quat,
+            current_time    
+        )
+        self.action = self.ctrl.get_action(self.policy_params, 0.0)   
+        self.actions = np.array(self.policy_params.spline) 
+        t2 = time.time()
+
+        # linear_error = self.ctrl.task._get_position_err(self.mj_data)[0]
+        # rotation_error = self.ctrl.task._get_orientation_err(self.mj_data)[0]
+        # state_error = 20 * linear_error + 5 * rotation_error
+        
+        self.log.append({
+            'time': self.last_planning_time- self.start_time,
+            'planning_time': t2 - t1,
+            'qpos': self.robot_q.tolist(),
+            'qvel': self.robot_dq.tolist(),
+            'object_pos': self.lin_t.tolist(),
+            'object_quat': self.quat_t.tolist(),
+            # 'pose_error': float(state_error),
+            'action': self.action.tolist(),
+        })
+        self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
+        t3 = time.time()
+        self.get_logger().info(
+            f"Controller step time: {t2 - t1:.3f} s"
+            f" (State update: {t1 - t0:.3f} s)"
+            f" (Logging: {t3 - t2:.3f} s)"
+        )
+
 
 
     def _send_keyboard_command(self):
@@ -629,7 +690,7 @@ class FR3_PushT(FrankaPandaServer):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}_{timestamp}"
 
-        with open(log_file + ".pkl", "wb") as f:
+        with open(str(log_file) + ".pkl", "wb") as f:
             pickle.dump(self.log, f)
 
 

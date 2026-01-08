@@ -22,7 +22,7 @@ class CEMParams:
         rng: The pseudo-random number generator key.
     """
     rng: jax.Array
-    mean: jax.Array
+    spline: jax.Array
     cov: jax.Array
     elites: jax.Array = None   # (num_elites, T, U), optional
 
@@ -42,7 +42,7 @@ class CEM(SamplingBasedController):
         num_randomizations: int = 1,
         risk_strategy: RiskStrategy = None,
         seed: int = 0,
-        update_cov: bool = True,
+        update_cov: bool = False,
         colorize_noise: bool = False,   # !experimental
         alpha_noise: float = 3.0,  # !experimental
         shift: bool = False, # !experimental,
@@ -95,16 +95,16 @@ class CEM(SamplingBasedController):
     def init_params(self, seed: int = 0) -> CEMParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
-        mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
-        cov = jnp.full_like(mean, self.sigma_start)
-        elites = mean[None, ...].repeat(self.keep_elites, axis=0)
-        return CEMParams(mean=mean, cov=cov, rng=rng, elites=elites)
+        spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
+        cov = jnp.full_like(spline, self.sigma_start)
+        elites = spline[None, ...].repeat(self.keep_elites, axis=0)
+        return CEMParams(spline=spline, cov=cov, rng=rng, elites=elites)
 
     def sample_controls(self, params: CEMParams) -> Tuple[jax.Array, CEMParams]:
         """Sample a control sequence."""
         if self.shift:
             params = params.replace(
-                mean=shift_tensor(params.mean, self.last_a_idx+1),
+                spline=shift_tensor(params.spline, self.last_a_idx+1),
                 cov=shift_tensor(params.cov, self.last_a_idx+1) if self.update_cov else params.cov,
             )
         rng, sample_rng = jax.random.split(params.rng)
@@ -119,7 +119,7 @@ class CEM(SamplingBasedController):
         # colorize noise
         if self.colorize_noise:
             noise = self.colorize_time_series(noise, remove_dc=True, alpha=self.alpha_noise) # !experimental
-        controls = params.mean + params.cov * noise
+        controls = params.spline + params.cov * noise
         if self.savgol_filter:
             controls = self.savgol_filter_fn(controls)
         # infuse elites from previous iteration
@@ -143,21 +143,21 @@ class CEM(SamplingBasedController):
         elites = indices[: self.num_elites]
 
         # The new proposal distribution is a Gaussian fit to the elites.
-        mean = jnp.mean(rollouts.controls[elites], axis=0)
+        spline = jnp.mean(rollouts.controls[elites], axis=0)
         cov = params.cov
         # cov = jnp.maximum(
         #     jnp.std(rollouts.controls[elites], axis=0), self.sigma_min
         # )
-        mean = mean + self.alpha * (params.mean - mean)
+        spline = spline + self.alpha * (params.spline - spline)
         if self.update_cov:
             cov = jnp.std(rollouts.controls[elites], axis=0)
             cov = jnp.clip(cov, a_min=self.sigma_min, a_max=self.sigma_max)
         new_elites = rollouts.controls[elites[:self.keep_elites]]
-        return params.replace(mean=mean, cov=cov, elites=new_elites)
+        return params.replace(spline=spline, cov=cov, elites=new_elites)
 
     def get_action(self, params: CEMParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""
         idx_float = t / self.task.dt 
         idx = jnp.floor(idx_float).astype(jnp.int32)
-        action = params.mean[idx]
+        action = params.spline[idx]
         return action

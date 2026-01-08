@@ -163,7 +163,7 @@ class PushTFranka(Task):
         # Assuming the block's pose is at the beginning of qpos
         mj_data.qpos[0] = pos_x
         mj_data.qpos[1] = pos_y
-        if self.block_type == 'joint' or self.block_type == 'spheres':
+        if self.block_type == 'joint' or self.block_type == 'sim-real':
             mj_data.qpos[2] = angle
         else:
             quat = euler_to_quaternion(0, 0, angle)  # roll, pitch, yaw
@@ -321,7 +321,7 @@ class PushTFranka(Task):
         ee_block_distance_cost = jnp.square(ee_block_distance)
         
         if self.block_type == 'joint' or self.block_type == 'sim-real':
-            total_goal_err = 20 * position_cost + 5 * orientation_cost
+            total_goal_err = 30 * position_cost + 10 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost 
         elif self.block_type == 'free':
             # problem jitter

@@ -81,12 +81,12 @@ sigma_max = 0.55
 sigma_min = 0.15
 sigma_start = 0.2
 det_init = {
-    "block_pos_x": -0.1 + np.random.uniform(-0.05, 0.05),
-    "block_pos_y": 0.1 + np.random.uniform(-0.05, 0.05),
-    "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/10, np.pi/10),
-    "ee_goal_pos": [0.6 + np.random.uniform(-0.05, 0.05), 
-                    0.2 + np.random.uniform(-0.05, 0.05), 
-                    0.032]
+    "block_pos_x": -0.15 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": 0.15 + np.random.uniform(-0.05, 0.05),
+    "block_angle": 3*np.pi/2 + np.random.uniform(-np.pi/10, np.pi/10),
+    "ee_goal_pos": [0.4 + np.random.uniform(-0.05, 0.05), 
+                    0.0 + np.random.uniform(-0.05, 0.05), 
+                    0.03]
 }
 # det_init = {
 #     "block_pos_x": 0.1 ,
@@ -101,9 +101,9 @@ det_init = {
 
 # Define the task (cost and dynamics)
 #velocity control
-max_speed = 0.35
+max_speed = 0.4
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=12,
+                    planning_horizon=8,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
@@ -111,7 +111,7 @@ task = PushTFranka(ik_type = 'pinv',
                     actuation_type='velocity',
                     sampling_space="velocity",
                     det_init=det_init,
-                    block_type = 'spheres',
+                    block_type = 'sim-real',
                 )
 
 # position control
@@ -138,7 +138,7 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 512
+num_samples = 1024
 num_randomizations = 1
 
 
