@@ -417,8 +417,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
             # data    
-            linear_error = controller.task._get_position_err(mj_data)[0]
-            rotation_error = controller.task._get_orientation_err(mj_data)[0]
+            linear_error = np.linalg.norm(controller.task._get_position_err(mj_data))
+            rotation_error = np.linalg.norm(controller.task._get_orientation_err(mj_data))
 
             state_error = 20 * linear_error + 1 * rotation_error
             print(f"State error: {state_error}, Linear: {linear_error}, Rotation: {rotation_error}")

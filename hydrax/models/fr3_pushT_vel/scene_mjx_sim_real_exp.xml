@@ -120,9 +120,9 @@
 
   <equality>
     <!-- (Linear) equality constraint for end effector -->
-    <connect site1="ee_site" site2="sphere_site"
+    <!-- <connect site1="ee_site" site2="sphere_site"
              solref="0.04 1.0" 
-             solimp="0.9 0.99 0.001 0.1 3.0"/>
+             solimp="0.9 0.99 0.001 0.1 3.0"/> -->
     <!-- Full 6 DoF equality MoCAP vs free object -->
     <!-- <weld name="sensor_coupling" body1="block" body2="ghost_block" solref="0.055 1" solimp="0.9 0.99 0.001"/> -->
   </equality>

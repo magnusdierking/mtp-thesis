@@ -1,23 +1,22 @@
 <mujoco model="fr3 scene">
 
   <!-- NUmerical Stuff -->
-  <option impratio="1.2"
+  <option impratio="1.65"
           solver="Newton"
           jacobian="dense"
-          cone="pyramidal"
-          timestep="0.02" 
-          iterations="8"
-          ls_iterations="10"
-          ls_tolerance="0.00001"
-          noslip_iterations="0">
+          cone="elliptic"
+          timestep="0.025" 
+          iterations="6"
+          ls_iterations="8"
+          noslip_iterations="2">
   <flag eulerdamp="enable" 
         warmstart="enable"/>
   </option>
-  <!-- <custom> -->
-    <!-- <numeric data="32" name="max_contact_points"/> -->
-    <!-- <numeric name="maxhullverts"   data="32"/> -->
-    <!-- <numeric data="128" name="max_geom_pairs"/> -->
-  <!-- </custom> -->
+  <custom>
+    <numeric data="32" name="max_contact_points"/>
+    <numeric name="maxhullverts"   data="32"/>
+    <numeric data="128" name="max_geom_pairs"/>
+  </custom>
 
   <size nconmax="64"/>
   <size njmax="1200"/>
@@ -29,9 +28,11 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="0.6 0.001 0.001" 
-            solref="0.06 1.0" 
-            solimp="0.85 0.95 0.001 0.5 2"
+      <geom friction="0.1 0.0001 0.0001" 
+            solref="0.04 0.9" 
+            margin="0.001"
+            gap="0.0005"
+            solimp="0.9 0.95 0.001 0.5 2"
             condim="3"
             contype="2" 
             conaffinity="5"/>  
@@ -48,7 +49,7 @@
     <camera name='top_view' pos="-0.276 -0.512 0.817" xyaxes="0.864 -0.503 0.000 0.404 0.694 0.596"/>
     <camera name="comparison" pos="1.107 -0.076 0.436" xyaxes="0.178 0.984 -0.000 -0.466 0.084 0.881"/>
 
-    <body name="goal" mocap="true" pos="0.45 0.0 0.009" quat="1 0 0 -1">
+    <body name="goal" mocap="true" pos="0.5 0.0 0.009" quat="1 0 0 -1">
       <geom class="goal" name="goal_bottom" type="box" size=".025 0.05 0.025"/>
       <geom class="goal" name="goal_top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"/>
     </body>
@@ -129,10 +130,10 @@
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="0 0 0.05" material="groundplane"
-          solref="0.06 2"
-          friction="0.6 0.005 0.001" 
+          solref="0.04 2"
+          friction="0.1 0.005 0.001" 
           condim="3"
-          solimp="0.85 0.99 0.001"
+          solimp="0.7 0.95 0.001 0.5 2"
           contype="4" conaffinity="3"/>  
   </worldbody>
 </mujoco>

@@ -26,7 +26,7 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="0.1 0.001 0.0001" 
+      <geom friction="0.1 0.0001 0.0001" 
             solref="0.04 0.9" 
             margin="0.001"
             gap="0.0005"
@@ -42,13 +42,6 @@
             rgba="0 1 0 0.2"/>
     </default>
 
-    <default class="contact_sphere">
-      <geom friction="0.8 0.002 0.0001"
-            solref="0.075 1.0"
-            solimp="0.2 0.95 0.001 0.5 2"
-            condim="1"
-            contype="2" conaffinity="4"/>
-    </default>
   </default>
 
   <!-- Push T setup -->
@@ -152,7 +145,7 @@
     <geom name="floor" type="plane" size="0 0 0.05" 
           solref="0.04 0.95"
           solimp="0.7 0.95 0.001 0.5 2"
-          material="groundplane" friction="0.1 0.001 0.0001" condim="3"
+          material="groundplane" friction="0.1 0.0001 0.0001" condim="3"
           contype="4" conaffinity="3"/>  
   </worldbody>
 </mujoco>

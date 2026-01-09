@@ -71,7 +71,7 @@ def differential_IK(
 
 # xml_path = "./../hydrax/models/g1/scene.xml"
 # xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
-xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_spheres.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_sim_real.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
@@ -195,6 +195,7 @@ else:
     print(f"IK did not converge. {err}, {np.linalg.norm(err)}")
 
 data.qpos[actuator_jids] = q  # Set the robot's joint positions
+data.qpos[0] = 0.2
     
 
 step = 0

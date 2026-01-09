@@ -81,11 +81,11 @@ sigma_max = 0.55
 sigma_min = 0.15
 sigma_start = 0.3
 det_init = {
-    "block_pos_x": 0.5 + np.random.uniform(-0.05, 0.05),
-    "block_pos_y": -0.0 + np.random.uniform(-0.05, 0.05),
+    "block_pos_x": 0.55 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": -0.1 + np.random.uniform(-0.05, 0.05),
     "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/12, np.pi/12),
-    "ee_goal_pos": [0.55 + np.random.uniform(-0.05, 0.05), 
-                    0.1 + np.random.uniform(-0.05, 0.05), 
+    "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
+                    0.0 + np.random.uniform(-0.05, 0.05), 
                     0.032]
 }
 
@@ -93,10 +93,10 @@ det_init = {
 
 # Define the task (cost and dynamics)
 #velocity control
-max_speed = 0.3  # m/s
+max_speed = 0.35  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=12,
-                    sim_steps_per_control_step=3,
+                    planning_horizon=8,
+                    sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     trace_sites=["ee_site", "T_1"],
@@ -193,7 +193,7 @@ elif args.algorithm == "mtp":
         seed=seed,
         update_cov=update_cov,
         savgol_filter=True,  # !experimental
-        default_zero_controls=True,
+        default_zero_controls=False,
     )
     error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
     
@@ -226,8 +226,8 @@ elif args.algorithm == "anmtp":
 mj_model, mj_data = task.reset(seed=seed)
 
 # Run the interactive simulation
-max_traces = 64
-trace_idxs = [i for i in range(0, num_samples, num_samples // max_traces)]
+max_traces = 20
+trace_idxs = [i * max_traces for i in range(num_samples // max_traces)]
 print("Tracing indices:", trace_idxs)
 run_interactive(
     ctrl,

@@ -283,8 +283,7 @@ class MTP(SamplingBasedController):
         # default zero controls
         if self.default_zero_controls:
             out = out.at[-1, ...].set(jnp.zeros((self.task.planning_horizon, self.task.nu)))
-        # clip
-        out = jnp.clip(out, self.task.u_min, self.task.u_max)
+        # clip happens in alg base
         return out, params.replace(rng=rng)
 
    

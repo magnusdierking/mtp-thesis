@@ -139,7 +139,7 @@ class PushTFranka(Task):
         
         # special to this task
         self.ee_body_id = self.mj_model.body("ee_frame").id
-        self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, -1.0])  # [w, x, y, z]
+        self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, 0.0])  # [w, x, y, z]
         # initial end effector
         self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
         self.goal_pos_ee = jnp.array([0.3, 0.0, 0.03]) #np.array([0.3, 0.0, 0.05])
@@ -256,8 +256,8 @@ class PushTFranka(Task):
         """ Get the orientation error of the block relative to a goal orientation."""
         sensor_adr = self.model.sensor_adr[self.block_orientation_sensor]
         block_quat = state.sensordata[sensor_adr : sensor_adr + 4]
-        return mjx._src.math.quat_sub(block_quat, self.goal_quat_block) # gives axis angle of relative rotation
-    
+        # return mjx._src.math.quat_sub(block_quat, self.goal_quat_block) # gives axis angle of relative rotation
+        return mjx._src.math.quat_to_axis_angle((block_quat))[1] # angle
     
     ################################## 
     ##      End Effector Terms      ##
@@ -303,35 +303,37 @@ class PushTFranka(Task):
         cost += jnp.where(ee_pos[2] > 0.045, 2.0, 0.0)
         return cost
     
+
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
         
         # Goal error terms 
         position_err = self._get_position_err(state)
         orientation_err = self._get_orientation_err(state)
-        position_cost = jnp.square(jnp.linalg.norm(position_err))
+
+        position_cost = jnp.linalg.norm(position_err)
+        orientation_cost = jnp.linalg.norm(orientation_err)
 
         safety_cost = self._safety_zone_cost(state) 
         
-        # orientation_cost = jnp.norm(orientation_err)
-        orientation_cost = jnp.linalg.norm(orientation_err)
-        
-        
-        # safety based
+        # attractor
         ee_block_distance = self._get_ee_block_distance(state)
         ee_block_distance_cost = jnp.square(ee_block_distance)
         
         if self.block_type == 'joint' or self.block_type == 'sim-real':
-            total_goal_err = 30 * position_cost + 10 * orientation_cost
-            error = total_goal_err + 0.005 * ee_block_distance_cost 
+            total_goal_err = 30 * position_cost + 3 * orientation_cost
+            error = total_goal_err + 0.005 * ee_block_distance_cost  # was 0.0005
         elif self.block_type == 'free':
             # problem jitter
-            total_goal_err = 16 * position_cost + 2 * orientation_cost
-            error = total_goal_err + 0.01 * ee_block_distance_cost 
+            total_goal_err = 30 * position_cost + 3 * orientation_cost
+            error = total_goal_err + 0.05 * ee_block_distance_cost 
         return error #+ safety_cost 
                                                                               
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
-        return 10 * self.running_cost(state, jnp.zeros(self.model.nu))
+        if self.block_type == 'joint' or self.block_type == 'sim-real':
+            return 10 * self.running_cost(state, jnp.zeros(self.model.nu))
+        elif self.block_type == 'free':
+            return 3 * self.running_cost(state, jnp.zeros(self.model.nu)) 
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         return {}
