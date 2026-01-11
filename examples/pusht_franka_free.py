@@ -186,7 +186,7 @@ elif args.algorithm == "mtp":
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=12,
-        beta=0.25,
+        beta=0.35,
         alpha=0.1,
         interpolation='bspline',
         num_randomizations=num_randomizations,

@@ -419,10 +419,11 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # data    
             linear_error = np.linalg.norm(controller.task._get_position_err(mj_data))
             rotation_error = np.linalg.norm(controller.task._get_orientation_err(mj_data))
+            distance = controller.task._get_ee_block_distance(mj_data)
 
             state_error = 20 * linear_error + 1 * rotation_error
-            print(f"State error: {state_error}, Linear: {linear_error}, Rotation: {rotation_error}")
-            ee_error = controller.task._get_ee_block_distance(mj_data)
+            print(f"Distance: {state_error}, Linear: {linear_error}, Rotation: {rotation_error}")
+           
             # only for pusht
             sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
             ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]

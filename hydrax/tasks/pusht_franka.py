@@ -324,9 +324,9 @@ class PushTFranka(Task):
             error = total_goal_err + 0.005 * ee_block_distance_cost  # was 0.0005
         elif self.block_type == 'free':
             # problem jitter
-            total_goal_err = 30 * position_cost + 3 * orientation_cost
-            error = total_goal_err + 0.05 * ee_block_distance_cost 
-        return error #+ safety_cost 
+            total_goal_err = 10 * position_cost + 3 * orientation_cost
+            error = total_goal_err + 0.005 * ee_block_distance_cost  + safety_cost  
+        return error #
                                                                               
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
