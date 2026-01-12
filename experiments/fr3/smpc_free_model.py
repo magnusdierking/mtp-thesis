@@ -121,7 +121,7 @@ class FR3_PushT(FrankaPandaServer):
         # 30-34 seeds
         self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
                                   0.0 + np.random.uniform(-0.03, 0.03),
-                                  0.03])  
+                                  0.045])  
 
         self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
        
@@ -201,12 +201,10 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().info("Jitting controller...")
         st = time.time()
 
-        self.debug_data.qpos[[0, 1, 2]] = np.array([-self.lin_t[1], 
-                                              self.lin_t[0] - 0.4, 
-                                              np_yaw_from_quat(x=self.quat_t[0], y=self.quat_t[1], z=self.quat_t[2], w=self.quat_t[3])
-                                              ])
-        self.debug_data.qpos[3:-2] = self.robot_q
-        self.debug_data.qvel[3:-2] = self.robot_dq
+        self.debug_data.qpos[0:7] = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
+                                              self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
+        self.debug_data.qpos[7:14] = self.robot_q
+        self.debug_data.qvel[6:13] = self.robot_dq
         self.debug_data.time = self.get_clock().now().nanoseconds / 1e9
 
         # One call to transfer mjx_data & policy_params to GPU and compile
@@ -377,7 +375,7 @@ class FR3_PushT(FrankaPandaServer):
 
         t.transform.translation.x = 0.0
         t.transform.translation.y = +0.025
-        t.transform.translation.z = -0.0251
+        t.transform.translation.z = -0.025 - 0.005
 
         quat = quaternion_from_euler(0.0, 0.0, np.pi)
         t.transform.rotation.x = quat[0]
@@ -600,8 +598,8 @@ class FR3_PushT(FrankaPandaServer):
             #         f" arg idx: {idx}"
             #         f"ctr: {self.ctr}"
             #     )
-        self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
-        # self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+        # self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
+        self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
     
 
     def _states_received(self):
@@ -630,7 +628,7 @@ if __name__ == '__main__':
     rclpy.init()
     max_speed = 0.35
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=7,
+                    planning_horizon=8,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
@@ -651,7 +649,7 @@ if __name__ == '__main__':
     subparsers.add_parser("cem", help="Cross-Entropy Method")
     args = parser.parse_args()
 
-    seed = 30
+    seed = 10
 
     num_samples = 1024
 
@@ -699,7 +697,7 @@ if __name__ == '__main__':
             sigma_max=0.55,
             num_elites=12,
             sigma_start=0.2,
-            beta=0.35,
+            beta=0.25,
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,
@@ -761,7 +759,7 @@ if __name__ == '__main__':
             print("Shutting down controller...")
         finally:
             executor.shutdown()
-            path = get_data_path() / "sim-real" 
-            # controller.save_log(path)
+            path = get_data_path() / "sim-real-free" 
+            controller.save_log(path)
             controller.destroy_node()
             rclpy.shutdown()

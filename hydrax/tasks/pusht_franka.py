@@ -142,7 +142,7 @@ class PushTFranka(Task):
         self.goal_quat_block = jnp.array([1.0, 0.0, 0.0, 0.0])  # [w, x, y, z]
         # initial end effector
         self.goal_quat_ee = jnp.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-        self.goal_pos_ee = jnp.array([0.3, 0.0, 0.03]) #np.array([0.3, 0.0, 0.05])
+        self.goal_pos_ee = jnp.array([0.3, 0.0, 0.045]) 
 
         self.det_init = det_init
 
@@ -325,7 +325,7 @@ class PushTFranka(Task):
         elif self.block_type == 'free':
             # problem jitter
             total_goal_err = 10 * position_cost + 3 * orientation_cost
-            error = total_goal_err + 0.005 * ee_block_distance_cost  + safety_cost  
+            error = total_goal_err + 0.05 * ee_block_distance_cost  #+ safety_cost  
         return error #
                                                                               
 

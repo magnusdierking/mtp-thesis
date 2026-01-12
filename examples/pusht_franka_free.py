@@ -81,12 +81,12 @@ sigma_max = 0.55
 sigma_min = 0.15
 sigma_start = 0.3
 det_init = {
-    "block_pos_x": 0.55 + np.random.uniform(-0.05, 0.05),
-    "block_pos_y": -0.1 + np.random.uniform(-0.05, 0.05),
-    "block_angle": 3*np.pi/4 + np.random.uniform(-np.pi/12, np.pi/12),
+    "block_pos_x": 0.35 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": -0.2 + np.random.uniform(-0.05, 0.05),
+    "block_angle": np.random.uniform(-np.pi/12, np.pi/12),#3*np.pi/4 + np.random.uniform(-np.pi/12, np.pi/12),
     "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
                     0.0 + np.random.uniform(-0.05, 0.05), 
-                    0.032]
+                    0.045]
 }
 
 
@@ -95,7 +95,7 @@ det_init = {
 #velocity control
 max_speed = 0.35  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=8,
+                    planning_horizon=7,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
@@ -153,6 +153,7 @@ elif args.algorithm == "mppi":
         temperature=0.1,
         num_randomizations=num_randomizations,
         colorize_noise=False,   # !experimental
+        savgol_filter=True,  # !experimental
         alpha=0.1,
         seed=seed,
         update_cov=update_cov,
@@ -171,6 +172,7 @@ elif args.algorithm == "cem":
         alpha=0.1,
         num_randomizations=num_randomizations,
         seed=seed,
+        savgol_filter=True,  # !experimental
         update_cov=update_cov,
     )
     error_log = "./../data/error_log_pushT/cem_{seed}.npy".format(seed=seed)
@@ -186,7 +188,7 @@ elif args.algorithm == "mtp":
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=12,
-        beta=0.35,
+        beta=0.25,
         alpha=0.1,
         interpolation='bspline',
         num_randomizations=num_randomizations,

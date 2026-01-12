@@ -70,8 +70,8 @@ def differential_IK(
 
 
 # xml_path = "./../hydrax/models/g1/scene.xml"
-# xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
-xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_sim_real.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
+# xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_sim_real.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
