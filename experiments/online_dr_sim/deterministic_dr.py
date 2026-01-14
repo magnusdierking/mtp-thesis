@@ -1,6 +1,8 @@
 import time
 from typing import Sequence
 import csv
+import pickle
+from xml.parsers.expat import model
 
 from hydrax.algs.mtp.beta_scheduler import RatioEMAScheduler
 import jax
@@ -17,8 +19,9 @@ from hydrax.utils.video import VideoRecorder
 from hydrax.algs.mtp.beta_scheduler import *
 import matplotlib.pyplot as plt
 
-from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
-
+from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec, mat2quat, se3_left_invariant_metric
+from domain_adaptation import AdaptiveDomainRandomizationStrategy
+from hydrax.risk import ExpectedCost, AverageCost, WorstCase, BestCase, ExponentialWeightedAverage, InverseConditionalValueAtRisk, InverseValueAtRisk
 
 """
 Tools for deterministic (synchronous) simulation, with the simulator and
@@ -116,6 +119,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     show_ui: bool = True,
     seed: int = 0,
     online_dr: bool = False,
+    dr_strategy: AdaptiveDomainRandomizationStrategy = None,
+    trace_idxs=None,
 ) -> None:
     """Run an interactive simulation with the MPC controller.
 
@@ -155,8 +160,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         f"second horizon."
     )
 
-    print("True mass of the Target object:", mj_model.body_mass[controller.task.T_bid])
-
     # Figure out how many sim steps to run before replanning
     task_success = False
     replan_period = 1.0 / frequency
@@ -177,8 +180,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     )
     policy_params = controller.init_params(seed)
     jit_optimize = jax.jit(controller.optimize, donate_argnums=(1,))
-    # jit_optimize = jax.jit(controller.optimize, donate_argnums=(0,1))
-    #jit_optimize = controller.optimize
 
     # Warm-up the controller
     # controller.compile_optimize()
@@ -188,6 +189,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     print(f"Time to jit: {time.time() - st:.3f} seconds") 
     
     policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+    print("Sites in rollouts:", rollouts.trace_sites.shape)
     
     num_traces = min(rollouts.controls.shape[1], max_traces)
 
@@ -223,50 +225,48 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         renderer = mujoco.Renderer(mj_model, height=height, width=width)
         
     # !LIVE PLOT SETUP ------------------------------------------------#
-    from scipy.stats import gaussian_kde
-    from collections import deque
-    plt.ion()
-    fig, (ax_bar, ax_kde) = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+    if online_dr:
+        from vis_utils import plot_poses_2d
+        from scipy.stats import gaussian_kde
+        
+        
+        site_id1 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
+        site_id2 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_2")
+        site_id3 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
+        
+        # true poses
+        old_observation1 = np.concatenate((np.array(mj_data.site_xpos[site_id1]), np.array(mat2quat(mj_data.site_xmat[site_id1])))) 
+        old_observation2 = np.concatenate((np.array(mj_data.site_xpos[site_id2]), np.array(mat2quat(mj_data.site_xmat[site_id2]))))
+        old_observation3 = np.concatenate((np.array(mj_data.site_xpos[site_id3]), np.array(mat2quat(mj_data.site_xmat[site_id3]))))
 
-    # --- BAR CHART (left) ---
-    values = np.arange(controller.num_randomizations)
-    probs = np.ones(controller.num_randomizations) / controller.num_randomizations
+        new_randomizations = dr_strategy.get_current_randomizations()
+        samples = new_randomizations["geom_friction"][3, 0,...] # should be torsional
+        
+        
+        plt.ion()
+        fig, (ax_poses, ax_kde) = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+        # plot_poses_2d(old_observation2, ax_poses)
 
-    bars = ax_bar.bar(values, probs, width=0.8, align="center", edgecolor="k")
-    ax_bar.set_xticks(values)
-    ax_bar.set_xticklabels([f"{v:.2f}" for v in probs])
-    ax_bar.set_xlabel("Outcome")
-    ax_bar.set_ylabel("Probability")
-    ax_bar.set_title("Discrete Distribution")
+        # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
+        # kde = gaussian_kde(samples, bw_method='scott')
 
-    # --- KDE PLOT (right) ---
-    # a rolling buffer of samples to build the KDE from (set maxlen=None to keep all)
-    kde_samples = deque(maxlen=2000)  # adjust if you want a rolling window
-    kde_samples.extend(np.asarray(controller.model.body_mass[:,controller.task.T_bid].tolist(), dtype=float).ravel()) 
+        # Grid for evaluation — pad a bit beyond min/max to avoid clipping
+        # s_min, s_max = 0.0, 2.0
+        # pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
+        # x_kde = np.linspace(s_min - pad, s_max + pad, 512)
+        # y_kde = kde(x_kde)
+        # kde_line, = ax_kde.plot([], [], lw=2)
 
-    # initialize an empty line for the KDE
-    samples_array = np.fromiter(kde_samples, dtype=float)
+        # # Update the line
+        # kde_line.set_data(x_kde, y_kde)
+        # ax_kde.set_xlim(0.0, 2.0)
+        # ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
+        # # kde_line, = ax_kde.plot([], [], lw=2)
+        # ax_kde.set_xlabel("Sample value")
+        # ax_kde.set_ylabel("Density")
+        # ax_kde.set_title("KDE (updates with new samples)")
 
-    # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
-    kde = gaussian_kde(samples_array, bw_method='scott')
-
-    # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-    s_min, s_max = float(samples_array.min()), float(samples_array.max())
-    pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
-    x_kde = np.linspace(s_min - pad, s_max + pad, 512)
-    y_kde = kde(x_kde)
-    kde_line, = ax_kde.plot([], [], lw=2)
-
-    # Update the line
-    kde_line.set_data(x_kde, y_kde)
-    ax_kde.set_xlim(x_kde[0], x_kde[-1])
-    ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
-    # kde_line, = ax_kde.plot([], [], lw=2)
-    ax_kde.set_xlabel("Sample value")
-    ax_kde.set_ylabel("Density")
-    ax_kde.set_title("KDE (updates with new samples)")
-
-    plt.show(block=False)
+        plt.show(block=False)
     #!---------------------------------------------------------------------------------------#
 
     # Start the simulation
@@ -280,7 +280,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         if show_traces:
             num_trace_sites = len(controller.task.trace_site_ids)
             for i in range(
-                num_trace_sites * num_traces * controller.task.planning_horizon
+                num_trace_sites * num_traces * controller.num_randomizations * controller.task.planning_horizon
             ):
                 mujoco.mjv_initGeom(
                     viewer.user_scn.geoms[i],
@@ -334,82 +334,96 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 controller.beta = float(policy_params.beta) # TODO
                 
             if online_dr:
-                # !update live plot
-                sites_of_interest = policy_params.predicted_state[..., 1]  # ignore end effector site
-                site_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
+                # ! get error signal
+                sites_of_interest = policy_params.predicted_state#[..., 1]  # ignore end effector site
+                # true poses
+                new_observation1 = jnp.concatenate((jnp.array(mj_data.site_xpos[site_id1]), jnp.array(mat2quat(mj_data.site_xmat[site_id1]))), axis=-1) 
+                new_observation2 = jnp.concatenate((jnp.array(mj_data.site_xpos[site_id2]), jnp.array(mat2quat(mj_data.site_xmat[site_id2]))), axis=-1)
+                new_observation3 = jnp.concatenate((jnp.array(mj_data.site_xpos[site_id3]), jnp.array(mat2quat(mj_data.site_xmat[site_id3]))), axis=-1)
+                
+                # check if any change in observation
+                if np.allclose(np.array(new_observation1), old_observation1, atol=1e-2) and np.allclose(np.array(new_observation2), old_observation2, atol=1e-2):
+                    # no change, skip update
+                    print("No change in T observation, skipping DR update.")
+                    
+                else:
+                    
+                    old_observation1 = new_observation1
+                    old_observation2 = new_observation2
 
-                distances = np.linalg.norm(
-                    sites_of_interest - np.array(mj_data.site_xpos[site_id]), axis=-1
-                )
-                # -------------- Compute Probabilities for DR --------------- #
-                # probs based on distances
-                z = distances / 0.001
-                exps = np.exp(z - np.max(z))  # for numerical stability
-                probs = exps / np.sum(exps)
-
-                # --- update bar heights (left subplot) ---
-                for rect, h in zip(bars, probs):
-                    rect.set_height(h)
-
-                ax_bar.set_xticklabels(
-                    [f"{v:.2f}" for v in controller.model.body_mass[:, controller.task.T_bid]]
-                )
-
-            ax_bar.relim()
-            ax_bar.autoscale_view(scaley=True)
+                    distance_1 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(sites_of_interest[...,0,:], new_observation1)
+                    distance_2 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(sites_of_interest[...,1,:], new_observation2)
+                    # ee
+                    distance_3 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(sites_of_interest[...,2,:], new_observation3)
+                    distances = distance_1 + distance_2
 
 
-            # Only build a KDE once we have at least 2 samples
-            if len(kde_samples) >= 2:
-                samples_array = np.fromiter(kde_samples, dtype=float)
+                    # normalize distances to [0, 1]
+                    distances = distances - jnp.min(distances)
 
-                # Build KDE (adjust bw_method to taste: 'scott', 'silverman', or a float)
-                kde = gaussian_kde(samples_array, bw_method='scott')
+                    # if jnp.max(distances) > 1e-6:
+                    #     distances = distances / jnp.max(distances)
+                    
+                    # clip distances to [0, 1]
+                    distances = jnp.clip(distances, 0.0, 1.0)
+                    # set NaN to 1
+                    max_distance = jnp.max(distances)
+                    # if max is NaN, set to 1.0
+                    if not jnp.isfinite(max_distance):
+                        max_distance = 1.0
+                    distances = jnp.nan_to_num(distances, nan=max_distance)
+                    
+                    distances = np.array(distances)
+                    distances = distances / (np.sum(distances) + 1e-12)
+                    print("Distances:", distances)    
 
-                # Grid for evaluation — pad a bit beyond min/max to avoid clipping
-                s_min, s_max = float(samples_array.min()), float(samples_array.max())
-                pad = 0.05 * (s_max - s_min if s_max > s_min else max(s_max, 1.0))
-                x_kde = np.linspace(s_min - pad, s_max + pad, 512)
-                y_kde = kde(x_kde)
+                    # scale to [0, 1] for alphas
+                    alphas = 0.9 * (distances - np.min(distances)) / (np.max(distances) - np.min(distances) + 1e-12)    
+                    alphas = 1 - alphas  # invert, so that smaller distance = higher weight           
+                    
+                    # probabilities via softmax
+                    temperature = np.std(distances) + 1e-12
+                    probs = np.exp(-distances / temperature)  # temperature scaling
+                    probs = probs / (np.sum(probs) + 1e-12)
 
-                # Update the line
-                kde_line.set_data(x_kde, y_kde)
-                ax_kde.set_xlim(x_kde[0], x_kde[-1])
-                ax_kde.set_ylim(0, max(y_kde) * 1.05 if np.isfinite(y_kde).any() else 1.0)
-            else:
-                # Not enough samples yet — clear the line
-                kde_line.set_data([], [])
-                ax_kde.set_ylim(0, 1)
+                    # ! -----------------------
+                    updated, new_randomizations, new_weights = dr_strategy.get_updated_randomizations(distances)
+                    print("Shape", new_randomizations["geom_friction"].shape)
+                    samples = new_randomizations["geom_friction"][:, 3,1] 
+                    print("New Samples:", samples)
+                    # print("New DR shapes:", {k: v.shape for k, v in new_randomizations.items()})
+                    controller.update_domain_randomization_model(new_randomizations)
+                    policy_params = policy_params.replace(domain_weights=jnp.array(probs))
+                    # print("Sites of interest:", sites_of_interest[...,:2,1])
+                    plot_poses_2d(sites_of_interest[...,0,:], ax=ax_poses, ref_pose=new_observation1, alphas=alphas)
+                    # kde = gaussian_kde(samples, bw_method='scott')
+                    # y_kde = kde(x_kde)
 
-            # ----------------------------------------------------------------------- #
-
-            fig.canvas.draw_idle()
-            plt.pause(0.01)  # yield to the GUI loop
-            
-            # update domain randomizations
-            updated, dr_samples = controller.update_domain_randomization_model(
-                jax.random.PRNGKey(step), jnp.array(probs)
-            )
-            print(f"Updated DR model: {updated}, samples: {dr_samples}")
-            if updated:
-                kde_samples.extend(np.asarray(controller.model.body_mass[:,controller.task.T_bid].tolist(), dtype=float).ravel())  
-        
-            # !-------------------------------------------
+                    fig.canvas.draw_idle()
+                    plt.pause(0.01)  # yield to the GUI loop
+                    # !-------------------------------------------
             
             # Visualize the rollouts
+            colors = plt.cm.viridis(np.linspace(0, 1, controller.num_randomizations))
+            if trace_idxs is None:
+                trace_idxs = list(range(num_traces))
             if show_traces:
                 ii = 0
-                for k in range(num_trace_sites):
-                    for i in range(num_traces):
-                        for j in range(controller.task.planning_horizon):
-                            mujoco.mjv_connector(
-                                viewer.user_scn.geoms[ii],
-                                mujoco.mjtGeom.mjGEOM_LINE,
-                                trace_width,
-                                rollouts.trace_sites[0, i, j, k],        # ! 
-                                rollouts.trace_sites[0, i, j + 1, k],    # !
-                            )
-                            ii += 1
+                for k in [1]:# range(num_trace_sites):
+                    for i in trace_idxs:
+                        for d, color in enumerate(colors): # num_randomizations
+                            for j in range(controller.task.planning_horizon):
+                                geom =viewer.user_scn.geoms[ii]
+                                mujoco.mjv_connector(
+                                    geom,
+                                    mujoco.mjtGeom.mjGEOM_LINE,
+                                    trace_width,
+                                    rollouts.trace_sites[d, i, j, k, :3],        # ! randomizations x rollouts x horizon x sites
+                                    rollouts.trace_sites[d, i, j + 1, k, :3],    # !
+                                )
+                                if k > 0:
+                                    geom.rgba = np.array(color.tolist())
+                                ii += 1
 
             # Update the ghost reference
             if reference is not None:
@@ -428,7 +442,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     viewer.user_scn,
                 )
 
-            # for k in range(controller.nbr_actions):
             
             # Step the simulation
             for i in range(sim_steps_per_replan):
@@ -451,20 +464,11 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                             controller.task.ee_body_id,
                             u,  # Exclude base DOF
                         )
-                    # print(f"Remapped control action: {u}")
-                    
-                    if controller.gravity_compensator:
-                        # Gravity compensation for the robot only
-                        tau_g = gravity_comp_torque(mj_model, mj_data)
-                        # Clear and apply external torques (generalized forces)
-                        mj_data.qfrc_applied[:] = 0.0        # clears all user generalized forces
-                        mj_data.xfrc_applied[:] = 0.0        # clears any body-space external wrenches
-                        mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
-                        # Apply the control to the simulation
                     mj_data.ctrl[:] = np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
-            
+                
+
             # Capture frame if recording
             if record_video and recorder.is_recording:
                 renderer.update_scene(mj_data, viewer.cam)
@@ -491,6 +495,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # Check for task success
             task_success |= controller.task.success(mj_data)
 
+            
             # Log data for the current step
             logs.append({
                 "step": step,
@@ -499,11 +504,13 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "qpos": np.array(mjx_data.qpos).tolist(),
                 "qvel": np.array(mjx_data.qvel).tolist(),
                 "control": np.array(u).tolist(),
-                "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
                 "state_cost": float(rollouts.costs[0, 0]),
                 "success": task_success,
-                "domain_weights": np.array(controller.domain_weights).tolist() if hasattr(controller, 'domain_weights') else None,
-                "dr_samples": dr_samples.tolist(), 
+                "domain_weights": np.array(policy_params.domain_weights).tolist() if hasattr(controller, 'domain_weights') else None,
+                "dr_samples": (
+                    {k: np.asarray(v).tolist() for k, v in new_randomizations.items()}
+                    if online_dr else None
+                ), 
             })
 
 
@@ -524,7 +531,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
     # Save logs to a CSV file if specified
     if log_file:
-        with open(log_file, "w", newline="") as csvfile:
+        with open(log_file + ".pkl", "wb") as f:
+            pickle.dump(logs, f)
+
+        with open(log_file + ".csv", "w", newline="") as csvfile:
             fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "control", "running_cost", "state_cost", "success", "domain_weights", "dr_samples"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()

@@ -120,6 +120,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     seed: int = 0,
     online_dr: bool = False,
     dr_strategy: AdaptiveDomainRandomizationStrategy = None,
+    trace_idxs=None,
 ) -> None:
     """Run an interactive simulation with the MPC controller.
 
@@ -404,10 +405,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             
             # Visualize the rollouts
             colors = plt.cm.viridis(np.linspace(0, 1, controller.num_randomizations))
+            if trace_idxs is None:
+                trace_idxs = list(range(num_traces))
             if show_traces:
                 ii = 0
                 for k in [1]:# range(num_trace_sites):
-                    for i in range(num_traces):
+                    for i in trace_idxs:
                         for d, color in enumerate(colors): # num_randomizations
                             for j in range(controller.task.planning_horizon):
                                 geom =viewer.user_scn.geoms[ii]
