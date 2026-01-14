@@ -78,6 +78,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     show_ui: bool = True,
     seed: int = 0,
     data_log_path: str = None,
+    trace_idxs=None,
 ) -> None:
     """Run an interactive simulation with the MPC controller.
 
@@ -256,21 +257,40 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # if hasattr(controller, 'beta'):
             #     controller.beta = float(policy_params.beta) # TODO
                 
-            
+            rollout_costs = jnp.sum(rollouts.costs, axis=1)
+            # print with 3 decimal places
+            # print("Rollout costs:", [f"{c:.3f}" for c in rollout_costs])
             # Visualize the rollouts
             if show_traces:
                 ii = 0
                 for k in range(num_trace_sites):
-                    for i in range(num_traces):
-                        for j in range(controller.task.planning_horizon):
-                            mujoco.mjv_connector(
-                                viewer.user_scn.geoms[ii],
-                                mujoco.mjtGeom.mjGEOM_LINE,
-                                trace_width,
-                                rollouts.trace_sites[0, i, j, k],        # ! 
-                                rollouts.trace_sites[0, i, j + 1, k],    # !
-                            )
-                            ii += 1
+                    if trace_idxs is not None:
+                        for i in trace_idxs:
+                            for j in range(controller.task.planning_horizon):
+                                mujoco.mjv_connector(
+                                    viewer.user_scn.geoms[ii],
+                                    mujoco.mjtGeom.mjGEOM_LINE,
+                                    trace_width,
+                                    rollouts.trace_sites[i, j, k, :3],        # ! 
+                                    rollouts.trace_sites[i, j + 1, k, :3],    # !
+                                )
+                                # set color based on cost
+                                # cost_norm = (rollout_costs[i] - jnp.min(rollout_costs)) / (jnp.max(rollout_costs) - jnp.min(rollout_costs) + 1e-6)
+                                # high cost = red, low cost = green
+                                # color = jnp.array([1.0 - cost_norm, cost_norm, 0.0, 0.5])
+                                # viewer.user_scn.geoms[ii].rgba = color
+                                ii += 1
+                    else:
+                        for i in range(num_traces):
+                            for j in range(controller.task.planning_horizon):
+                                mujoco.mjv_connector(
+                                    viewer.user_scn.geoms[ii],
+                                    mujoco.mjtGeom.mjGEOM_LINE,
+                                    trace_width,
+                                    rollouts.trace_sites[i, j, k, :3],        # ! 
+                                    rollouts.trace_sites[i, j + 1, k, :3],    # !
+                                )
+                                ii += 1
 
             # Update the ghost reference
             if reference is not None:
@@ -310,15 +330,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                             u,  # Exclude base DOF
                         )
                     # print(f"Remapped control action: {u}")
-                    
-                    if controller.gravity_compensator:
-                        # Gravity compensation for the robot only
-                        tau_g = gravity_comp_torque(mj_model, mj_data)
-                        # Clear and apply external torques (generalized forces)
-                        mj_data.qfrc_applied[:] = 0.0        # clears all user generalized forces
-                        mj_data.xfrc_applied[:] = 0.0        # clears any body-space external wrenches
-                        mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
-                        # Apply the control to the simulation
+                
                     mj_data.ctrl[:] = np.array(u[np.array(controller.task.actuator_joint_idxs)])
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
@@ -333,12 +345,22 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 frame = renderer.render()
                 recorder.add_frame(frame.tobytes())
                 
+                
+            # running costs
+            running_costs = controller.task.running_cost(mj_data)
+            # contact_cost = controller.task.contact_cost(mj_data)  
+            contact_cost =  controller.task.contact_force_cost(mj_data)    
+            # print("Contact force cost:", contact_force_cost)
+            goal_cost = controller.task.goal_cost(mj_data)  
+            for body_id in range(mj_model.nbody):
+                wrench = mj_data.cfrc_ext[body_id]
+                body_name = mj_model.body(body_id).name
+                # print(f"{body_id:2d} {body_name:15s}: {wrench}")
             # Try to run in roughly realtime
             elapsed = time.time() - start_time
             if elapsed < step_dt:
                 time.sleep(step_dt - elapsed)
-
-            # Print some timing information
+  
             rtr = step_dt / (time.time() - start_time)
             # Check for task success
             task_success |= controller.task.success(mj_data)
@@ -349,12 +371,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             
             if hasattr(controller, 'beta'):
                 print(
-                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, success: {task_success:.3f}, beta: {controller.beta:.3f}", 
+                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.2f}s, sim time: {mj_data.time:.2f}s, success: {task_success:.3f}, costs: {running_costs:.3f}, contact: {contact_cost:.3f}, distance: {goal_cost:.3f}, beta: {controller.beta:.3f}", 
                     end="\r",
                 )
             else:
                 print(
-                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s, sim time: {mj_data.time:.2f}s, success: {task_success:.3f}", 
+                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.2f}s, sim time: {mj_data.time:.2f}s, costs: {running_costs:.3f}, contact: {contact_cost:.3f}, distance: {goal_cost:.3f}, success: {task_success:.3f}", 
                     end="\r",
                 )
 
@@ -366,7 +388,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "qpos": np.array(mjx_data.qpos).tolist(),
                 "qvel": np.array(mjx_data.qvel).tolist(),
                 "control": np.array(u).tolist(),
-                "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
+                "running_cost": running_costs.tolist(),
                 "state_cost": float(rollouts.costs[0, 0]),
                 "success": task_success,
             })

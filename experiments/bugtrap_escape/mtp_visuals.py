@@ -178,7 +178,9 @@ class MTP(SamplingBasedController):
           
             # add last_a_index of spline as first control point
             # !! Double Check
+            # init_sample = jnp.repeat(jnp.zeros_like(params.spline[params.last_a_idx][None, None, :]), self.nbr_mtp_samples, axis=0)
             init_sample = jnp.repeat(params.spline[params.last_a_idx][None, None, :], self.nbr_mtp_samples, axis=0)
+            
             control_points = jnp.concatenate(
                 [init_sample, control_points], axis=1
             )
@@ -241,95 +243,13 @@ class MTP(SamplingBasedController):
 
         return out, params.replace(rng=rng)
     
-    # def sample_controls2(self, params: MTPParams) -> Tuple[jax.Array, MTPParams]:
-    #     rng = params.rng
-    #     T, U = self.task.planning_horizon, self.task.nu
-    #     R = self.num_samples
-    #     B = int(self.num_samples * self.beta)   # MTP batch
-    #     R_mppi = R - B - 1                      # -1 for deterministic previous spline
-
-    #     # Preallocate the full output once: (R, T, U)
-    #     out = jnp.empty((R, T, U), dtype=jnp.float32)
-
-    #     # Slot 0: deterministic previous spline
-    #     out = out.at[0].set(params.spline)
-
-    #     # ----- MTP branch (B batches) -----
-    #     if B > 0:
-    #         rng, cp_key, pick_key = jax.random.split(rng, 3)
-
-    #         # Base control-point graph: (M, N, U) in task space bounds
-    #         control_points_base = jax.random.uniform(
-    #             cp_key, (self.M, self.N, U),
-    #             minval=self.task.u_min, maxval=self.task.u_max
-    #         )
-
-    #         # Pick per layer (B, M) indices in [0, N-1]
-    #         layer_indices = jax.random.randint(pick_key, (B, self.M), 0, self.N)
-
-    #         # Vectorized selection: (B, M, U)
-    #         cp_base = control_points_base[None, ...]             # (1, M, N, U)
-    #         idx = layer_indices[..., None, None]                 # (B, M, 1, 1)
-    #         idx = jnp.broadcast_to(idx, (B, self.M, 1, U))       # (B, M, 1, U)
-    #         chosen = jnp.take_along_axis(cp_base, idx, axis=2).squeeze(2)  # (B, M, U)
-
-    #         # Prepend the last applied control from the previous spline: (B, 1, U)
-    #         init_cp = params.spline[params.last_a_idx]           # (U,)
-    #         init_cp = jnp.broadcast_to(init_cp, (B, U))          # (B, U)
-    #         chosen = jnp.concatenate([init_cp[:, None, :], chosen], axis=1)  # (B, M+1, U)
-
-    #         # Produce dense horizon controls (B, T, U) without concatenations
-    #         if self.interpolation == 'bspline':
-    #             # bmat is (T, M+1); einsum -> (B, T, U)
-    #             mtp_controls = jnp.einsum("tm,bmu->btu", self.bmat, chosen)
-
-    #         elif self.interpolation == 'akima':
-    #             # Interpolate in chunks, then fill tail in-place
-    #             num_interp = T // (self.M - 1)
-    #             remain     = T - num_interp * (self.M - 1)
-
-    #             A = jax.vmap(poly_akima, in_axes=(None, 0))(self.aknots, chosen)   # (B, M-1, 4, U)
-    #             interp = poly_interpolation(A, num_interp)                         # (B, T - remain, U)
-
-    #             mtp_controls = jnp.empty((B, T, U), dtype=interp.dtype)
-    #             mtp_controls = mtp_controls.at[:, :T-remain].set(interp)
-    #             tail = jnp.repeat(chosen[:, -1:, :], remain, axis=1)               # (B, remain, U)
-    #             mtp_controls = mtp_controls.at[:, T-remain:].set(tail)
-
-    #         elif self.interpolation == 'linear':
-    #             num_interp = T // (self.M - 1)
-    #             remain     = T - num_interp * (self.M - 1)
-
-    #             interp = jax.vmap(interpolate_path, in_axes=(0, None))(chosen, num_interp)  # (B, T-remain, U)
-    #             mtp_controls = jnp.empty((B, T, U), dtype=interp.dtype)
-    #             mtp_controls = mtp_controls.at[:, :T-remain].set(interp)
-    #             tail = jnp.repeat(chosen[:, -1:, :], remain, axis=1)
-    #             mtp_controls = mtp_controls.at[:, T-remain:].set(tail)
-
-    #         else:
-    #             raise ValueError(f"Invalid interpolation: {self.interpolation}")
-
-    #         # Store MTP block in a single write
-    #         out = out.at[1:1+B].set(mtp_controls)
-
-    #     # ----- MPPI branch (R_mppi batches) -----
-    #     if R_mppi > 0:
-    #         rng, noise_key = jax.random.split(rng)
-    #         noise = jax.random.normal(noise_key, (R_mppi, T, U))
-    #         mppi_controls = params.mean + params.cov * noise
-    #         out = out.at[1+B:1+B+R_mppi].set(mppi_controls)
-
-    #     # Clip once (vectorized)
-    #     out = jnp.clip(out, self.task.u_min, self.task.u_max)
-    #     return out, params.replace(rng=rng)
-
-    
    
     def update_params(
         self, params: MTPParams, rollouts: Trajectory
     ) -> MTPParams:
         """Update the mean with an exponentially weighted average."""
         costs = jnp.sum(rollouts.costs, axis=1)  # sum over time steps, MC
+        # jax.debug.print("Rollout costs: {}", costs)
         
         if self.sample_weighting == 'cem-softmax':
             # CEM update with softmax weighting for the elites
@@ -337,6 +257,7 @@ class MTP(SamplingBasedController):
             # elite_indices = jnp.argsort(costs)[:self.num_elites]
             controls = rollouts.controls[elite_indices]
             weights = jnp.nan_to_num(jax.nn.softmax(-costs[elite_indices] / self.temperature, axis=0))
+            # jax.debug.print("Weights: {}", weights)
             # The new proposal distribution is a Gaussian fit to the elites.
             weighted_controls = weights[:, None, None] * controls
             next_idx = elite_indices[0]  # use the best elite as control

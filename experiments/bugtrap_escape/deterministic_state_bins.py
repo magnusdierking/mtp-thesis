@@ -123,7 +123,7 @@ def run_headless_simulation(
                     "qpos": np.array(mjx_data.qpos).tolist(),
                     "qvel": np.array(mjx_data.qvel).tolist(),
                     "control": np.array(u).tolist(),
-                    "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
+                    # "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
                     "state_cost": float(rollouts.costs[0, 0]),
                     "success": task_success,
                 })
@@ -142,7 +142,7 @@ def run_headless_simulation(
             if log_file_prefix:
                 log_dir = Path(save_path)
                 log_dir.mkdir(parents=True, exist_ok=True)   # create directory if missing
-                log_file = log_dir / f"{log_file_prefix}_seed_{seed}.pkl"
+                log_file = log_dir / f"{log_file_prefix}_seed_{seed}_bins.pkl"
                 with open(log_file, "wb") as f:
                     pickle.dump(state_bins, f, protocol=pickle.HIGHEST_PROTOCOL)
                 print(f"State bins saved to {log_file}")
@@ -157,14 +157,22 @@ def run_headless_simulation(
             plan_times = np.array(plan_times)
             print(f"Iteration time: {np.mean(plan_times)} \\pm {np.std(plan_times)} seconds")
             if log_file_prefix:
-                log_file = os.path.join(save_path, f"{log_file_prefix}_seed_{seed}.csv")
-                with open(log_file, "w", newline="") as csvfile:
-                    fieldnames = [
-                        "step", "sim_time", "plan_time", "qpos", "qvel",
-                        "control", "running_cost", "state_cost", "success"
-                    ]
-                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                    writer.writeheader()
-                    for log in logs:
-                        writer.writerow(log)
-                print(f"Logs saved to {log_file}")
+                log_dir = Path(save_path)
+                log_dir.mkdir(parents=True, exist_ok=True)   # create directory if missing
+                log_file = log_dir / f"{log_file_prefix}_seed_{seed}_log.pkl"
+                with open(log_file, "wb") as f:
+                    pickle.dump(logs, f, protocol=pickle.HIGHEST_PROTOCOL)
+                print(f"State bins saved to {log_file}")
+                
+                
+                # log_file = os.path.join(save_path, f"{log_file_prefix}_seed_{seed}.csv")
+                # with open(log_file, "w", newline="") as csvfile:
+                #     fieldnames = [
+                #         "step", "sim_time", "plan_time", "qpos", "qvel",
+                #         "control", "running_cost", "state_cost", "success"
+                #     ]
+                #     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                #     writer.writeheader()
+                #     for log in logs:
+                #         writer.writerow(log)
+                # print(f"Logs saved to {log_file}")

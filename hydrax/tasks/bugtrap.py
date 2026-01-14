@@ -38,9 +38,17 @@ class BugTrap(Task):
         # ])
         
         self.pointmass_id = mj_model.site("pointmass").id
+        self.pointmass_body_id = mj_model.site("pointmass").bodyid[0]
+        print("Pointmass body id:", self.pointmass_body_id)
+        
         self.sid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "sphere_force")
-        self.sid_f = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "sphere_touch")
+        self.sid_touch = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "sphere_touch")
+        
         self.adr = mj_model.sensor_adr[self.sid]
+        self.adr_touch = mj_model.sensor_adr[self.sid_touch]
+        
+        self.goal_id =mj_model.body_mocapid[mj_model.body("goal").id]
+        
         # set range for actuator indices, we need all
         self.actuator_joint_idxs = mj_model.actuator_trnid[:, 0]
 
@@ -49,50 +57,53 @@ class BugTrap(Task):
         self.task_success = False
         mj_data = mujoco.MjData(self.mj_model)
         base_pos = np.array([0.0, 0.0])
-        base_pos[0] += np.random.normal(0.05, 1, size=(1,)) * 0.01
-        base_pos[1] += np.random.normal(0.0, 1, size=(1,)) * 0.05
+        base_pos[0] += np.random.uniform(-0.01, 0.08)
+        base_pos[1] += np.random.uniform(-0.05, 0.05)
         print("Resetting BugTrap task. Initial position:", base_pos)
         mj_data.qpos[:2] = base_pos
         return self.mj_model, mj_data
     
     
     def contact_cost(self, state: mjx.Data) -> jax.Array:
-        contact = jnp.abs(state.sensordata[self.adr])
-        contact_cost = jnp.where(contact > 0, 1000.0, 0.0)
+        contact = jnp.abs(state.sensordata[self.adr_touch])  # contact sensor value
+        contact_cost = jnp.where(contact > 0.001, 1.0, 0.0)
         return contact_cost
     
     def contact_force_cost(self, state: mjx.Data) -> jax.Array:
-        contact = jnp.sum(jnp.square(state.sensordata[self.sid_f: self.sid_f + 2])) # force vector norm in x,y
-        # contact_cost = jnp.where(contact > 0, contact, 0.0) # exclude reaction forces
+        # contact = jnp.sum(jnp.square(state.sensordata[self.adr: self.adr + 2])) # force vector norm in x,y
+        
+        contact = jnp.linalg.norm(state.cfrc_ext[self.pointmass_body_id])  # external contact force norm in x,y
+        # jax.debug.print('Contact force norm: {contact}', contact=contact)
+        contact = jnp.where(contact > 0.0, 1.0, 0.0)
         return contact
     
-    def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
+    def goal_cost(self, state: mjx.Data) -> jax.Array:
+        # position_cost = jnp.sum(
+        #     jnp.abs(state.site_xpos[self.pointmass_id] - state.mocap_pos[self.goal_id])
+        # )
+        position_cost = jnp.linalg.norm(state.site_xpos[self.pointmass_id] - state.mocap_pos[self.goal_id])
+        return position_cost
+    
+    def running_cost(self, state: mjx.Data, control: jax.Array = None) -> jax.Array:
         """The running cost ℓ(xₜ, uₜ) encourages target tracking."""
-        # contact_cost = self.contact_cost(state)
-        contact_cost = jnp.sum(self.contact_force_cost(state))
+        
+        contact_cost = self.contact_force_cost(state)
         # position_cost = jnp.sum(
         #     jnp.abs(state.site_xpos[self.pointmass_id] - state.mocap_pos[0])
         # )
-        position_cost = jnp.sum(
-            jnp.linalg.norm(state.site_xpos[self.pointmass_id] - state.mocap_pos[0])
-        )
+        # contact_cost = self.contact_cost(state)
+        position_cost = self.goal_cost(state)
         
-        # state_cost = 8 * contact_cost + 0.5 * position_cost
-
-        state_cost = jax.lax.cond(
-            state.site_xpos[self.pointmass_id, 0] > 0.11,
-            lambda: 15 * contact_cost + position_cost,  # True
-            lambda: 15 * contact_cost + position_cost,  # False
-        )
+        state_cost = 5 * contact_cost + 0.1 * jnp.square(position_cost)
 
         return state_cost 
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
-        return self.running_cost(state, jnp.zeros(self.mj_model.nu)) 
+        return 1 * self.running_cost(state, jnp.zeros(self.mj_model.nu)) 
     
     def success(self, state):
         position_cost = jnp.sum(
-            jnp.square(state.site_xpos[self.pointmass_id] - state.mocap_pos[0])
+            jnp.square(state.site_xpos[self.pointmass_id] - state.mocap_pos[self.goal_id])
         )
         return jnp.sqrt(position_cost) < self.success_threshold
         # return False
