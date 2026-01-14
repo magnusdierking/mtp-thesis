@@ -14,20 +14,20 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-PLANNING_HORIZON = 7
+PLANNING_HORIZON = 10
 SIM_STEPS_PER_CONTROL_STEP = 2
 
 NUM_SAMPLES = 512
 NUM_RANDOMIZATIONS = 1
 
 UPDATE_COV = False
-SIGMA = 0.2
+SIGMA = 0.25
 
 MAX_SPEED = 0.35  # m/s
 
 
 for algo in ["cem", "mtp"]:
-    for seed in [10, 42, 445]:
+    for seed in [10]:
         for nbr_elites in [8, 16, 32, 64, 128]:
             print(f"Algorithm: {algo}, Seed: {seed}, Num elites: {nbr_elites}")
             
@@ -36,30 +36,33 @@ for algo in ["cem", "mtp"]:
             if not path.exists():       
                 path.mkdir(parents=True, exist_ok=True)
     
-            path = path / f"seed_{seed}_n_{nbr_elites}.csv"
+            path = path / f"seed_{seed}_n_{nbr_elites}.pkl"
             
             if seed == 10:
+                # no rotation error, very hard with local minima
                 det_init = {
-                    "block_pos_x": 0.35,
-                    "block_pos_y": -0.2,
-                    "block_angle": 3*np.pi/4 ,
+                    "block_pos_x": 0.45,
+                    "block_pos_y": 0.1,
+                    "block_angle": -np.pi/2 ,
                     "ee_goal_pos": [0.5, 
                                     0.0, 
                                     0.045]
                 }
             elif seed == 42:
+                # Head of T towards goal, ee on other side
                 det_init = {
-                    "block_pos_x": 0.2,
-                    "block_pos_y": 0.1,
-                    "block_angle": np.pi/3,
-                    "ee_goal_pos": [0.45, 0.1, 0.035]
+                    "block_pos_x": 0.65,
+                    "block_pos_y": -0.15,
+                    "block_angle": np.pi/6,
+                    "ee_goal_pos": [0.45, 0.1, 0.045]
                 }
             elif seed == 445:
+                # simple setting
                 det_init = {
-                    "block_pos_x": 0.2,
+                    "block_pos_x": 0.6,
                     "block_pos_y": 0.1,
-                    "block_angle": np.pi/3,
-                    "ee_goal_pos": [0.45, 0.1, 0.035]
+                    "block_angle": -np.pi/3,
+                    "ee_goal_pos": [0.7, 0.3, 0.045]
                 }
                 
             task = PushTFranka(ik_type = 'pinv',
@@ -139,14 +142,14 @@ for algo in ["cem", "mtp"]:
                 ctrl,
                 mj_model,
                 mj_data,
-                frequency=10,
+                frequency=20,
                 show_traces=False,
                 trace_width=0.25,
                 max_traces=0,
                 fixed_camera_id=0,
                 show_ui=False,
                 record_video=False,
-                max_step=500,
+                max_step=400,
                 seed=seed,
                 trace_idxs=None,
                 log_file=path.as_posix(),

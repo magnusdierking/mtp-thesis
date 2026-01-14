@@ -4,7 +4,8 @@ import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
 
-from hydrax.alg_base import SamplingBasedController, Trajectory
+from hydrax.alg_base_opt import SamplingBasedController, Trajectory
+
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
 
@@ -52,7 +53,7 @@ class PredictiveSampling(SamplingBasedController):
     def init_params(self, seed: int = 0) -> PSParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
-        mean = jnp.zeros((self.task.planning_horizon, self.task.model.nu))
+        mean = jnp.zeros((self.task.planning_horizon, self.task.nu))
         return PSParams(mean=mean, rng=rng)
 
     def sample_controls(self, params: PSParams) -> Tuple[jax.Array, PSParams]:
@@ -63,7 +64,7 @@ class PredictiveSampling(SamplingBasedController):
             (
                 self.num_samples,
                 self.task.planning_horizon,
-                self.task.model.nu,
+                self.task.nu,
             ),
         )
         controls = params.mean + self.noise_level * noise

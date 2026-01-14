@@ -304,7 +304,7 @@ class PushTFranka(Task):
         return cost
     
 
-    def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
+    def running_cost(self, state: mjx.Data, control: jax.Array = None) -> jax.Array:
         
         # Goal error terms 
         position_err = self._get_position_err(state)

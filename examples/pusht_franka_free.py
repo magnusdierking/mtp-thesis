@@ -81,12 +81,10 @@ sigma_max = 0.55
 sigma_min = 0.15
 sigma_start = 0.3
 det_init = {
-    "block_pos_x": 0.35 + np.random.uniform(-0.05, 0.05),
-    "block_pos_y": -0.2 + np.random.uniform(-0.05, 0.05),
-    "block_angle": np.random.uniform(-np.pi/12, np.pi/12),#3*np.pi/4 + np.random.uniform(-np.pi/12, np.pi/12),
-    "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
-                    0.0 + np.random.uniform(-0.05, 0.05), 
-                    0.045]
+    "block_pos_x": 0.6,
+    "block_pos_y": 0.1,
+    "block_angle": -np.pi/6,
+    "ee_goal_pos": [0.4, 0.0, 0.045]
 }
 
 
@@ -95,7 +93,7 @@ det_init = {
 #velocity control
 max_speed = 0.35  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=7,
+                    planning_horizon=10,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},

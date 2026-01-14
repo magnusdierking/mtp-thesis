@@ -1,6 +1,8 @@
 import time
 from typing import Sequence
 import csv
+import pickle
+from pathlib import Path
 from xml.parsers.expat import model
 
 from hydrax.algs.mtp.beta_scheduler import RatioEMAScheduler
@@ -417,12 +419,14 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 mujoco.mj_step(mj_model, mj_data)
                 viewer.sync()
             # data    
-            linear_error = np.linalg.norm(controller.task._get_position_err(mj_data))
-            rotation_error = np.linalg.norm(controller.task._get_orientation_err(mj_data))
-            distance = controller.task._get_ee_block_distance(mj_data)
+            # linear_error = np.linalg.norm(controller.task._get_position_err(mj_data))
+            # rotation_error = np.linalg.norm(controller.task._get_orientation_err(mj_data))
+            # distance = controller.task._get_ee_block_distance(mj_data)
 
-            state_error = 20 * linear_error + 1 * rotation_error
-            print(f"Distance: {state_error}, Linear: {linear_error}, Rotation: {rotation_error}")
+            state_error = controller.task.running_cost(mj_data)
+
+            # state_error = 20 * linear_error + 1 * rotation_error
+            # print(f"Distance: {state_error}, Linear: {linear_error}, Rotation: {rotation_error}")
            
             # only for pusht
             sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
@@ -484,7 +488,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "qvel": np.array(mj_data.qvel).tolist(),
                 "ee_pos": np.array(ee_pos).tolist(),
                 "control": np.array(u).tolist(),
-                "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
+                # "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
                 "state_error": float(state_error),
                 "state_cost": float(rollouts.costs[0, 0]),
                 "success": task_success,
@@ -508,10 +512,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
     # Save logs to a CSV file if specified
     if log_file:
-        with open(log_file, "w", newline="") as csvfile:
-            fieldnames = ["step", "sim_time", "plan_time", "qpos", "qvel", "ee_pos", "control", "state_error", "running_cost", "state_cost", "success"]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            for log in logs:
-                writer.writerow(log)
-        print(f"\nLogs saved to {log_file}")
+        log_file = Path(log_file)
+        with open(log_file, "wb") as f:
+            pickle.dump(logs, f, protocol=pickle.HIGHEST_PROTOCOL)
+        print(f"Logs saved to {log_file}")

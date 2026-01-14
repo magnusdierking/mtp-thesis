@@ -9,6 +9,23 @@ from scipy.spatial.transform import Rotation as R
 import time
 from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec, mat2quat, se3_left_invariant_metric
 
+import math
+
+def euler_to_quaternion(roll, pitch, yaw):
+    cy = math.cos(yaw * 0.5)
+    sy = math.sin(yaw * 0.5)
+    cp = math.cos(pitch * 0.5)
+    sp = math.sin(pitch * 0.5)
+    cr = math.cos(roll * 0.5)
+    sr = math.sin(roll * 0.5)
+
+    w = cr * cp * cy + sr * sp * sy
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+    return (x, y, z, w)
+
+
 def differential_IK(
     model: mujoco.MjModel,
     data: mujoco.MjData,
@@ -94,10 +111,6 @@ for i in range(model.njnt):
     print(f"  qpos address: {model.jnt_qposadr[i]}")
     # qvel address
     print(f"  qvel address: {model.jnt_dofadr[i]}")
-#     # print damping, stiffness, frictionloss
-#     print(f"  Damping: {model.joint(i).damping}, Stiffness: {model.joint(i).stiffness}, Frictionloss: {model.joint(i).frictionloss}")
-# for i in range(model.nu):
-#     name = mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
 
 for i in range(model.nsite):
     name = model.site(i).name
@@ -111,14 +124,6 @@ for bid in range(model.nbody):
 
 # actuatros
 print("Number of actuators:", model.nu)
-    # for i in range(model.ngeom):
-    # name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i)
-    # print(i, name)
-
-    
-    
-
-        # Assuming the block's pose is at the beginning of qpos
 
 
 # # Initial guess
@@ -132,7 +137,7 @@ print("Actuator joint ids:", actuator_jids)
 
 ee_body_id = model.body("ee_frame").id
 goal_quat_ee = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-goal_pos_ee = np.array([0.7, 0.0, 0.035]) #np.array([0.3, 0.0, 0.05])
+goal_pos_ee = np.array([0.7, 0.3, 0.045]) #np.array([0.3, 0.0, 0.05])
 joint_limits = model.jnt_range[actuator_joint_idxs]
 
 # IK loop parameters
@@ -194,9 +199,22 @@ for i in range(max_iters):
 else:
     print(f"IK did not converge. {err}, {np.linalg.norm(err)}")
 
+
+
+
+
 data.qpos[actuator_jids] = q  # Set the robot's joint positions
-data.qpos[0] = 0.2
-    
+
+data.qpos[0] = 0.6
+data.qpos[1] = 0.1
+angle = -np.pi/3  # 30 degrees
+
+quat = euler_to_quaternion(0, 0, angle) 
+data.qpos[3:7] = np.array([quat[3], quat[0], quat[1], quat[2]])  
+
+
+
+
 
 step = 0
 scale = 0.8
@@ -241,8 +259,8 @@ with mujoco.viewer.launch_passive(model, data) as v:
             0  # world frame
         )
 
-        sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ} | time: {data.time:.4f}s | ee vel: {vel} ")
-        sys.stdout.flush()
+        # sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ} | time: {data.time:.4f}s | ee vel: {vel} ")
+        # sys.stdout.flush()
 
 
         
