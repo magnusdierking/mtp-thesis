@@ -207,6 +207,11 @@ class FR3_PushT(FrankaPandaServer):
         self.debug_data.qvel[6:13] = self.robot_dq
         self.debug_data.time = self.get_clock().now().nanoseconds / 1e9
 
+        # for early visualization
+        # mujoco.mj_forward(self.debug_model, self.debug_data)
+        mujoco.mj_step(self.debug_model, self.debug_data)
+        self.viewer.sync()
+
         # One call to transfer mjx_data & policy_params to GPU and compile
         self.jit_step = self.jit_step.lower(
             self.mjx_data, self.policy_params,
@@ -332,6 +337,7 @@ class FR3_PushT(FrankaPandaServer):
     def _timeout_callback(self):
         self.get_logger().info("Timeout reached, shutting down...")
         # Any controller-specific cleanup, if needed
+        self.send_stop_command()
         rclpy.shutdown()
 
 
@@ -375,9 +381,9 @@ class FR3_PushT(FrankaPandaServer):
 
         t.transform.translation.x = 0.0
         t.transform.translation.y = +0.025
-        t.transform.translation.z = -0.025 - 0.005
+        t.transform.translation.z = -0.025 - 0.002
 
-        quat = quaternion_from_euler(0.0, 0.0, np.pi)
+        quat = quaternion_from_euler(-0.05, 0.02, np.pi)
         t.transform.rotation.x = quat[0]
         t.transform.rotation.y = quat[1]
         t.transform.rotation.z = quat[2]
@@ -504,8 +510,10 @@ class FR3_PushT(FrankaPandaServer):
         self.debug_data.qpos[7:14] = self.robot_q
         self.debug_data.qvel[6:13] = self.robot_dq
         self.debug_data.time = current_time
+        
         # update sites etc.
-        mujoco.mj_forward(self.debug_model, self.debug_data)
+        # mujoco.mj_forward(self.debug_model, self.debug_data)
+        mujoco.mj_step(self.debug_model, self.debug_data)
         
         t1 = time.time()
         self.mjx_data, self.policy_params, rollouts = self.jit_step(
@@ -523,9 +531,9 @@ class FR3_PushT(FrankaPandaServer):
         self.action = self.actions[0]
         t2 = time.time()
 
-        linear_error = np.linalg.norm(self.ctrl.task._get_position_err(self.debug_data))
-        rotation_error = np.linalg.norm(self.ctrl.task._get_orientation_err(self.debug_data))
-        goal_error = 30 * np.square(linear_error) + 3 * rotation_error
+        # linear_error = np.linalg.norm(self.ctrl.task._get_position_err(self.debug_data))
+        # rotation_error = np.linalg.norm(self.ctrl.task._get_orientation_err(self.debug_data))
+        # goal_error = 30 * np.square(linear_error) + 3 * rotation_error
         terminal_error = self.ctrl.task.terminal_cost(self.debug_data) / 10
 
 
@@ -537,9 +545,9 @@ class FR3_PushT(FrankaPandaServer):
             'planning_time': t2 - t1,
             'object_pos': self.lin_t.tolist(),
             'object_quat': self.quat_t.tolist(),
-            'linear_error': linear_error.tolist(),
-            'rotation_error': rotation_error.tolist(),
-            'goal_error': float(goal_error),
+            # 'linear_error': linear_error.tolist(),
+            # 'rotation_error': rotation_error.tolist(),
+            # 'goal_error': float(goal_error),
             'terminal_error': float(terminal_error),
             'action': self.action.tolist(),
         })  
@@ -623,19 +631,27 @@ class FR3_PushT(FrankaPandaServer):
             pickle.dump(self.log, f)
     
 
+    def send_stop_command(self):
+        """
+        Send a stop command to the robot to halt any ongoing motion.
+        """
+        self.get_logger().info("Sent stop command to the robot.")
+        self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
+
+
 if __name__ == '__main__':
     
     rclpy.init()
     max_speed = 0.35
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=8,
-                    sim_steps_per_control_step=2,
-                    ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
-                                 "u_max": jnp.array([max_speed, max_speed])},
-                    actuation_type='velocity',
-                    sampling_space="velocity",
-                    block_type = 'free',
-                )
+                planning_horizon=9,
+                sim_steps_per_control_step=2,
+                ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
+                                "u_max": jnp.array([max_speed, max_speed])},
+                actuation_type='velocity',
+                sampling_space="velocity",
+                block_type = 'free',
+            )
     
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
@@ -757,6 +773,7 @@ if __name__ == '__main__':
             executor.spin()
         except KeyboardInterrupt:
             print("Shutting down controller...")
+            controller.send_stop_command()
         finally:
             executor.shutdown()
             path = get_data_path() / "sim-real-free" 

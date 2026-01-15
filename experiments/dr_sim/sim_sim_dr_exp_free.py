@@ -20,7 +20,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 
-NUM_SAMPLES = 16         
+NUM_SAMPLES = 256     
 NUM_RANDOMIZATIONS = 24   
 MAX_SPEED = 0.35  # m/s
 

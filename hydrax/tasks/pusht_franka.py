@@ -493,8 +493,8 @@ class PushTFranka(Task):
 
             # Commanded planar twist + corrective twist
             twist_cmd = jnp.concatenate([control_xy, jnp.zeros(4)])     # [vx, vy, 0, 0, 0, 0]
-            # temp = jnp.concatenate([control_xy, jnp.array([0.03-ee_pos[2]])]) #!
-            temp = jnp.concatenate([control_xy, jnp.array([0.0])])
+            temp = jnp.concatenate([control_xy, jnp.array([0.045-ee_pos[2]])]) #!
+            # temp = jnp.concatenate([control_xy, jnp.array([0.0])])
             twist_err = jnp.concatenate([temp, e_rot])                 # [ex, ey, ez, ewx, ewy, ewz]
             twist = twist_cmd # twist_err
 

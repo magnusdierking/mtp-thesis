@@ -361,7 +361,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 trace_idxs = list(range(num_traces))
             if show_traces:
                 ii = 0
-                for k in [1]:# range(num_trace_sites):
+                for k in range(num_trace_sites):
                     for i in trace_idxs:
                         for d, color in enumerate(colors): # num_randomizations
                             for j in range(controller.task.planning_horizon):
@@ -382,9 +382,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             for i in range(sim_steps_per_replan):
                 t = i * mj_model.opt.timestep
                 u = controller.get_action(policy_params, t)
-                # if any u is nan, stop 
-                # print(f"Control action shape: {u.shape}")
-                # print(f"Control action: {u}")
 
                 if delay_ctrl_start > 0:
                     delay_ctrl_start -= 1

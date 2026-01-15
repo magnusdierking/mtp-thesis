@@ -110,7 +110,7 @@ def differential_IK(
     goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
     
     # print("End effector translation z error:", 0.035 - ee_pos[2])
-    temp = np.concatenate([world_site_vel_desired, np.array([0.035-ee_pos[2]])])
+    temp = np.concatenate([world_site_vel_desired, np.array([0.045-ee_pos[2]])])
     twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
     dq = J_pinv @ twist_err
 

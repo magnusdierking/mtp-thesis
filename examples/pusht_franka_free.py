@@ -93,7 +93,7 @@ det_init = {
 #velocity control
 max_speed = 0.35  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=10,
+                    planning_horizon=9,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
@@ -185,8 +185,8 @@ elif args.algorithm == "mtp":
         sigma_min=sigma_min,
         sigma_max=sigma_max,
         sigma_start=sigma_start,
-        num_elites=12,
-        beta=0.25,
+        num_elites=24,
+        beta=0.4,
         alpha=0.1,
         interpolation='bspline',
         num_randomizations=num_randomizations,

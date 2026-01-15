@@ -6,10 +6,9 @@
           jacobian="dense"
           integrator="implicitfast"
           cone="elliptic"
-          timestep="0.02" 
+          timestep="0.025" 
           iterations="6"
-          ls_iterations="8"
-          noslip_iterations="2">
+          ls_iterations="8">
   <flag eulerdamp="disable" 
         warmstart="enable"/>
   </option>
@@ -30,10 +29,10 @@
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
       <geom friction="0.1 0.0001 0.0001" 
-            solref="0.04 0.9" 
-            margin="0.001"
+            solref="0.03 0.99" 
+            margin="0.0001"
             gap="0.0005"
-            solimp="0.8 0.95 0.001 0.5 2"
+            solimp="0.9 0.95 0.001 0.5 2"
             condim="3"
             contype="2" 
             conaffinity="5"/>  
@@ -61,10 +60,10 @@
     <!-- platform for experiment, potentially different frictions -->
     <body name="ground" pos="0.5 0.0 0.0075" quat="1 0 0 -1">
       <geom name="ground" type="box" size="0.4 0.4 0.0075" 
-            solref="0.04 1"
-            friction="0.2 0.005 0.001" 
+            solref="0.03 1"
+            friction="0.1 0.005 0.001" 
             condim="3"
-            solimp="0.7 0.95 0.005 0.5 2"
+            solimp="0.8 0.95 0.005 0.5 2"
             rgba="0.295 0.227 0.15 1"
             contype="4" conaffinity="3"/> 
     </body>
