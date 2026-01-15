@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 from hydrax.algs import MPPI, MTP, CEM
 # from hydrax.algs.mtp.an_mtp_opt import AnMTP
@@ -7,14 +8,11 @@ from an_mtp_dr import AnMTP
 from hydrax.utils.files import get_data_path
 from deterministic_dr import run_interactive
 
-from pusht_franka_dr import PushTFranka
-import jax
+from hydrax.tasks.pusht_franka import PushTFranka
 import jax.numpy as jnp
 import numpy as np
 
 from hydrax.risk import RiskStrategy, ExpectedCost, AverageCost, ValueAtRisk, ConditionalValueAtRisk,InverseValueAtRisk, InverseConditionalValueAtRisk
-
-from domain_adaptation import BayesianDomainRandomization, EvolutionaryDomainRandomization
 from domain_adaptation import UniformDomainRandomization
 
 """
@@ -22,28 +20,11 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 
-NUM_SAMPLES = 256         
+NUM_SAMPLES = 16         
 NUM_RANDOMIZATIONS = 24   
 MAX_SPEED = 0.35  # m/s
 
-# very hard cna result in failure
-# online_dr = True
-# seed = 445
-# update_cov = False
-# aggregation = "expectation"
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": -0.1,
-#     "block_pos_y": 0.1,
-#     "block_angle": 3*np.pi/4,
-#     "ee_goal_pos": [0.35, 0.0, 0.035]
-# }
-
-
 seed = 42
-online_dr = True
 update_cov = False
 sigma_max = 0.35
 sigma_min = 0.15
@@ -120,6 +101,7 @@ if args.risk is None or args.risk == "average":
     args.risk = "average"  # Default to MTP
     aggregation = AverageCost()
 elif args.risk == "expectation":
+    # initialize with uniform weights
     aggregation = ExpectedCost(jnp.ones((NUM_RANDOMIZATIONS,), dtype=jnp.float32) / NUM_RANDOMIZATIONS)
 elif args.risk == "var":
     aggregation = ValueAtRisk(alpha=risk_alpha)
@@ -214,18 +196,15 @@ elif args.algorithm == "anmtp":
 # Define the model used for simulation
 mj_model, mj_data = task.reset(seed=seed)
 
-# if args.dr is None:
-#     online_dr = False
-#     print("No online domain randomization.")
-#     dr_strategy = None
-# elif args.dr == "uniform":
 print("Using Uniform Domain Randomization.")
 dr_strategy = UniformDomainRandomization(
     seed=seed,
     task=task,
     controller=ctrl,
-    randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [1]},
-                        "top": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [1]}
+    randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
+                        "top": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
+                        "ground": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
+                        
     },
     randomized_joints = {
         # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
@@ -235,45 +214,6 @@ dr_strategy = UniformDomainRandomization(
     },
     num_randomizations=NUM_RANDOMIZATIONS,
 )
-# elif args.dr == "evolutionary":
-#     print("Using Evolutionary Domain Randomization.")
-#     dr_strategy = EvolutionaryDomainRandomization(
-#         seed=seed,
-#         task=task,
-#         controller=ctrl,
-#         randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [1]},
-#                            "top": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [1]}
-#         },
-#         randomized_joints = {
-#             # "T_x": {"field": "dof_damping", "min": 0.01, "max": 3.0},
-#             # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-#             # "T_y": {"field": "dof_damping", "min": 0.01, "max": 3.0},
-#             # "T_z": {"field": "dof_damping", "min": 0.01, "max": 3.0},
-#             # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-#             # "dof_frictionloss": (0.0, 1.0, ["T_x", "T_y"]),  # randomize frictionloss of T
-#         },
-#         num_randomizations=num_randomizations,
-#         elite_fraction=0.2,
-#     )
-# elif args.dr == "bayesian":
-#     print("Using Bayesian Domain Randomization.")
-#     dr_strategy = BayesianDomainRandomization(
-#         seed=seed,
-#         task=task,
-#         controller=ctrl,
-#         randomized_bodies={},#{"block": {"field": "body_mass", "min": 0.1, "max": 1.75}},
-#             # "body_mass": (0.1, 1.75, task.T_bid),  # randomize mass of the block
-#             # "geom_friction": (jnp.array([0.5, 1e-03, 0.5e-04]), jnp.array([1.5, 10e-03, 2e-04]), task.T_bid),  # friction
-#         randomized_joints = {
-#             # "T_x": {"field": "dof_damping", "min": 0.01, "max": 3.0},
-#             # "T_y": {"field": "dof_damping", "min": 0.01, "max": 3.0},
-#             # "T_z": {"field": "dof_damping", "min": 0.01, "max": 3.0},
-#             # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-#             # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-#             # "dof_frictionloss": (0.0, 1.0, ["T_x", "T_y"]),  # randomize frictionloss of T
-#         },
-#         num_randomizations=num_randomizations,
-#     )
 
 
 
@@ -282,45 +222,17 @@ if not path.exists():
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
 
-# print(dr_strategy.randomized_idxs)
-# print("+"*10)
-# print all shapes
-# for shape in dr_strategy.get_uniform_randomizations().values():
-#     print(shape.shape)
-# randomizations, geoms, dofs
-# print(dr_strategy.get_uniform_randomizations()["geom_friction"][:,jnp.array([3, 4]), :])
-# print("+"*10)
 
 ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
 
-# ----------------
-# Test update of randomizations
-# # fake signal according to gaussian density around 1
-# mu = 1   # mean
-# sigma = 0.5   # standard deviation
-# new_randomizations = dr_strategy.get_current_randomizations()
-# x = np.ones(num_randomizations) 
-# fake_signal = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu)/sigma)**2)
-# fake_signal = np.linalg.norm(fake_signal[...,None], axis=1) # lower is better
-# fake_signal = np.max(fake_signal) - fake_signal  # invert to make lower better
-# # plot
-# import matplotlib.pyplot as plt
-# plt.plot(x, fake_signal)
-# plt.title("Fake performance signal")
-# plt.show()
+new_randomizations = dr_strategy.get_current_randomizations()
+print("New randomizations:", new_randomizations["geom_friction"][:,[4,5]])
+
+# sys.exit()
 
 
-# updated, new_randomizations, weights = dr_strategy.get_updated_randomizations(fake_signal)
-# print("New randomizations:", new_randomizations)
 
-# samples = new_randomizations["dof_damping"][:, 0]
-# # density plot
-# plt.hist(samples, bins=10, density=True)
-# plt.title("Damping samples density")
-# plt.show()
-
-# exit()
-num_traces = 20
+num_traces = 1
 incr = NUM_SAMPLES // num_traces
 trace_idxs = [i * incr for i in range(num_traces)]
 print("Tracing indices:", trace_idxs)
@@ -339,18 +251,6 @@ run_interactive(
     max_step=200,
     seed=seed,
     # log_file=path.as_posix(),
-    online_dr=online_dr,
     dr_strategy = dr_strategy,
     trace_idxs=trace_idxs,
     )
-
-
-# run_headless_simulation(
-#     task,
-#     ctrl,
-#     frequency=50,
-#     seeds=[seed],
-#     max_step=500,
-#     log_file_prefix="pusht_franka_" + args.algorithm,
-#     save_path="./results"
-#     )

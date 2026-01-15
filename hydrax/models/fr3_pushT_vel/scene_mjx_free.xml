@@ -60,7 +60,7 @@
     </body> -->
     <!-- platform for experiment, potentially different frictions -->
     <body name="ground" pos="0.5 0.0 0.0075" quat="1 0 0 -1">
-      <geom type="box" size="0.4 0.4 0.0075" 
+      <geom name="ground" type="box" size="0.4 0.4 0.0075" 
             solref="0.04 1"
             friction="0.2 0.005 0.001" 
             condim="3"
