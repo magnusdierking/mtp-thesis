@@ -58,7 +58,7 @@ class FR3_PushT(FrankaPandaServer):
                  debug_data,
                  viewer,
                  trace_idxs,
-                 run_time_sec=30.0
+                 run_time_sec=40.0
                  ):
         
         super().__init__(robot_ip, 
@@ -381,7 +381,7 @@ class FR3_PushT(FrankaPandaServer):
 
         t.transform.translation.x = 0.0
         t.transform.translation.y = +0.025
-        t.transform.translation.z = -0.025 - 0.002
+        t.transform.translation.z = -0.025 - 0.001
 
         quat = quaternion_from_euler(-0.05, 0.02, np.pi)
         t.transform.rotation.x = quat[0]
@@ -504,8 +504,9 @@ class FR3_PushT(FrankaPandaServer):
             )
             return
         current_time = self.get_clock().now().nanoseconds / 1e9
+        sim_z = self.debug_data.qpos[2]  # current object height in simulation
         # resolve state 
-        self.debug_data.qpos[0:7] = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
+        self.debug_data.qpos[0:7] = np.array([self.lin_t[0], self.lin_t[1], sim_z,
                                               self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
         self.debug_data.qpos[7:14] = self.robot_q
         self.debug_data.qvel[6:13] = self.robot_dq
@@ -539,6 +540,10 @@ class FR3_PushT(FrankaPandaServer):
 
         self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
         self.ctr += 1
+
+        self.get_logger().info(
+            f"Step {self.ctr}: Terminal error: {terminal_error:.4f}"
+        )
         
         self.log.append({
             'time': self.last_planning_time - self.start_time,
@@ -644,8 +649,8 @@ if __name__ == '__main__':
     rclpy.init()
     max_speed = 0.35
     task = PushTFranka(ik_type = 'pinv',
-                planning_horizon=9,
-                sim_steps_per_control_step=2,
+                planning_horizon=16,
+                sim_steps_per_control_step=1,
                 ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                 "u_max": jnp.array([max_speed, max_speed])},
                 actuation_type='velocity',
@@ -665,9 +670,15 @@ if __name__ == '__main__':
     subparsers.add_parser("cem", help="Cross-Entropy Method")
     args = parser.parse_args()
 
-    seed = 10
+
+
+
+    seed = 12
 
     num_samples = 1024
+
+
+
 
     # Set the controller based on command-line arguments
     if args.algorithm is None: 
@@ -685,6 +696,7 @@ if __name__ == '__main__':
             shift=True,
             planning_freq=10,
             seed=seed,
+            update_cov=False,
         )
     elif args.algorithm == "cem":
         print("Running CEM")
@@ -694,12 +706,13 @@ if __name__ == '__main__':
             num_samples=num_samples,
             sigma_start=0.2,
             sigma_min=0.05,
-            num_elites=12,
+            num_elites=24,
             num_randomizations=1,
             savgol_filter=True,
             shift=True,
             planning_freq=10,
             seed=seed,
+            update_cov=False,
         )
     elif args.algorithm == "mtp":
         print("Running MTP")
@@ -711,9 +724,9 @@ if __name__ == '__main__':
             N=64, # samples 
             sigma_min=0.15,
             sigma_max=0.55,
-            num_elites=12,
+            num_elites=24,
             sigma_start=0.2,
-            beta=0.25,
+            beta=0.35,
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,
@@ -731,7 +744,7 @@ if __name__ == '__main__':
 
     with mujoco.viewer.launch_passive(model, data) as v:
       
-        num_traces = 3
+        num_traces = 0
         trace_idxs = np.linspace(0, num_samples -1, num=num_traces, dtype=int).tolist()
         # trace_idxs.extend( [i * (num_samples // (num_traces -1)) for i in range(1, num_traces -1)] )
         # trace_idxs = [i * num_traces for i in range( num_samples // num_traces)]  
@@ -774,6 +787,7 @@ if __name__ == '__main__':
         except KeyboardInterrupt:
             print("Shutting down controller...")
             controller.send_stop_command()
+            executor.spin_once(controller, timeout_sec=0.1)  #  to send stop command
         finally:
             executor.shutdown()
             path = get_data_path() / "sim-real-free" 

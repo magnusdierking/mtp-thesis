@@ -81,9 +81,9 @@ sigma_max = 0.55
 sigma_min = 0.15
 sigma_start = 0.3
 det_init = {
-    "block_pos_x": 0.6,
-    "block_pos_y": 0.1,
-    "block_angle": -np.pi/6,
+    "block_pos_x": 0.5,
+    "block_pos_y": -0.2,
+    "block_angle": -np.pi/2,
     "ee_goal_pos": [0.4, 0.0, 0.045]
 }
 

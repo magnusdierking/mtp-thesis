@@ -295,12 +295,12 @@ class PushTFranka(Task):
         distance = state.sensordata[sensor_adr : sensor_adr + 3]
         
         distance = jnp.linalg.norm(distance)
-        cost = jnp.where(distance > 0.4, 10.0, 0.0)
+        cost = jnp.where(distance > 0.5, 1.0, 0.0)
 
         # ee z pos
-        sensor_adr_ee = self.model.sensor_adr[self.ee_position_sensor]
-        ee_pos = state.sensordata[sensor_adr_ee : sensor_adr_ee + 3]
-        cost += jnp.where(ee_pos[2] > 0.045, 2.0, 0.0)
+        # sensor_adr_ee = self.model.sensor_adr[self.ee_position_sensor]
+        # ee_pos = state.sensordata[sensor_adr_ee : sensor_adr_ee + 3]
+        # cost += jnp.where(ee_pos[2] > 0.045, 2.0, 0.0)
         return cost
     
 
@@ -323,17 +323,17 @@ class PushTFranka(Task):
             total_goal_err = 30 * position_cost + 3 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost  # was 0.0005
         elif self.block_type == 'free':
-            # problem jitter
-            total_goal_err = 10 * position_cost + 3 * orientation_cost
-            error = total_goal_err + 0.05 * ee_block_distance_cost  #+ safety_cost  
-        return error #
+            # problem jitter ?
+            total_goal_err = 30 * position_cost + 3 * orientation_cost
+            error = total_goal_err + 0.01 * ee_block_distance_cost  #+ safety_cost  
+        return error + safety_cost
                                                                               
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         if self.block_type == 'joint' or self.block_type == 'sim-real':
             return 10 * self.running_cost(state, jnp.zeros(self.model.nu))
         elif self.block_type == 'free':
-            return 3 * self.running_cost(state, jnp.zeros(self.model.nu)) 
+            return 10 * self.running_cost(state, jnp.zeros(self.model.nu)) 
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         return {}
