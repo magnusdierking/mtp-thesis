@@ -479,6 +479,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     end="\r",
                 )
 
+            print(f"State cost: {controller.task._get_orientation_err(mj_data):.4f}            ", end="\r")
+
             # Log data for the current step
             logs.append({
                 "step": step,

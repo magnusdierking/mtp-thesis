@@ -81,9 +81,9 @@ sigma_max = 0.55
 sigma_min = 0.15
 sigma_start = 0.3
 det_init = {
-    "block_pos_x": 0.5,
+    "block_pos_x": 0.6,
     "block_pos_y": -0.2,
-    "block_angle": -np.pi/2,
+    "block_angle": 0,
     "ee_goal_pos": [0.4, 0.0, 0.045]
 }
 
@@ -93,8 +93,8 @@ det_init = {
 #velocity control
 max_speed = 0.35  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=9,
-                    sim_steps_per_control_step=2,
+                    planning_horizon=16,
+                    sim_steps_per_control_step=1,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     trace_sites=["ee_site", "T_1"],
@@ -179,6 +179,7 @@ elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
         task,
+        temperature=0.1,
         num_samples=num_samples,
         M=3, # horizon via control points
         N=64, # samples

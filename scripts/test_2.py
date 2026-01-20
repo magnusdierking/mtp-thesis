@@ -71,58 +71,18 @@ def differential_IK(
     return dq
 
 
-# xml_path = "./../hydrax/models/g1/scene.xml"
-xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
-# xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_sim_real.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free_exp.xml"
 xml_dir = os.path.dirname(xml_path)
 
-# Change working directory temporarily
 os.chdir(xml_dir)
 model = mujoco.MjModel.from_xml_path(os.path.basename(xml_path))
-# model.opt.gravity[:] = 0 
 data = mujoco.MjData(model)
 
-# model.opt.gravity[:] = 0.0
-print(len(data.qpos))
-print(len(data.qvel))
-print("===========")
-
-for i in range(model.njnt):
-    name = model.joint(i).name
-    print(f"Joint {i}: {name}")
-    # joint index
-    print(f"  Joint index: {model.joint(i).id}")
-    # qpos address
-    print(f"  qpos address: {model.jnt_qposadr[i]}")
-    # qvel address
-    print(f"  qvel address: {model.jnt_dofadr[i]}")
-
-for i in range(model.nsite):
-    name = model.site(i).name
-    print(f"Site {i}: {name}")
-
-for bid in range(model.nbody):
-    mocap_id = model.body_mocapid[bid]
-    if mocap_id >= 0:
-        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-        print(f"mocap_id={mocap_id}, body_id={bid}, name={name}")
-
-# actuatros
-print("Number of actuators:", model.nu)
-
-for i in range(model.nsensor):
-    dim = model.sensor_dim[i]
-    adr = model.sensor_adr[i]
-    print(f"Sensor {i}: dim={dim} adr={adr}")
-
-# # Initial guess
 q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
-# q = np.zeros(7)
 actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
 actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
 actuator_jids = model.jnt_qposadr[actuator_joint_idxs]
 dof_adr  = model.jnt_dofadr[actuator_joint_idxs] 
-print("Actuator joint ids:", actuator_jids)
 
 ee_body_id = model.body("ee_frame").id
 goal_quat_ee = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
@@ -189,50 +149,35 @@ else:
     print(f"IK did not converge. {err}, {np.linalg.norm(err)}")
 
 
-
-
-
 data.qpos[actuator_jids] = q  # Set the robot's joint positions
 
+
+
+# -------------------------------------------------------------- #
 data.qpos[0] = 0.5
 data.qpos[1] = 0.0
 data.qpos[2] = 0.08  # block z position
 angle = 0.0 #np.pi / 2# 30 degrees
 
 quat = euler_to_quaternion(0, 0, angle) # x,y,z,w
-print("Block quaternion (x,y,z,w):", quat[0], quat[1], quat[2], quat[3])
 data.qpos[3:7] = np.array([quat[3], quat[0], quat[1], quat[2]])  # x, y, z, w
 
-
-bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "block")
-print("block mass:", model.body_mass[bid])
-print("block inertia:", model.body_inertia[bid])   # [Ixx, Iyy, Izz]
-print("block inertial pos:", model.body_ipos[bid])
 
 mujoco.mj_step(model, data)
 
 step = 0
-scale = 0.8
-scaled = False
 
-site_id1 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
-def quat_to_yaw(qx, qy, qz, qw):
-    siny = 2.0 * (qw * qz + qx * qy)
-    cosy = 1.0 - 2.0 * (qy * qy + qz * qz)
-    return np.arctan2(siny, cosy)
 
 # Oreintation sensor id
 block_orientation_sensor = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_SENSOR, "orientation_site"
+            model, mujoco.mjtObj.mjOBJ_SENSOR, "orientation"
         )
 sensor_adr_orientation = model.sensor_adr[block_orientation_sensor]
-
 # Position sensor id
 block_position_sensor = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_SENSOR, "position_site"
+            model, mujoco.mjtObj.mjOBJ_SENSOR, "test"
         )
 sensor_adr_position = model.sensor_adr[block_position_sensor]
-
 
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
@@ -250,13 +195,12 @@ with mujoco.viewer.launch_passive(model, data) as v:
         )
         # data.ctrl[:] = dq
         step += 1
-        block_pos = data.sensordata[sensor_adr_position] # x, y, z
-        block_quat = data.sensordata[sensor_adr_orientation] # w, x, y, z
-        # block_pos = data.sensordata[sensor_adr_position : sensor_adr_position + 3] # x, y, z
-        # block_quat = data.sensordata[sensor_adr_orientation : sensor_adr_orientation + 4] # w, x, y, z
-
-        sys.stdout.write(f"\rQuaternion: {block_quat}, Position: {block_pos} ")
-        # sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ} | time: {data.time:.4f}s | ee vel: {vel} ")
-        # sys.stdout.flush()
+       
+        block_pos = data.sensordata[sensor_adr_position : sensor_adr_position + 3] # x, y, z
+        block_quat = data.sensordata[sensor_adr_orientation : sensor_adr_orientation + 4] # w, x, y, z
+        rot_vec = quat_to_rotvec(block_quat)
+        sys.stdout.write(f"\rQuaternion: {block_quat}, Rotation Vector: {rot_vec}, Position: {block_pos} ")
+        sys.stdout.flush()
+        # sys.stdout.write(f"{data.sensordata}\n")
 
         v.sync()

@@ -111,17 +111,17 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         # 10-14 seeds
-        # self.init_pos = np.array([0.6 + np.random.uniform(-0.03 , 0.03), 
-        #                           0.2 + np.random.uniform(-0.03, 0.03),
-        #                           0.03])   
-        # 20-24 seeds
-        # self.init_pos = np.array([0.4 + np.random.uniform(-0.03 , 0.03), 
+        # self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
         #                           0.0 + np.random.uniform(-0.03, 0.03),
-        #                           0.03])  
-        # 30-34 seeds
-        self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
-                                  0.0 + np.random.uniform(-0.03, 0.03),
+        #                           0.045])  
+        # 20-24 seeds
+        self.init_pos = np.array([0.4 + np.random.uniform(-0.03 , 0.03), 
+                                  -0.1 + np.random.uniform(-0.03, 0.03),
                                   0.045])  
+        # 30-34 seeds
+        # self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
+        #                           0.0 + np.random.uniform(-0.03, 0.03),
+        #                           0.045])  
 
         self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
        
@@ -671,13 +671,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-
-
-    seed = 12
-
+    seed = 20
     num_samples = 1024
-
-
 
 
     # Set the controller based on command-line arguments
@@ -725,7 +720,7 @@ if __name__ == '__main__':
             sigma_min=0.15,
             sigma_max=0.55,
             num_elites=24,
-            sigma_start=0.2,
+            sigma_start=0.3,
             beta=0.35,
             alpha=0.1,
             interpolation='bspline',

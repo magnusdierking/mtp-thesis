@@ -2,6 +2,8 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from mujoco import mjx
+import math
+
 
 def mujoco_to_scipy_quat(q):
     return np.array([q[1], q[2], q[3], q[0]])
@@ -58,7 +60,19 @@ def quat2mat(q):
         [2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x**2 + y**2)]
     ])
     
+def euler_to_quaternion(roll, pitch, yaw):
+    cy = math.cos(yaw * 0.5)
+    sy = math.sin(yaw * 0.5)
+    cp = math.cos(pitch * 0.5)
+    sp = math.sin(pitch * 0.5)
+    cr = math.cos(roll * 0.5)
+    sr = math.sin(roll * 0.5)
 
+    w = cr * cp * cy + sr * sp * sy
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+    return (x, y, z, w)
 
 
 # SE3 left invariant metric

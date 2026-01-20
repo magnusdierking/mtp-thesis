@@ -65,6 +65,7 @@ class PushTFranka(Task):
                 )
             elif block_type == 'free':
                 mj_model = mujoco.MjModel.from_xml_path(
+                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free_exp.xml").as_posix()
                     (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
                 )
             elif block_type == 'sim-real':
@@ -91,11 +92,19 @@ class PushTFranka(Task):
 
         # Get sensor ids
         self.block_position_sensor = mujoco.mj_name2id(
-            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "position"
+            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "position_world"
         )
         self.block_orientation_sensor = mujoco.mj_name2id(
-            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "orientation"
+            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "orientation_world"
         )
+        self.goal_position_sensor = mujoco.mj_name2id(
+            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "goal_position_world"
+        )
+        self.goal_orientation_sensor = mujoco.mj_name2id(
+            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "goal_orientation_world"
+        )
+
+
         self.ee_position_sensor = mujoco.mj_name2id(
             mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
         )
@@ -166,7 +175,7 @@ class PushTFranka(Task):
         if self.block_type == 'joint' or self.block_type == 'sim-real':
             mj_data.qpos[2] = angle
         else:
-            quat = euler_to_quaternion(0, 0, angle)  # roll, pitch, yaw
+            quat = euler_to_quaternion(0, 0, angle - np.pi/2)  # roll, pitch, yaw to x ,y,z,w
             mj_data.qpos[3:7] = np.array([quat[3], quat[0], quat[1], quat[2]])  # w, x, y, z
 
         # # Initial guess
@@ -250,14 +259,23 @@ class PushTFranka(Task):
     def _get_position_err(self, state: mjx.Data) -> jax.Array:
         """ Get the position error of the block relative to a goal position."""
         sensor_adr = self.model.sensor_adr[self.block_position_sensor]
-        return state.sensordata[sensor_adr : sensor_adr + 3]
+        goal_adr = self.model.sensor_adr[self.goal_position_sensor]
+        error = state.sensordata[sensor_adr : sensor_adr + 3] - state.sensordata[goal_adr : goal_adr + 3]
+        return error
 
     def _get_orientation_err(self, state: mjx.Data) -> jax.Array:
         """ Get the orientation error of the block relative to a goal orientation."""
         sensor_adr = self.model.sensor_adr[self.block_orientation_sensor]
-        block_quat = state.sensordata[sensor_adr : sensor_adr + 4]
-        # return mjx._src.math.quat_sub(block_quat, self.goal_quat_block) # gives axis angle of relative rotation
-        return mjx._src.math.quat_to_axis_angle((block_quat))[1] # angle
+        block_quat = state.sensordata[sensor_adr : sensor_adr + 4] # w, x, y, z
+        block_quat = jnp.where(block_quat[0] < 0, -block_quat, block_quat)  # ensure w >= 0
+        # jax.debug.print("Block quat: {q}", q=block_quat)
+        goal_adr = self.model.sensor_adr[self.goal_orientation_sensor]
+        goal_quat = state.sensordata[goal_adr : goal_adr + 4]     # w, x, y, z
+        goal_quat = jnp.where(goal_quat[0] < 0, -goal_quat, goal_quat)  # ensure w >= 0
+        # jax.debug.print("Goal quat: {q}", q=goal_quat)
+        axis_angle_error = mjx._src.math.quat_sub(block_quat, goal_quat) # gives axis angle of relative rotation
+        return jnp.linalg.norm(axis_angle_error)
+            #mjx._src.math.quat_to_axis_angle((block_quat))[1]  # angle
     
     ################################## 
     ##      End Effector Terms      ##
@@ -321,19 +339,19 @@ class PushTFranka(Task):
         
         if self.block_type == 'joint' or self.block_type == 'sim-real':
             total_goal_err = 30 * position_cost + 3 * orientation_cost
-            error = total_goal_err + 0.005 * ee_block_distance_cost  # was 0.0005
+            error = total_goal_err + 0.005 * ee_block_distance_cost  
         elif self.block_type == 'free':
-            # problem jitter ?
-            total_goal_err = 30 * position_cost + 3 * orientation_cost
-            error = total_goal_err + 0.01 * ee_block_distance_cost  #+ safety_cost  
-        return error + safety_cost
+            # Jitter
+            total_goal_err = 30 * position_cost + 1 * orientation_cost
+            error = total_goal_err + 0.02 * ee_block_distance_cost   
+        return error #+ safety_cost 
                                                                               
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         if self.block_type == 'joint' or self.block_type == 'sim-real':
             return 10 * self.running_cost(state, jnp.zeros(self.model.nu))
         elif self.block_type == 'free':
-            return 10 * self.running_cost(state, jnp.zeros(self.model.nu)) 
+            return 3 * self.running_cost(state, jnp.zeros(self.model.nu)) 
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         return {}
