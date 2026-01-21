@@ -55,46 +55,46 @@ Run an interactive simulation of the push-T task with predictive sampling.
 # sigma_min = 0.05
 # sigma_start = 0.2
 # det_init = {
-#     "block_pos_x": 0.1,
+#     "block_pos_x": 0.6,
 #     "block_pos_y": 0.05,
 #     "block_angle": np.pi/8,
-#     "ee_goal_pos": [0.6, 0.0, 0.035]
+#     "ee_goal_pos": [0.4, 0.0, 0.045]
 # }
 
 # harder, local minimum appears
-# seed = 42
-# update_cov = False
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": 0.2,
-#     "block_pos_y": 0.1,
-#     "block_angle": np.pi/3,
-#     "ee_goal_pos": [0.45, 0.1, 0.035]
-# }
+seed = 42
+update_cov = False
+sigma_max = 0.75
+sigma_min = 0.05
+sigma_start = 0.2
+det_init = {
+    "block_pos_x": 0.4,
+    "block_pos_y": 0.15,
+    "block_angle": np.pi/3,
+    "ee_goal_pos": [0.45, 0.1, 0.035]
+}
 
 # very hard cna result in failure
-seed = 445
-update_cov = False
-sigma_max = 0.55
-sigma_min = 0.15
-sigma_start = 0.3
-det_init = {
-    "block_pos_x": 0.6,
-    "block_pos_y": -0.2,
-    "block_angle": 0,
-    "ee_goal_pos": [0.4, 0.0, 0.045]
-}
+# seed = 445
+# update_cov = False
+# sigma_max = 0.55
+# sigma_min = 0.15
+# sigma_start = 0.3
+# det_init = {
+#     "block_pos_x": 0.6,
+#     "block_pos_y": -0.2,
+#     "block_angle": 0,
+#     "ee_goal_pos": [0.4, 0.0, 0.045]
+# }
 
 
 
 # Define the task (cost and dynamics)
 #velocity control
-max_speed = 0.35  # m/s
+max_speed = 0.45  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=16,
-                    sim_steps_per_control_step=1,
+                    planning_horizon=8,
+                    sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     trace_sites=["ee_site", "T_1"],

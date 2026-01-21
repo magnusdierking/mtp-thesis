@@ -115,8 +115,8 @@ class FR3_PushT(FrankaPandaServer):
         #                           0.0 + np.random.uniform(-0.03, 0.03),
         #                           0.045])  
         # 20-24 seeds
-        self.init_pos = np.array([0.4 + np.random.uniform(-0.03 , 0.03), 
-                                  -0.1 + np.random.uniform(-0.03, 0.03),
+        self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
+                                  0.0 + np.random.uniform(-0.03, 0.03),
                                   0.045])  
         # 30-34 seeds
         # self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
@@ -360,14 +360,14 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
 
-        t.transform.translation.x = 1.07658
-        t.transform.translation.y = -1.23784
-        t.transform.translation.z = 0.04381
+        t.transform.translation.x = 0.75715  #1.07658 
+        t.transform.translation.y = -0.15269 #-1.23784
+        t.transform.translation.z = 0.08276  # 0.04381
 
-        t.transform.rotation.x = -0.01901
-        t.transform.rotation.y = 0.00215
-        t.transform.rotation.z = 0.99975
-        t.transform.rotation.w = -0.01119
+        t.transform.rotation.x = 0.69540     #-0.01901
+        t.transform.rotation.y = 0.71853     # 0.00215
+        t.transform.rotation.z = 0.00233     # 0.99975
+        t.transform.rotation.w = 0.01143     # -0.01119
 
         self.static_tf = t
         self.br.sendTransform(t)
@@ -381,9 +381,11 @@ class FR3_PushT(FrankaPandaServer):
 
         t.transform.translation.x = 0.0
         t.transform.translation.y = +0.025
-        t.transform.translation.z = -0.025 - 0.001
+        t.transform.translation.z = -0.025 - 0.002
 
-        quat = quaternion_from_euler(-0.05, 0.02, np.pi)
+        # quat = quaternion_from_euler(-0.05, 0.02, np.pi)
+        quat = quaternion_from_euler(-0.04, -0.02, np.pi)
+
         t.transform.rotation.x = quat[0]
         t.transform.rotation.y = quat[1]
         t.transform.rotation.z = quat[2]
@@ -535,7 +537,7 @@ class FR3_PushT(FrankaPandaServer):
         # linear_error = np.linalg.norm(self.ctrl.task._get_position_err(self.debug_data))
         # rotation_error = np.linalg.norm(self.ctrl.task._get_orientation_err(self.debug_data))
         # goal_error = 30 * np.square(linear_error) + 3 * rotation_error
-        terminal_error = self.ctrl.task.terminal_cost(self.debug_data) / 10
+        terminal_error = self.ctrl.task.terminal_cost(self.debug_data)
 
 
         self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
@@ -583,6 +585,7 @@ class FR3_PushT(FrankaPandaServer):
             f"Controller step time: {t2 - t1:.3f} s"
             f" (State update: {t1 - t0:.3f} s)"
             f" (Visualization: {t3 - t2:.3f} s)"
+            f" Error: {terminal_error:.4f}"
         )
 
 
@@ -649,8 +652,8 @@ if __name__ == '__main__':
     rclpy.init()
     max_speed = 0.35
     task = PushTFranka(ik_type = 'pinv',
-                planning_horizon=16,
-                sim_steps_per_control_step=1,
+                planning_horizon=8,
+                sim_steps_per_control_step=2,
                 ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                 "u_max": jnp.array([max_speed, max_speed])},
                 actuation_type='velocity',
@@ -671,7 +674,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    seed = 20
+    seed = 22
     num_samples = 1024
 
 

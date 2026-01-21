@@ -28,7 +28,7 @@
   <default>
     <default class="tblock">
       <!-- friction = [slide spin roll]; keep your values -->
-      <geom friction="0.1 0.00001 0.0001" 
+      <geom friction="0.3 0.00001 0.0001" 
             solref="0.06 0.99" 
             margin="0.001"
             gap="0.0005"
@@ -84,16 +84,18 @@
 
   <sensor>
     <framepos name="position" objtype="body" objname="block" reftype="body" refname="goal"/>
-    <framepos name="test" objtype="site" objname="target_site" reftype="site" refname="goal_site"/>
     <framequat name="orientation" objtype="body" objname="block" reftype="body" refname="goal"/>
+
+    <framepos name="position_world" objtype="body" objname="block"/>
+    <framepos name="goal_position_world" objtype="body" objname="goal"/>
+
+    <framequat name="orientation_world" objtype="body" objname="block"/>
+    <framequat name="goal_orientation_world" objtype="body" objname="goal"/>
+
     <framepos name="safety" objtype="body" objname="ee_frame" reftype="body" refname="goal"/>
     <framepos name="ee_t1" objtype="body" objname="ee_frame" reftype="site" refname="T_1"/>
     <framepos name="ee_t2" objtype="body" objname="ee_frame" reftype="site" refname="T_2"/>
-    <framepos name="position_world" objtype="body" objname="block" reftype="body" refname="world"/>
   </sensor>
-
-  <!-- Defines the spatial region to compute model statistics like mass, center of mass, etc. -->
-  <!-- <statistic center="0.4 0 0.0" extent="1.0"/> -->
 
   <asset>
     <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>

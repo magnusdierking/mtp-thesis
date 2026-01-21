@@ -356,14 +356,14 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
 
-        t.transform.translation.x = 1.07658
-        t.transform.translation.y = -1.23784
-        t.transform.translation.z = 0.04381
+        t.transform.translation.x = 0.75715  #1.07658 
+        t.transform.translation.y = -0.15269 #-1.23784
+        t.transform.translation.z = 0.08276  # 0.04381
 
-        t.transform.rotation.x = -0.01901
-        t.transform.rotation.y = 0.00215
-        t.transform.rotation.z = 0.99975
-        t.transform.rotation.w = -0.01119
+        t.transform.rotation.x = 0.69540     #-0.01901
+        t.transform.rotation.y = 0.71853     # 0.00215
+        t.transform.rotation.z = 0.00233     # 0.99975
+        t.transform.rotation.w = 0.01143     # -0.01119
 
         self.static_tf = t
         self.br.sendTransform(t)
