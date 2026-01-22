@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation as R
 import time
 from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec, mat2quat, se3_left_invariant_metric, euler_to_quaternion
 
-
+import keyboard 
 
 def differential_IK(
     model: mujoco.MjModel,
@@ -72,14 +72,13 @@ def differential_IK(
 
 
 # xml_path = "./../hydrax/models/g1/scene.xml"
-xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free_exp.xml"
 # xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_sim_real.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
 os.chdir(xml_dir)
 model = mujoco.MjModel.from_xml_path(os.path.basename(xml_path))
-# model.opt.gravity[:] = 0 
 data = mujoco.MjData(model)
 
 # model.opt.gravity[:] = 0.0
@@ -126,7 +125,7 @@ print("Actuator joint ids:", actuator_jids)
 
 ee_body_id = model.body("ee_frame").id
 goal_quat_ee = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-goal_pos_ee = np.array([0.5, 0.2, 0.045]) #np.array([0.3, 0.0, 0.05])
+goal_pos_ee = np.array([0.42, 0.2, 0.045]) #np.array([0.3, 0.0, 0.05])
 joint_limits = model.jnt_range[actuator_joint_idxs]
 
 # IK loop parameters
@@ -189,11 +188,11 @@ else:
     print(f"IK did not converge. {err}, {np.linalg.norm(err)}")
 
 
-
-
-
 data.qpos[actuator_jids] = q  # Set the robot's joint positions
 
+
+
+## T POSITIONING THE BLOCK
 data.qpos[0] = 0.5
 data.qpos[1] = 0.0
 data.qpos[2] = 0.08  # block z position
@@ -234,29 +233,24 @@ block_position_sensor = mujoco.mj_name2id(
 sensor_adr_position = model.sensor_adr[block_position_sensor]
 
 
+speed = 0.2
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
-        # data.ctrl[0] = 0.01 #q
+        
+        
+        vel_x = speed if keyboard.is_pressed('right') else -speed if keyboard.is_pressed('left') else 0.0
+        vel_y = speed if keyboard.is_pressed('up') else -speed if keyboard.is_pressed('down') else 0.0
         mujoco.mj_step(model, data)
-        # sinusoidal control
-        velocity_x = - 0.1 * np.sin(0.01 * step)
-        velocity_y = .02 * np.sin(0.01 * step)
+    
         dq = differential_IK(
             model,
             data,
             body_id="ee_frame",
-            world_site_vel_desired=np.array([velocity_x, velocity_y]),
+            world_site_vel_desired=np.array([vel_x, vel_y]),
             with_null_space=True,
         )
-        # data.ctrl[:] = dq
+        data.ctrl[:] = dq
         step += 1
-        block_pos = data.sensordata[sensor_adr_position] # x, y, z
-        block_quat = data.sensordata[sensor_adr_orientation] # w, x, y, z
-        # block_pos = data.sensordata[sensor_adr_position : sensor_adr_position + 3] # x, y, z
-        # block_quat = data.sensordata[sensor_adr_orientation : sensor_adr_orientation + 4] # w, x, y, z
 
-        sys.stdout.write(f"\rQuaternion: {block_quat}, Position: {block_pos} ")
-        # sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ} | time: {data.time:.4f}s | ee vel: {vel} ")
-        # sys.stdout.flush()
 
         v.sync()
