@@ -660,7 +660,7 @@ class FR3_PushT(FrankaPandaServer):
 if __name__ == '__main__':
     
     rclpy.init()
-    max_speed = 0.2
+    max_speed = 0.35
     task = PushTFranka(ik_type = 'pinv',
                 planning_horizon=9,
                 sim_steps_per_control_step=2,
@@ -684,8 +684,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    seed = 22
-    num_samples = 1024
+    seed = 24
+
+
+    num_samples = 1024 #512
 
 
     # Set the controller based on command-line arguments
@@ -698,7 +700,7 @@ if __name__ == '__main__':
             num_samples=num_samples,
             alpha=0.1,
             temperature=0.1,
-            noise_level=0.2,
+            noise_level=0.3,
             num_randomizations=1,
             savgol_filter=True,
             shift=True,
@@ -712,9 +714,9 @@ if __name__ == '__main__':
             task,
             alpha=0.1,
             num_samples=num_samples,
-            sigma_start=0.2,
+            sigma_start=0.3,
             sigma_min=0.05,
-            num_elites=24,
+            num_elites=36,
             num_randomizations=1,
             savgol_filter=True,
             shift=True,
@@ -732,9 +734,9 @@ if __name__ == '__main__':
             N=64, # samples 
             sigma_min=0.15,
             sigma_max=0.55,
-            num_elites=24,
+            num_elites=36,
             sigma_start=0.3,
-            beta=0.35,
+            beta=0.2,
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,

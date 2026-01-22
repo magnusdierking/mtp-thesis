@@ -91,9 +91,9 @@ det_init = {
 
 # Define the task (cost and dynamics)
 #velocity control
-max_speed = 0.2  # m/s
+max_speed = 0.35  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=9,
+                    planning_horizon=10,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
@@ -179,7 +179,7 @@ elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
         task,
-        temperature=0.1,
+        temperature=0.01,
         num_samples=num_samples,
         M=3, # horizon via control points
         N=16, # samples
