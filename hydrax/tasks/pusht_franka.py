@@ -104,7 +104,6 @@ class PushTFranka(Task):
             mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "goal_orientation_world"
         )
 
-
         self.ee_position_sensor = mujoco.mj_name2id(
             mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
         )
@@ -282,19 +281,14 @@ class PushTFranka(Task):
     ##################################
     
     def _get_ee_block_distance(self, state: mjx.Data) -> jax.Array:
-        """Get the distance between the end effector and the block."""
-        # sensor_adr = self.model.sensor_adr[self.ee_position_sensor]
-        # ee_pos = state.sensordata[sensor_adr : sensor_adr + 3]
-        
-        # sensor_adr_block = self.model.sensor_adr[self.block_global_position_sensor]
-        # block_pos = state.sensordata[sensor_adr_block : sensor_adr_block + 3]
-        # return jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) 
-    
+        """Get the distance between the end effector and the block."""    
         ee_t1_adr = self.model.sensor_adr[self.ee_t1_sensor]    
         ee_t1_pos = state.sensordata[ee_t1_adr : ee_t1_adr + 3]
         ee_t2_adr = self.model.sensor_adr[self.ee_t2_sensor]
         ee_t2_pos = state.sensordata[ee_t2_adr : ee_t2_adr + 3]
-        return jnp.linalg.norm(ee_t1_pos) + jnp.linalg.norm(ee_t2_pos)
+        return jnp.linalg.norm(ee_t1_pos, ord=1) + jnp.linalg.norm(ee_t2_pos, ord=1)
+
+        # return jnp.linalg.norm(ee_t1_pos, ord=1) 
 
         
     # def _get_ee_orientation_err(self, state: mjx.Data) -> jax.Array:
@@ -335,15 +329,15 @@ class PushTFranka(Task):
         
         # attractor
         ee_block_distance = self._get_ee_block_distance(state)
-        ee_block_distance_cost = jnp.square(ee_block_distance)
+        ee_block_distance_cost = ee_block_distance
         
         if self.block_type == 'joint' or self.block_type == 'sim-real':
             total_goal_err = 30 * position_cost + 3 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost  
         elif self.block_type == 'free':
             # Jitter
-            total_goal_err = 30 * position_cost + 5 * orientation_cost
-            error = total_goal_err + 0.005 * ee_block_distance_cost   
+            total_goal_err = 30 * position_cost + 3 * orientation_cost
+            error = total_goal_err + 0.01 * ee_block_distance_cost   
         return error # safety_cost 
                                                                               
 

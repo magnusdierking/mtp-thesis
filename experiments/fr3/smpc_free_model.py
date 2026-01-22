@@ -1,4 +1,5 @@
 import os
+import signal
 import threading
 import time
 import copy
@@ -254,6 +255,8 @@ class FR3_PushT(FrankaPandaServer):
         ####################################
         ##           Start Timer          ##    
         ####################################
+        self.shutdown_flag = threading.Event()  # Thread-safe flag
+        signal.signal(signal.SIGINT, self.signal_handler)
         # Logs 
         self.log = []
         self.ctr = 0
@@ -360,14 +363,14 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
 
-        t.transform.translation.x = 0.75715  #1.07658 
-        t.transform.translation.y = -0.15269 #-1.23784
-        t.transform.translation.z = 0.08276  # 0.04381
+        t.transform.translation.x = 1.12824  #1.07658 
+        t.transform.translation.y = -1.26834 #-1.23784
+        t.transform.translation.z = -0.02477  # 0.04381
 
-        t.transform.rotation.x = 0.69540     #-0.01901
-        t.transform.rotation.y = 0.71853     # 0.00215
-        t.transform.rotation.z = 0.00233     # 0.99975
-        t.transform.rotation.w = 0.01143     # -0.01119
+        t.transform.rotation.x = -0.01341     #-0.01901
+        t.transform.rotation.y = -0.00150     # 0.00215
+        t.transform.rotation.z = 0.99986     # 0.99975
+        t.transform.rotation.w = 0.00954     # -0.01119
 
         self.static_tf = t
         self.br.sendTransform(t)
@@ -595,6 +598,9 @@ class FR3_PushT(FrankaPandaServer):
         
         :param self: Description
         """
+        if self.shutdown_flag.is_set():
+            self._timeout_callback()
+            return
         if not self.teleop_enabled:
             return
         with self._key_lock:
@@ -646,13 +652,17 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().info("Sent stop command to the robot.")
         self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
 
+    def signal_handler(self, sig, frame):
+        self.get_logger().info('SIGINT received')
+        self.shutdown_flag.set()
+
 
 if __name__ == '__main__':
     
     rclpy.init()
-    max_speed = 0.35
+    max_speed = 0.2
     task = PushTFranka(ik_type = 'pinv',
-                planning_horizon=8,
+                planning_horizon=9,
                 sim_steps_per_control_step=2,
                 ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                 "u_max": jnp.array([max_speed, max_speed])},
@@ -784,8 +794,6 @@ if __name__ == '__main__':
             executor.spin()
         except KeyboardInterrupt:
             print("Shutting down controller...")
-            controller.send_stop_command()
-            executor.spin_once(controller, timeout_sec=0.1)  #  to send stop command
         finally:
             executor.shutdown()
             path = get_data_path() / "sim-real-free" 

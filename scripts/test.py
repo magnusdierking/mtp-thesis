@@ -72,7 +72,7 @@ def differential_IK(
 
 
 # xml_path = "./../hydrax/models/g1/scene.xml"
-xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free_exp.xml"
+xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
 # xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_sim_real.xml"
 xml_dir = os.path.dirname(xml_path)
 
@@ -233,11 +233,6 @@ block_position_sensor = mujoco.mj_name2id(
 sensor_adr_position = model.sensor_adr[block_position_sensor]
 
 
-distance_sensor = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_block_distance"
-        )
-sensor_adr_distance = model.sensor_adr[distance_sensor]
-
 
 speed = 0.2
 with mujoco.viewer.launch_passive(model, data) as v:
@@ -258,8 +253,6 @@ with mujoco.viewer.launch_passive(model, data) as v:
         data.ctrl[:] = dq
         step += 1
 
-        distance = data.sensordata[sensor_adr_distance]
-        print("Distance EE to block:", distance)
         # sys.stdout.write(f"\rQuaternion: {block_quat}, Position: {block_pos} ")
         # sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ} | time: {data.time:.4f}s | ee vel: {vel} ")
         # sys.stdout.flush()

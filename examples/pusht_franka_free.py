@@ -91,9 +91,9 @@ det_init = {
 
 # Define the task (cost and dynamics)
 #velocity control
-max_speed = 0.45  # m/s
+max_speed = 0.2  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=8,
+                    planning_horizon=9,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
@@ -182,12 +182,13 @@ elif args.algorithm == "mtp":
         temperature=0.1,
         num_samples=num_samples,
         M=3, # horizon via control points
-        N=64, # samples
+        N=16, # samples
         sigma_min=sigma_min,
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=24,
-        beta=0.4,
+        keep_elites=1,   # !experimental
+        beta=0.3,
         alpha=0.1,
         interpolation='bspline',
         num_randomizations=num_randomizations,
@@ -208,15 +209,15 @@ elif args.algorithm == "anmtp":
             sigma_min=sigma_min,
             sigma_max=sigma_max,
             sigma_start=sigma_start,
-            num_elites=12,
-            keep_elites=1,   # !experimental
+            num_elites=24,
+            keep_elites=3,   # !experimental
             beta = 0.25,
             beta_lr = 0.1,        # adaptation step size
             beta_min = 0.0,
             beta_max = 0.35,
             alpha=0.0,
             interpolation='bspline',
-            shift = False,
+            shift = True,
             num_randomizations=num_randomizations,
             seed=seed,
             update_cov=update_cov,
