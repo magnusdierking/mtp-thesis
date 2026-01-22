@@ -123,6 +123,8 @@
     <framequat name="orientation_world" objtype="body" objname="block"/>
     <framequat name="goal_orientation_world" objtype="body" objname="goal"/>
 
+    <distance name="ee_block_distance" body1="ee_frame" body2="block"/>
+
     <framepos name="safety" objtype="body" objname="ee_frame" reftype="body" refname="goal"/>
     <framepos name="ee_t1" objtype="body" objname="ee_frame" reftype="site" refname="T_1"/>
     <framepos name="ee_t2" objtype="body" objname="ee_frame" reftype="site" refname="T_2"/>

@@ -233,6 +233,12 @@ block_position_sensor = mujoco.mj_name2id(
 sensor_adr_position = model.sensor_adr[block_position_sensor]
 
 
+distance_sensor = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_block_distance"
+        )
+sensor_adr_distance = model.sensor_adr[distance_sensor]
+
+
 speed = 0.2
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
@@ -252,5 +258,10 @@ with mujoco.viewer.launch_passive(model, data) as v:
         data.ctrl[:] = dq
         step += 1
 
+        distance = data.sensordata[sensor_adr_distance]
+        print("Distance EE to block:", distance)
+        # sys.stdout.write(f"\rQuaternion: {block_quat}, Position: {block_pos} ")
+        # sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ} | time: {data.time:.4f}s | ee vel: {vel} ")
+        # sys.stdout.flush()
 
         v.sync()
