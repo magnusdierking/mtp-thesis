@@ -337,7 +337,7 @@ class PushTFranka(Task):
         elif self.block_type == 'free':
             # Jitter
             total_goal_err = 30 * position_cost + 3 * orientation_cost
-            error = total_goal_err + 0.005 * ee_block_distance_cost   
+            error = total_goal_err + 0.005 * ee_block_distance_cost  
         return error # safety_cost 
                                                                               
 

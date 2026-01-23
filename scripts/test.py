@@ -204,9 +204,10 @@ data.qpos[3:7] = np.array([quat[3], quat[0], quat[1], quat[2]])  # x, y, z, w
 
 
 bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "block")
-print("block mass:", model.body_mass[bid])
-print("block inertia:", model.body_inertia[bid])   # [Ixx, Iyy, Izz]
-print("block inertial pos:", model.body_ipos[bid])
+print("mass:", model.body_mass[bid])
+print("diaginertia:", model.body_inertia[bid])
+print("inertial quat:", model.body_ipos[bid], model.body_iquat[bid])  # COM + quat
+
 
 mujoco.mj_step(model, data)
 

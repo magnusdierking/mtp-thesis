@@ -299,6 +299,7 @@ class MTP(SamplingBasedController):
             # elite_indices = jnp.argsort(costs)[:self.num_elites]
             controls = rollouts.controls[elite_indices]
             weights = jnp.nan_to_num(jax.nn.softmax(-costs[elite_indices] / self.temperature, axis=0))
+            # jax.debug.print("Elite weights: {weights}", weights=weights)
             # The new proposal distribution is a Gaussian fit to the elites.
             weighted_controls = weights[:, None, None] * controls
             next_idx = elite_indices[0]  # use the best elite as control

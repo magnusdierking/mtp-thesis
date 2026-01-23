@@ -29,8 +29,8 @@
     <default class="tblock">
       <!-- friction = [slide spin roll]; -->
       <geom friction="0.1 0.001 0.01" 
-            solref="0.04 0.99" 
-            solimp="0.7 0.75 0.001 0.5 2"
+            solref="0.05 0.99" 
+            solimp="0.85 0.9 0.001 0.5 2"
             condim="3"
             contype="2" 
             conaffinity="5"/>  
@@ -60,22 +60,21 @@
     <!-- platform for experiment, potentially different frictions -->
     <body name="ground" pos="0.5 0.0 0.0075" quat="1 0 0 -1">
       <geom name="ground" type="box" size="0.4 0.4 0.0075" 
-            solref="0.04 1"
+            solref="0.06 1"
             friction="0.2 0.001 0.01" 
             condim="3"
-            solimp="0.6 0.85 0.001 0.5 2"
+            solimp="0.65 0.75 0.001 0.5 2"
             rgba="0.295 0.227 0.15 1.0"
             contype="4" conaffinity="3"/> 
     </body>
 
     <body name="block" pos="0.5 0.0 0.04" quat="1 0 0 -1">
       <joint name="T" type="free"/>
+      <!-- <inertial pos="0 0.045 0" 
+                quat="0.5 0.5 -0.5 0.5"
+                mass="0.145" 
+                diaginertia="0.0004 0.0004 0.00008"/> -->
       <site name="target_site" pos="0.0 0.05 0.0" size="0.02" rgba="1 0 0 1"/>
-      <!-- <inertial pos="0 0.04089726 0"
-                mass="0.14"
-                diaginertia="0.0006 
-                             0.0006 
-                             0.0002"/> -->
       <geom class="tblock" name="bottom" type="box" size=".025 0.05 0.025" pos="0.0 0.0 0.0" mass="0.0655"/>
         <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
         <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>

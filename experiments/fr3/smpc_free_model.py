@@ -11,7 +11,7 @@ from hydrax.utils.files import get_data_path
 
 import pickle
 
-from hydrax.algs import MPPI, MTP, CEM
+from hydrax.algs import MPPI, MTP, CEM, PredictiveSampling
 from hydrax.utils.utils import se3_left_invariant_metric
 from hydrax.tasks.pusht_franka import PushTFranka
 
@@ -112,13 +112,13 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         # 10-14 seeds
+        self.init_pos = np.array([0.55 + np.random.uniform(-0.03 , 0.03), 
+                                  0.0 + np.random.uniform(-0.03, 0.03),
+                                  0.045])  
+        # 20-24 seeds
         # self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
         #                           0.0 + np.random.uniform(-0.03, 0.03),
         #                           0.045])  
-        # 20-24 seeds
-        self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
-                                  0.0 + np.random.uniform(-0.03, 0.03),
-                                  0.045])  
         # 30-34 seeds
         # self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
         #                           0.0 + np.random.uniform(-0.03, 0.03),
@@ -363,14 +363,14 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
 
-        t.transform.translation.x = 1.12824  #1.07658 
-        t.transform.translation.y = -1.26834 #-1.23784
-        t.transform.translation.z = -0.02477  # 0.04381
+        t.transform.translation.x = 1.13100  #1.07658 
+        t.transform.translation.y = -1.26694 #-1.23784
+        t.transform.translation.z = -0.02314  # 0.04381
 
-        t.transform.rotation.x = -0.01341     #-0.01901
-        t.transform.rotation.y = -0.00150     # 0.00215
-        t.transform.rotation.z = 0.99986     # 0.99975
-        t.transform.rotation.w = 0.00954     # -0.01119
+        t.transform.rotation.x = -0.01394     #-0.01901
+        t.transform.rotation.y = -0.00061     # 0.00215
+        t.transform.rotation.z = 0.99987     # 0.99975
+        t.transform.rotation.w = 0.00784     # -0.01119
 
         self.static_tf = t
         self.br.sendTransform(t)
@@ -382,12 +382,12 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.0
-        t.transform.translation.y = +0.025
+        t.transform.translation.x = 0.023
+        t.transform.translation.y = 0.0
         t.transform.translation.z = -0.025 - 0.002
 
         # quat = quaternion_from_euler(-0.05, 0.02, np.pi)
-        quat = quaternion_from_euler(-0.04, -0.02, np.pi)
+        quat = quaternion_from_euler(0.01, -0.00, np.pi/2)
 
         t.transform.rotation.x = quat[0]
         t.transform.rotation.y = quat[1]
@@ -681,11 +681,12 @@ if __name__ == '__main__':
     subparsers.add_parser("mppi", help="Model Predictive Path Integral Control")
     subparsers.add_parser("mtp", help="MTP")
     subparsers.add_parser("cem", help="Cross-Entropy Method")
+    subparsers.add_parser("ps", help="Predictive Sampling")
     args = parser.parse_args()
 
 
-    seed = 24
-
+    seed = 11
+    # PS 10
 
     num_samples = 1024 #512
 
@@ -724,6 +725,18 @@ if __name__ == '__main__':
             seed=seed,
             update_cov=False,
         )
+    elif args.algorithm == "ps":
+        print("Running Predictive Sampling")
+        ctrl = PredictiveSampling(
+            task,
+            num_samples=num_samples,
+            num_randomizations=1,
+            noise_level=0.3,
+            savgol_filter=True,
+            shift=True,
+            planning_freq=10,
+            seed=seed,
+        )
     elif args.algorithm == "mtp":
         print("Running MTP")
         ctrl = MTP(
@@ -731,12 +744,12 @@ if __name__ == '__main__':
             num_samples=num_samples,
             temperature=0.1,
             M=3, # horizon via control points
-            N=64, # samples 
+            N=32, # samples 
             sigma_min=0.15,
             sigma_max=0.55,
-            num_elites=36,
+            num_elites=72,
             sigma_start=0.3,
-            beta=0.2,
+            beta=0.3,
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,
