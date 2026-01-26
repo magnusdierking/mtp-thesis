@@ -1,14 +1,14 @@
 <mujoco model="fr3 scene">
 
   <!-- NUmerical Stuff -->
-  <option impratio="0.6"
+  <option impratio="0.7"
           solver="Newton"
           jacobian="dense"
           integrator="implicitfast"
           cone="elliptic"
           timestep="0.025" 
-          iterations="5"
-          ls_iterations="7">
+          iterations="7"
+          ls_iterations="10">
     <flag eulerdamp="disable" 
           warmstart="enable"/>
   </option>
@@ -29,8 +29,8 @@
     <default class="tblock">
       <!-- friction = [slide spin roll]; -->
       <geom friction="0.1 0.001 0.01" 
-            solref="0.05 0.99" 
-            solimp="0.85 0.9 0.001 0.5 2"
+            solref="0.05 1.5" 
+            solimp="0.8 0.9 0.001 0.5 2"
             condim="3"
             contype="2" 
             conaffinity="5"/>  
@@ -60,24 +60,21 @@
     <!-- platform for experiment, potentially different frictions -->
     <body name="ground" pos="0.5 0.0 0.0075" quat="1 0 0 -1">
       <geom name="ground" type="box" size="0.4 0.4 0.0075" 
-            solref="0.06 1"
-            friction="0.2 0.001 0.01" 
+            solref="0.05 1.5"
+            friction="0.5 0.001 0.01" 
             condim="3"
-            solimp="0.65 0.75 0.001 0.5 2"
+            solimp="0.5 0.65 0.001 0.5 2"
             rgba="0.295 0.227 0.15 1.0"
             contype="4" conaffinity="3"/> 
     </body>
 
     <body name="block" pos="0.5 0.0 0.04" quat="1 0 0 -1">
       <joint name="T" type="free"/>
-      <!-- <inertial pos="0 0.045 0" 
-                quat="0.5 0.5 -0.5 0.5"
-                mass="0.145" 
-                diaginertia="0.0004 0.0004 0.00008"/> -->
       <site name="target_site" pos="0.0 0.05 0.0" size="0.02" rgba="1 0 0 1"/>
       <geom class="tblock" name="bottom" type="box" size=".025 0.05 0.025" pos="0.0 0.0 0.0" mass="0.0655"/>
-        <site name="T_1" pos="0 0 0" size="0.015" rgba="0 0 0 1"/>
-        <site name="T_2" pos="0 0.08 0" size="0.015" rgba="0 0 0 1"/>
+        <site name="T_1" pos="0 -0.025 0" size="0.015" rgba="0 0 0 1"/>
+        <site name="T_2" pos="0.03 0.075 0" size="0.015" rgba="0 0 0 1"/>
+        <site name="T_3" pos="-0.03 0.075 0" size="0.015" rgba="0 0 0 1"/>
       <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"  mass="0.07855"/>
     </body>
   </worldbody>
@@ -124,6 +121,8 @@
     <framepos name="safety" objtype="body" objname="ee_frame" reftype="body" refname="goal"/>
     <framepos name="ee_t1" objtype="body" objname="ee_frame" reftype="site" refname="T_1"/>
     <framepos name="ee_t2" objtype="body" objname="ee_frame" reftype="site" refname="T_2"/>
+    <framepos name="ee_t3" objtype="body" objname="ee_frame" reftype="site" refname="T_3"/>
+
   </sensor>
 
   <!-- Defines the spatial region to compute model statistics like mass, center of mass, etc. -->

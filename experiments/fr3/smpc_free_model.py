@@ -59,6 +59,7 @@ class FR3_PushT(FrankaPandaServer):
                  debug_data,
                  viewer,
                  trace_idxs,
+                 planning_freq=10,
                  run_time_sec=40.0
                  ):
         
@@ -112,7 +113,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         # 10-14 seeds
-        self.init_pos = np.array([0.55 + np.random.uniform(-0.03 , 0.03), 
+        self.init_pos = np.array([0.6 + np.random.uniform(-0.03 , 0.03), 
                                   0.0 + np.random.uniform(-0.03, 0.03),
                                   0.045])  
         # 20-24 seeds
@@ -263,7 +264,7 @@ class FR3_PushT(FrankaPandaServer):
 
         self.finished_task = False
         self.servo_freq = 30  # Hz
-        self.plan_freq = 10    # Hz ! needs to be lower than max (GIL)
+        self.plan_freq = planning_freq    # Hz ! needs to be lower than max (GIL)
         self.action = None
         self.actions = None
         
@@ -540,8 +541,10 @@ class FR3_PushT(FrankaPandaServer):
         # linear_error = np.linalg.norm(self.ctrl.task._get_position_err(self.debug_data))
         # rotation_error = np.linalg.norm(self.ctrl.task._get_orientation_err(self.debug_data))
         # goal_error = 30 * np.square(linear_error) + 3 * rotation_error
-        terminal_error = self.ctrl.task.terminal_cost(self.debug_data)
-
+        # test = self.ctrl.task._get_ee_block_distance(self.debug_data)
+        # self.get_logger().info(f"EE-Block distance: {test:.4f} m")
+        terminal_error = self.ctrl.task.running_cost(self.debug_data)
+        ee_position = self.ctrl.task._get_ee_position(self.debug_data)
 
         self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
         self.ctr += 1
@@ -555,9 +558,7 @@ class FR3_PushT(FrankaPandaServer):
             'planning_time': t2 - t1,
             'object_pos': self.lin_t.tolist(),
             'object_quat': self.quat_t.tolist(),
-            # 'linear_error': linear_error.tolist(),
-            # 'rotation_error': rotation_error.tolist(),
-            # 'goal_error': float(goal_error),
+            'ee_pos': ee_position.tolist(),
             'terminal_error': float(terminal_error),
             'action': self.action.tolist(),
         })  
@@ -601,18 +602,17 @@ class FR3_PushT(FrankaPandaServer):
         if self.shutdown_flag.is_set():
             self._timeout_callback()
             return
-        if not self.teleop_enabled:
-            return
-        with self._key_lock:
-            vx = self._key_vx
-            vy = self._key_vy
-            key_entered = self._key_entered
-        if self._key_entered:
-            vx = 0.0
-            vy = 0.0
         else:
-            vx = 1.0 * float(self.action[0])
-            vy = 1.0 * float(self.action[1])
+            # compute index based on time since last planning
+            delta_t = self.get_clock().now().nanoseconds / 1e9 - self.last_planning_time
+            idx = int(delta_t / self.ctrl.task.dt)
+            self.get_logger().warn(
+                f"delta_t: {delta_t:.4f}"
+                f" arg idx: {idx}"
+            )
+            action = self.actions[idx]
+            vx = 1.0 * float(action[0])
+            vy = 1.0 * float(action[1])
            
             # self.get_logger().warn(
             #         f"action: {self.action}"
@@ -660,10 +660,10 @@ class FR3_PushT(FrankaPandaServer):
 if __name__ == '__main__':
     
     rclpy.init()
-    max_speed = 0.35
+    max_speed = 0.3
     task = PushTFranka(ik_type = 'pinv',
-                planning_horizon=9,
-                sim_steps_per_control_step=2,
+                planning_horizon=20,
+                sim_steps_per_control_step=1,
                 ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                 "u_max": jnp.array([max_speed, max_speed])},
                 actuation_type='velocity',
@@ -685,10 +685,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    seed = 11
+    seed = 0
     # PS 10
 
     num_samples = 1024 #512
+    planning_freq = 8  # Hz
 
 
     # Set the controller based on command-line arguments
@@ -705,7 +706,7 @@ if __name__ == '__main__':
             num_randomizations=1,
             savgol_filter=True,
             shift=True,
-            planning_freq=10,
+            planning_freq=planning_freq,
             seed=seed,
             update_cov=False,
         )
@@ -721,7 +722,7 @@ if __name__ == '__main__':
             num_randomizations=1,
             savgol_filter=True,
             shift=True,
-            planning_freq=10,
+            planning_freq=planning_freq,
             seed=seed,
             update_cov=False,
         )
@@ -734,7 +735,7 @@ if __name__ == '__main__':
             noise_level=0.3,
             savgol_filter=True,
             shift=True,
-            planning_freq=10,
+            planning_freq=planning_freq,
             seed=seed,
         )
     elif args.algorithm == "mtp":
@@ -744,19 +745,19 @@ if __name__ == '__main__':
             num_samples=num_samples,
             temperature=0.1,
             M=3, # horizon via control points
-            N=32, # samples 
+            N=64, # samples 
             sigma_min=0.15,
             sigma_max=0.55,
             num_elites=72,
             sigma_start=0.3,
             beta=0.3,
-            alpha=0.1,
+            alpha=0.0,
             interpolation='bspline',
             num_randomizations=1,
             seed=seed,
             savgol_filter=True,
             shift=True,
-            planning_freq=10,
+            planning_freq=planning_freq,
             keep_elites=1,
             default_zero_controls=False,
             update_cov=False,
@@ -798,6 +799,7 @@ if __name__ == '__main__':
             debug_model=model,
             debug_data=data,
             viewer=v,
+            planning_freq=planning_freq,
             trace_idxs=trace_idxs,
         )
 

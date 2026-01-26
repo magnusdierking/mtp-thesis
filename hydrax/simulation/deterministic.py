@@ -425,7 +425,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
             state_error = controller.task.running_cost(mj_data)
             test = controller.task._get_ee_block_distance(mj_data)
-            print(f"Distance between ee and block: {test:.4f} m")
+            # print(f"Distance between ee and block: {test:.4f} m")
 
             # state_error = 20 * linear_error + 1 * rotation_error
             # print(f"Distance: {state_error}, Linear: {linear_error}, Rotation: {rotation_error}")

@@ -68,9 +68,9 @@ sigma_max = 0.75
 sigma_min = 0.05
 sigma_start = 0.2
 det_init = {
-    "block_pos_x": 0.55,
-    "block_pos_y": -0.15,
-    "block_angle": np.pi/3,
+    "block_pos_x": 0.6,
+    "block_pos_y": -0.1,
+    "block_angle": np.pi/2,
     "ee_goal_pos": [0.45, 0.1, 0.035]
 }
 
@@ -93,7 +93,7 @@ det_init = {
 #velocity control
 max_speed = 0.35  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=10,
+                    planning_horizon=9,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
@@ -181,12 +181,12 @@ elif args.algorithm == "mtp":
         task,
         temperature=0.01,
         num_samples=num_samples,
-        M=3, # horizon via control points
-        N=16, # samples
+        M=4, # horizon via control points
+        N=32, # samples
         sigma_min=sigma_min,
         sigma_max=sigma_max,
         sigma_start=sigma_start,
-        num_elites=24,
+        num_elites=72,
         keep_elites=1,   # !experimental
         beta=0.3,
         alpha=0.1,

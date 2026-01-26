@@ -65,8 +65,8 @@ class PushTFranka(Task):
                 )
             elif block_type == 'free':
                 mj_model = mujoco.MjModel.from_xml_path(
-                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free_exp.xml").as_posix()
-                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free_exp.xml").as_posix()
+                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
                 )
             elif block_type == 'sim-real':
                 mj_model = mujoco.MjModel.from_xml_path(
@@ -121,7 +121,10 @@ class PushTFranka(Task):
         )   
         self.ee_t2_sensor = mujoco.mj_name2id(
             mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_t2"
-        )   
+        ) 
+        self.ee_t3_sensor = mujoco.mj_name2id(
+            mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_t3"
+        )  
 
          # Get block body id
         
@@ -254,6 +257,12 @@ class PushTFranka(Task):
     ##################################
     ##       Goal Error Terms       ##
     ##################################
+
+    def _get_ee_position(self, state: mjx.Data) -> jax.Array:
+        """Get the end effector position."""
+        # get from body position
+        ee_pos = state.xpos[self.ee_body_id]
+        return ee_pos
     
     def _get_position_err(self, state: mjx.Data) -> jax.Array:
         """ Get the position error of the block relative to a goal position."""
@@ -286,7 +295,10 @@ class PushTFranka(Task):
         ee_t1_pos = state.sensordata[ee_t1_adr : ee_t1_adr + 3]
         ee_t2_adr = self.model.sensor_adr[self.ee_t2_sensor]
         ee_t2_pos = state.sensordata[ee_t2_adr : ee_t2_adr + 3]
-        return jnp.linalg.norm(ee_t1_pos, ord=1) + jnp.linalg.norm(ee_t2_pos, ord=1)
+        ee_t3_adr = self.model.sensor_adr[self.ee_t3_sensor]
+        ee_t3_pos = state.sensordata[ee_t3_adr : ee_t3_adr + 3]
+        error = jnp.linalg.norm(ee_t1_pos, ord=2) + jnp.linalg.norm(ee_t2_pos, ord=2) + jnp.linalg.norm(ee_t3_pos, ord=2)
+        return error
 
         # return jnp.linalg.norm(ee_t1_pos, ord=1) 
 
@@ -345,7 +357,7 @@ class PushTFranka(Task):
         if self.block_type == 'joint' or self.block_type == 'sim-real':
             return 10 * self.running_cost(state, jnp.zeros(self.model.nu))
         elif self.block_type == 'free':
-            return 2 * self.running_cost(state, jnp.zeros(self.model.nu)) 
+            return 5 * self.running_cost(state, jnp.zeros(self.model.nu)) 
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         return {}

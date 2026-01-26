@@ -5,12 +5,12 @@ import copy
 from pprint import pformat
 import argparse
 from math import sin, cos
-
+import signal
 from hydrax.utils.files import get_data_path
 
 import pickle
 
-from hydrax.algs import MPPI, MTP, CEM
+from hydrax.algs import MPPI, MTP, CEM, PredictiveSampling
 from hydrax.utils.utils import se3_left_invariant_metric
 from hydrax.tasks.pusht_franka import PushTFranka
 
@@ -44,7 +44,7 @@ from pynput import keyboard
 def np_yaw_from_quat(x, y, z, w):
     # standard ZYX Euler convention
     yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
-    return yaw + np.pi/2
+    return yaw 
 
 
 
@@ -58,7 +58,7 @@ class FR3_PushT(FrankaPandaServer):
                  debug_data,
                  viewer,
                  trace_idxs,
-                 run_time_sec=30.0
+                 run_time_sec=40.0
                  ):
         
         super().__init__(robot_ip, 
@@ -110,18 +110,10 @@ class FR3_PushT(FrankaPandaServer):
         ####################################
         ##       Move to initial pose     ##    
         ####################################
-        # 10-14 seeds
-        # self.init_pos = np.array([0.6 + np.random.uniform(-0.03 , 0.03), 
-        #                           0.2 + np.random.uniform(-0.03, 0.03),
-        #                           0.03])   
-        # 20-24 seeds
-        # self.init_pos = np.array([0.4 + np.random.uniform(-0.03 , 0.03), 
-        #                           0.0 + np.random.uniform(-0.03, 0.03),
-        #                           0.03])  
-        # 30-34 seeds
-        self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
+
+        self.init_pos = np.array([0.55 + np.random.uniform(-0.03 , 0.03), 
                                   0.0 + np.random.uniform(-0.03, 0.03),
-                                  0.03])  
+                                  0.04])  
 
         self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
        
@@ -251,6 +243,8 @@ class FR3_PushT(FrankaPandaServer):
         ####################################
         ##           Start Timer          ##    
         ####################################
+        self.shutdown_flag = threading.Event()  # Thread-safe flag
+        signal.signal(signal.SIGINT, self.signal_handler)
         # Logs 
         self.log = []
         self.ctr = 0
@@ -334,6 +328,7 @@ class FR3_PushT(FrankaPandaServer):
     def _timeout_callback(self):
         self.get_logger().info("Timeout reached, shutting down...")
         # Any controller-specific cleanup, if needed
+        self.send_stop_command()
         rclpy.shutdown()
 
 
@@ -356,14 +351,14 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
 
-        t.transform.translation.x = 0.75715  #1.07658 
-        t.transform.translation.y = -0.15269 #-1.23784
-        t.transform.translation.z = 0.08276  # 0.04381
+        t.transform.translation.x = 1.13100  #1.07658 
+        t.transform.translation.y = -1.26694 #-1.23784
+        t.transform.translation.z = -0.02314  # 0.04381
 
-        t.transform.rotation.x = 0.69540     #-0.01901
-        t.transform.rotation.y = 0.71853     # 0.00215
-        t.transform.rotation.z = 0.00233     # 0.99975
-        t.transform.rotation.w = 0.01143     # -0.01119
+        t.transform.rotation.x = -0.01394     #-0.01901
+        t.transform.rotation.y = -0.00061     # 0.00215
+        t.transform.rotation.z = 0.99987     # 0.99975
+        t.transform.rotation.w = 0.00784     # -0.01119
 
         self.static_tf = t
         self.br.sendTransform(t)
@@ -375,9 +370,9 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.0
-        t.transform.translation.y = +0.025
-        t.transform.translation.z = -0.0251
+        t.transform.translation.x = 0.023
+        t.transform.translation.y = 0.0
+        t.transform.translation.z = -0.025 - 0.0001
 
         quat = quaternion_from_euler(0.0, 0.0, np.pi)
         t.transform.rotation.x = quat[0]
@@ -502,7 +497,7 @@ class FR3_PushT(FrankaPandaServer):
         current_time = self.get_clock().now().nanoseconds / 1e9
         # resolve state 
         self.debug_data.qpos[[0, 1, 2]] = np.array([-self.lin_t[1],
-                                              self.lin_t[0] - 0.4,
+                                              self.lin_t[0] - 0.5,
                                               np_yaw_from_quat(x=self.quat_t[0], y=self.quat_t[1], z=self.quat_t[2], w=self.quat_t[3])
                                               ])
         self.debug_data.qpos[3:-2] = self.robot_q
@@ -527,9 +522,6 @@ class FR3_PushT(FrankaPandaServer):
         self.action = self.actions[0]
         t2 = time.time()
 
-        linear_error = np.linalg.norm(self.ctrl.task._get_position_err(self.debug_data))
-        rotation_error = np.linalg.norm(self.ctrl.task._get_orientation_err(self.debug_data))
-        goal_error = 30 * np.square(linear_error) + 3 * rotation_error
         terminal_error = self.ctrl.task.terminal_cost(self.debug_data) / 10
 
 
@@ -541,9 +533,7 @@ class FR3_PushT(FrankaPandaServer):
             'planning_time': t2 - t1,
             'object_pos': self.lin_t.tolist(),
             'object_quat': self.quat_t.tolist(),
-            'linear_error': linear_error.tolist(),
-            'rotation_error': rotation_error.tolist(),
-            'goal_error': float(goal_error),
+            'ee_pos': self.ctrl.task._get_ee_position(self.debug_data).tolist(),
             'terminal_error': float(terminal_error),
             'action': self.action.tolist(),
         })  
@@ -576,13 +566,15 @@ class FR3_PushT(FrankaPandaServer):
             f" (Visualization: {t3 - t2:.3f} s)"
         )
 
-
     def _send_keyboard_command(self):
         """
         Send velocity command (twist) to moveit servo based on keyboard input.
         
         :param self: Description
         """
+        if self.shutdown_flag.is_set():
+            self._timeout_callback()
+            return
         if not self.teleop_enabled:
             return
 
@@ -590,21 +582,7 @@ class FR3_PushT(FrankaPandaServer):
             vx = self._key_vx
             vy = self._key_vy
             key_entered = self._key_entered
-        # if self.action is not None:
-        #     vel = np.zeros(6)
-        #     site_id = mujoco.mj_name2id(self.debug_model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
 
-        #     mujoco.mj_objectVelocity(
-        #         self.debug_model,
-        #         self.debug_data,
-        #         mujoco.mjtObj.mjOBJ_SITE,
-        #         site_id,
-        #         vel,
-        #         0  # world frame
-        #     )
-        #     self.get_logger().warn(
-        #             f"ee vel: {vel[:2]}"
-        #         )
         if self._key_entered:
             vx = 0.0
             vy = 0.0
@@ -625,7 +603,6 @@ class FR3_PushT(FrankaPandaServer):
             #     )
         self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
     
-
     def _states_received(self):
         """
         Check if all required states have been received at least once
@@ -639,12 +616,22 @@ class FR3_PushT(FrankaPandaServer):
             self.get_logger().info("Current joint state received.")
             return True
     
-
     def save_log(self, path, filename="fr3_pusht_"):
         log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}"
 
         with open(str(log_file) + ".pkl", "wb") as f:
             pickle.dump(self.log, f)
+
+    def send_stop_command(self):
+        """
+        Send a stop command to the robot to halt any ongoing motion.
+        """
+        self.get_logger().info("Sent stop command to the robot.")
+        self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
+
+    def signal_handler(self, sig, frame):
+        self.get_logger().info('SIGINT received')
+        self.shutdown_flag.set()
     
 
 if __name__ == '__main__':
@@ -652,8 +639,8 @@ if __name__ == '__main__':
     rclpy.init()
     max_speed = 0.35
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=7,
-                    sim_steps_per_control_step=2,
+                    planning_horizon=16,
+                    sim_steps_per_control_step=1,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
@@ -671,9 +658,11 @@ if __name__ == '__main__':
     subparsers.add_parser("mppi", help="Model Predictive Path Integral Control")
     subparsers.add_parser("mtp", help="MTP")
     subparsers.add_parser("cem", help="Cross-Entropy Method")
+    subparsers.add_parser("ps", help="Predictive Sampling")
+
     args = parser.parse_args()
 
-    seed = 30
+    seed = 4
 
     num_samples = 1024
 
@@ -687,7 +676,7 @@ if __name__ == '__main__':
             num_samples=num_samples,
             alpha=0.1,
             temperature=0.1,
-            noise_level=0.2,
+            noise_level=0.3,
             num_randomizations=1,
             savgol_filter=True,
             shift=True,
@@ -700,10 +689,22 @@ if __name__ == '__main__':
             task,
             alpha=0.1,
             num_samples=num_samples,
-            sigma_start=0.2,
+            sigma_start=0.3,
             sigma_min=0.05,
-            num_elites=12,
+            num_elites=72,
             num_randomizations=1,
+            savgol_filter=True,
+            shift=True,
+            planning_freq=10,
+            seed=seed,
+        )
+    elif args.algorithm == "ps":
+        print("Running Predictive Sampling")
+        ctrl = PredictiveSampling(
+            task,
+            num_samples=num_samples,
+            num_randomizations=1,
+            noise_level=0.3,
             savgol_filter=True,
             shift=True,
             planning_freq=10,
@@ -719,9 +720,9 @@ if __name__ == '__main__':
             N=64, # samples 
             sigma_min=0.15,
             sigma_max=0.55,
-            num_elites=12,
-            sigma_start=0.2,
-            beta=0.35,
+            num_elites=72,
+            sigma_start=0.3,
+            beta=0.4,
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,
@@ -739,7 +740,7 @@ if __name__ == '__main__':
 
     with mujoco.viewer.launch_passive(model, data) as v:
       
-        num_traces = 3
+        num_traces = 0
         trace_idxs = np.linspace(0, num_samples -1, num=num_traces, dtype=int).tolist()
         # trace_idxs.extend( [i * (num_samples // (num_traces -1)) for i in range(1, num_traces -1)] )
         # trace_idxs = [i * num_traces for i in range( num_samples // num_traces)]  
@@ -783,7 +784,7 @@ if __name__ == '__main__':
             print("Shutting down controller...")
         finally:
             executor.shutdown()
-            path = get_data_path() / "sim-real" 
+            path = get_data_path() / "sim-real-3dof" 
             controller.save_log(path)
             controller.destroy_node()
             rclpy.shutdown()

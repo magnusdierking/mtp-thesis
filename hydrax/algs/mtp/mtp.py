@@ -122,7 +122,7 @@ class MTP(SamplingBasedController):
         self.alpha_noise = alpha_noise
         # shift
         self.shift = shift
-        self.last_a_idx = int(self.task.dt * planning_freq)
+        self.last_a_idx = int(1 / (planning_freq * self.task.dt))
         print(f"MTP Controller initialized with last_a_idx = {self.last_a_idx}")
         
         self.default_zero_controls = default_zero_controls

@@ -161,10 +161,8 @@
                                 size="0.015"
                                 pos="0 0 0"
                                 rgba="0 0 0 1"
-                                solref="0.04 0.95" 
-                                margin="0.0001"
-                                gap="0.00005"
-                                solimp="0.9 0.95 0.001 0.5 2"
+                                solref="0.05 1.1" 
+                                solimp="0.75 0.85 0.001 0.5 2"
                                 friction="0.05 0.001 0.0001"
                                 condim="3"
                                 contype="1" conaffinity="4"/> 
