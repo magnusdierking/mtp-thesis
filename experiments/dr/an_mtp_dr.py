@@ -2,16 +2,15 @@ from typing import Tuple
 
 import jax
 import jax.numpy as jnp
+from alg_base_opt_dr import SamplingBasedController, Trajectory
 from flax.struct import dataclass
 
-from alg_base_opt_dr import SamplingBasedController, Trajectory
-from hydrax.risk import RiskStrategy, ExpectedCost
-from hydrax.task_base import Task
+from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
 from hydrax.algs.mtp.splines.akima import poly_akima, poly_interpolation
 from hydrax.algs.mtp.splines.bsplines import compute_b_spline_matrix
 from hydrax.algs.mtp.splines.linear import interpolate_linear
-
-from hydrax.algs.alg_extension_utils import colorize_time_series, shift_tensor
+from hydrax.risk import ExpectedCost, RiskStrategy
+from hydrax.task_base import Task
 
 
 @dataclass
@@ -62,7 +61,7 @@ class AnMTP(SamplingBasedController):
         risk_strategy: RiskStrategy | None = None,
         colorize_noise: bool = False,   # !experimental
         seed: int = 0,
-        update_cov: bool = True,
+        update_cov: bool = False,
     ):
         # super().__init__(task, num_randomizations, risk_strategy, seed)
         # ! experimental

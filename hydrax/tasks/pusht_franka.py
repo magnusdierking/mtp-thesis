@@ -44,7 +44,7 @@ class PushTFranka(Task):
         self, planning_horizon: int = 16, sim_steps_per_control_step: int = 5, 
         nu: int = 2, 
         ctrl_limits = {"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
-        trace_sites=["T_1", "T_2","ee_site"],
+        trace_sites=["T_1", "T_2","ee_site", "T_3"],
         actuation_type: str = 'velocity',
         sampling_space: str = 'velocity',
         block_type: str = 'free', # 'free' or 'joint'
@@ -61,16 +61,18 @@ class PushTFranka(Task):
         elif actuation_type == 'velocity':
             if block_type == 'joint':
                 mj_model = mujoco.MjModel.from_xml_path(
-                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx.xml").as_posix()
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint.xml").as_posix()
                 )
             elif block_type == 'free':
                 mj_model = mujoco.MjModel.from_xml_path(
-                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free_exp.xml").as_posix()
-                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
+                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free_pyramidal.xml").as_posix()
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
                 )
             elif block_type == 'sim-real':
                 mj_model = mujoco.MjModel.from_xml_path(
-                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_sim_real.xml").as_posix()
+                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint_small.xml").as_posix()
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint.xml").as_posix()
+                    
                 )
             else:
                 raise ValueError("block_type must be 'joint', 'free' or 'sim-real'")
@@ -162,6 +164,7 @@ class PushTFranka(Task):
         # Set the random seed for reproducibility
         np.random.seed(seed)
         mj_model = self.mj_model
+        # mj_model.opt.enableflags = mujoco.mjtEnableBit.mjENBL_OVERRIDE
         mj_data = mujoco.MjData(self.mj_model)
 
         sign_x = np.random.choice([-1, 1])

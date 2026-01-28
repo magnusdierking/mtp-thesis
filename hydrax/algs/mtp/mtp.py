@@ -1,32 +1,30 @@
-from typing import Tuple, Optional, Callable
-
-from numpy import cov
+from functools import partial
+from typing import Tuple
 
 import jax
 import jax.numpy as jnp
 from flax.struct import dataclass
-from mujoco import mjx
 
-from functools import partial
 from hydrax.alg_base_opt import SamplingBasedController, Trajectory
-
+from hydrax.algs.alg_extension_utils import make_savgol_filter, shift_tensor
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
+
 from .splines.akima import poly_akima, poly_interpolation
 from .splines.bsplines import compute_b_spline_matrix
-from hydrax.algs.alg_extension_utils import colorize_time_series, make_savgol_filter, shift_tensor, savgol_coeffs
 
 
 @dataclass
 class MTPParams:
-    """Policy parameters for model-predictive path integral control.
-    """
     rng: jax.Array
     mean: jax.Array = None
     cov: jax.Array = None
     spline: jax.Array = None
     elites: jax.Array = None   # (num_elites, T, U), optional
     beta: float = 0.0
+    
+    predicted_state: jax.Array = None  # (domains, sites, prediction_horizon, state), optional
+    domain_weights: jax.Array = None   # (domains,), optional 
   
 
 
@@ -66,6 +64,7 @@ class MTP(SamplingBasedController):
         planning_freq: int = 1, # !experimental
         keep_elites: int = 1,   #!experimental
         savgol_filter: bool = False, # !experimental
+        use_spline: bool = True, #!experimental
         default_zero_controls: bool = False, #!experimental
     ):
         """Initialize the controller.
@@ -120,6 +119,7 @@ class MTP(SamplingBasedController):
         
         self.colorize_noise = colorize_noise
         self.alpha_noise = alpha_noise
+        
         # shift
         self.shift = shift
         self.last_a_idx = int(1 / (planning_freq * self.task.dt))
@@ -128,6 +128,16 @@ class MTP(SamplingBasedController):
         self.default_zero_controls = default_zero_controls
 
         self.update_cov = update_cov
+        
+        self.use_spline = use_spline
+        if self.use_spline:
+            self.b_knots_mppi = self.start_clamped_knot_vector(self.task.planning_horizon, self.degree, dtype=control_dtype)
+            self.b_mat_mppi = jnp.asarray(
+                compute_b_spline_matrix(
+                    self.b_knots_mppi, self.degree, self.task.planning_horizon, dtype=control_dtype
+                ),
+                dtype=control_dtype,
+            )
 
         self.savgol_filter = savgol_filter  
         if savgol_filter:
@@ -161,12 +171,20 @@ class MTP(SamplingBasedController):
         spline = mean.copy()
         elites = spline[None, ...].repeat(self.keep_elites, axis=0)
         cov = jnp.full_like(mean, self.sigma_start)
+        predicted_state = jnp.zeros((self.num_randomizations,
+                                     self.last_a_idx + 1, 
+                                     len(self.task.trace_site_ids),
+                                     7), dtype=jnp.float32) 
+        domain_weights = jnp.ones((self.num_randomizations,), dtype=jnp.float32) / self.num_randomizations 
         
         return MTPParams(rng=rng, 
                          spline=spline, 
                          mean=mean, 
                          elites=elites,
-                         cov=cov,)
+                         cov=cov,
+                         predicted_state=predicted_state,
+                         domain_weights=domain_weights,
+                         )
 
     
     def sample_controls(
@@ -275,7 +293,10 @@ class MTP(SamplingBasedController):
                 ),
             )
             mppi_controls = params.mean + self.sigma_start * noise
-            if self.savgol_filter:
+            
+            if self.use_spline:
+                mppi_controls = jnp.einsum("...md,hm->...hd", mppi_controls, self.b_mat_mppi)
+            elif self.savgol_filter:
                 mppi_controls = self.savgol_filter_fn(mppi_controls)
             out = out.at[1+self.nbr_mtp_samples:1+self.nbr_mtp_samples+self.nbr_mppi_samples].set(mppi_controls)
         if self.keep_elites > 0 and params.elites is not None:
@@ -329,8 +350,11 @@ class MTP(SamplingBasedController):
 
         spline = rollouts.controls[next_idx]  # use the best elite as control
         new_elites = rollouts.controls[elite_indices[:self.keep_elites]]
+        
+        predicted_state = rollouts.trace_sites[:, next_idx, :(self.last_a_idx + 1), ...] 
 
-        return params.replace(mean=mean, cov=cov, spline=spline, elites=new_elites)
+
+        return params.replace(mean=mean, cov=cov, spline=spline, elites=new_elites, predicted_state=predicted_state)
 
 
     def get_action(self, params: MTPParams, t: float) -> jax.Array:

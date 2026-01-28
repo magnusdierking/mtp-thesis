@@ -326,6 +326,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             plan_start = time.time()
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
             # policy_params, rollouts = controller.opt_step(mjx_data, policy_params)
+            print("Rollouts control shape:", rollouts.trace_sites.shape)
             plan_time = time.time() - plan_start
                 
             

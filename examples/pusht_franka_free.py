@@ -93,11 +93,11 @@ det_init = {
 #velocity control
 max_speed = 0.35  # m/s
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=9,
+                    planning_horizon=10,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
-                    trace_sites=["ee_site", "T_1"],
+                    trace_sites=["ee_site"],
                     actuation_type='velocity',
                     sampling_space="velocity",
                     det_init=det_init,
@@ -128,7 +128,7 @@ subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
-num_samples = 1024
+num_samples = 256
 num_randomizations = 1
 
 
@@ -179,14 +179,14 @@ elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
         task,
-        temperature=0.01,
+        temperature=0.1,
         num_samples=num_samples,
         M=4, # horizon via control points
         N=32, # samples
         sigma_min=sigma_min,
         sigma_max=sigma_max,
         sigma_start=sigma_start,
-        num_elites=72,
+        num_elites=36,
         keep_elites=1,   # !experimental
         beta=0.3,
         alpha=0.1,
@@ -194,6 +194,7 @@ elif args.algorithm == "mtp":
         num_randomizations=num_randomizations,
         seed=seed,
         update_cov=update_cov,
+        planning_freq=10,
         savgol_filter=True,  # !experimental
         default_zero_controls=False,
     )

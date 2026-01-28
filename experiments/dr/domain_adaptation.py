@@ -1,23 +1,21 @@
+import os
 from abc import ABC, abstractmethod
-from typing import Tuple , List
+from collections import deque
+from typing import List, Tuple
 
-import jax
 import jax.numpy as jnp
 import mujoco
-from mujoco import mjx
 import numpy as np
-from scipy.stats import multivariate_normal
-
 from alg_base_opt_dr import SamplingBasedController
 from flax.struct import dataclass
+from mujoco import mjx
+from scipy.stats import multivariate_normal
+
 from hydrax.task_base import Task
-import os
-from collections import deque
 
 
 class AdaptiveDomainRandomizationStrategy(ABC):
-    """An abstract adaptive domain randomization strategy interface.
-    """
+    """An abstract adaptive domain randomization strategy interface."""
 
     def __init__(self, 
                  seed: int,

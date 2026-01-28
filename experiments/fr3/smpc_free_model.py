@@ -228,16 +228,15 @@ class FR3_PushT(FrankaPandaServer):
         for _ in range(5):
             self.mjx_data = mjx.step(self.ctrl.task.model, self.mjx_data)
         # warmstart controller
-        # for _ in range(1):
-        #     self.policy_params, _ = self.jit_step(
-        #         self.mjx_data, self.policy_params,
-        #         self.debug_data.qpos,
-        #         self.debug_data.qvel,
-        #         self.debug_data.mocap_pos,
-        #         self.debug_data.mocap_quat,
-        #         # self.lin_t, self.quat_t, self.robot_q, self.robot_dq,
-        #         self.get_clock().now().nanoseconds / 1e9
-        #     )
+        for _ in range(1):
+            self.policy_params, _ = self.jit_step(
+                self.mjx_data, self.policy_params,
+                self.debug_data.qpos,
+                self.debug_data.qvel,
+                self.debug_data.mocap_pos,
+                self.debug_data.mocap_quat,
+                self.get_clock().now().nanoseconds / 1e9
+            )
         
         self.get_logger().info(f"Time to jit and warmstart: {time.time() - st:.3f} s")
 

@@ -154,18 +154,17 @@
                       <!-- This is basically link 8 from ROS -->
                       <body name="pusher" pos="0 0 0.107" gravcomp="1">
                         <!-- Long box as arm -->
-                        <geom type="box" size="0.01 0.01 0.0625" pos="0 0 0.0625" rgba="0.0 0.0 0.0 1"/>
+                        <geom type="box" size="0.01 0.01 0.0625" pos="0 0 0.0625" rgba="0.0 0.0 0.0 1" class="visual"/>
                         <!-- Sphere at the tip of the box to act as end effector -->
                         <body name="ee_frame" pos="0 0 0.125" gravcomp="1"> 
                           <geom type="sphere"
-                                name="ee"
                                 size="0.015"
                                 pos="0 0 0"
                                 rgba="0 0 0 1"
-                                friction="0.1"
-                                solref="0.05 1.5" 
+                                solref="0.025 1.1" 
                                 solimp="0.85 0.95 0.001 0.5 2"
-                                condim="3"/> 
+                                friction="0.05 0.001 0.0001"
+                                condim="3" contype="1" conaffinity="4"/> 
                           <site name="ee_site" pos="0 0 0.0" size="0.015" rgba="0 0 0 1"/>
                         </body>
                       </body>
@@ -198,11 +197,6 @@
     <exclude body1="fr3_link1" body2="fr3_link2"/>
     <exclude body1="fr3_link6" body2="fr3_link7"/>
   </contact>
-
-  <!-- Clashes with additional joint definitions in push T scene -->
-  <!-- <keyframe>
-    <key name="home" qpos="0 0 0 -1.57079 0 1.57079 -0.7853" ctrl="0 0 0 -1.57079 0 1.57079 -0.7853"/>
-  </keyframe> -->
 
   <sensor>
     <framepos name="ee_frame_pos" objtype="body" objname="ee_frame" reftype="body" refname="world"/>

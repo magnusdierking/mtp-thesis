@@ -1,5 +1,8 @@
-import argparse
-import sys
+import argparse, sys
+from pathlib import Path
+
+parent_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(parent_dir))
 
 from hydrax.algs import MPPI, MTP, CEM
 # from hydrax.algs.mtp.an_mtp_opt import AnMTP
@@ -20,7 +23,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 
-NUM_SAMPLES = 256     
+NUM_SAMPLES = 32     
 NUM_RANDOMIZATIONS = 24   
 MAX_SPEED = 0.35  # m/s
 
@@ -52,10 +55,8 @@ det_init = {
 }
 
 
-# Define the task (cost and dynamics)
-#velocity control
 task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=20,
+                    planning_horizon=10,
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-MAX_SPEED, -MAX_SPEED]), 
                                  "u_max": jnp.array([MAX_SPEED, MAX_SPEED])},
@@ -97,8 +98,9 @@ args = parser.parse_args()
 print(args)
 
 risk_alpha = 0.25  # for (C)VaR
+
 if args.risk is None or args.risk == "average": 
-    args.risk = "average"  # Default to MTP
+    args.risk = "average"  
     aggregation = AverageCost()
 elif args.risk == "expectation":
     # initialize with uniform weights
@@ -165,6 +167,7 @@ elif args.algorithm == "mtp":
         num_randomizations=NUM_RANDOMIZATIONS,
         seed=seed,
         update_cov=update_cov,
+        planning_freq=5,
     )
     error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
     
@@ -201,10 +204,9 @@ dr_strategy = UniformDomainRandomization(
     seed=seed,
     task=task,
     controller=ctrl,
-    randomized_bodies={"bottom": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
-                        "top": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
-                        "ground": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
-                        
+    randomized_bodies={#"ee": {"field": "geom_solimp", "min": [0.001], "max": [1.0], "internal_idx": [2]},
+                     "ground": {"field": "geom_friction", "min": [0.001], "max": [100.1], "internal_idx": [0]},
+                        # "top": {"field": "geom_solref", "min": [0.1], "max": [3], "internal_idx": [1]},                        
     },
     randomized_joints = {
         # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
@@ -215,7 +217,9 @@ dr_strategy = UniformDomainRandomization(
     num_randomizations=NUM_RANDOMIZATIONS,
 )
 
-
+# "bottom": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
+# "top": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
+# "ground": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
 
 path = get_data_path() / "dr_sim"  
 if not path.exists():       
@@ -226,8 +230,11 @@ path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
 ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
 
 new_randomizations = dr_strategy.get_current_randomizations()
-print("New randomizations:", new_randomizations["geom_friction"][:,[4,5]])
+print("New randomizations:", new_randomizations["geom_friction"][:,[3]])
+print(task.model.geom_friction)
 
+
+print(ctrl.model.geom_friction[:,[3]])
 # sys.exit()
 
 
