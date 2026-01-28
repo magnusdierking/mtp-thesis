@@ -229,7 +229,7 @@ class FR3_PushT(FrankaPandaServer):
             self.mjx_data = mjx.step(self.ctrl.task.model, self.mjx_data)
         # warmstart controller
         for _ in range(1):
-            self.policy_params, _ = self.jit_step(
+            self.mjx_data, self.policy_params, _= self.jit_step(
                 self.mjx_data, self.policy_params,
                 self.debug_data.qpos,
                 self.debug_data.qvel,

@@ -194,11 +194,11 @@ class FR3_PushT(FrankaPandaServer):
         st = time.time()
 
         self.debug_data.qpos[[0, 1, 2]] = np.array([-self.lin_t[1], 
-                                              self.lin_t[0] - 0.4, 
+                                              self.lin_t[0] - 0.5 - 0.0425, 
                                               np_yaw_from_quat(x=self.quat_t[0], y=self.quat_t[1], z=self.quat_t[2], w=self.quat_t[3])
                                               ])
-        self.debug_data.qpos[3:-2] = self.robot_q
-        self.debug_data.qvel[3:-2] = self.robot_dq
+        self.debug_data.qpos[3:10] = self.robot_q
+        self.debug_data.qvel[3:10] = self.robot_dq
         self.debug_data.time = self.get_clock().now().nanoseconds / 1e9
         mujoco.mj_step(self.debug_model, self.debug_data)
         
@@ -217,7 +217,7 @@ class FR3_PushT(FrankaPandaServer):
             self.mjx_data = mjx.step(self.ctrl.task.model, self.mjx_data)
         # warmstart controller
         for _ in range(1):
-            self.policy_params, _ = self.jit_step(
+            self.mjx_data, self.policy_params, _ = self.jit_step(
                 self.mjx_data, self.policy_params,
                 self.debug_data.qpos,
                 self.debug_data.qvel,
@@ -370,8 +370,8 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.023
-        t.transform.translation.y = 0.0
+        t.transform.translation.x = 0.0266
+        t.transform.translation.y = +0.004
         t.transform.translation.z = -0.025 - 0.0001
 
         quat = quaternion_from_euler(0.0, 0.0, np.pi)
@@ -500,8 +500,8 @@ class FR3_PushT(FrankaPandaServer):
                                               self.lin_t[0] - 0.5,
                                               np_yaw_from_quat(x=self.quat_t[0], y=self.quat_t[1], z=self.quat_t[2], w=self.quat_t[3])
                                               ])
-        self.debug_data.qpos[3:-2] = self.robot_q
-        self.debug_data.qvel[3:-2] = self.robot_dq
+        self.debug_data.qpos[3:10] = self.robot_q
+        self.debug_data.qvel[3:10] = self.robot_dq
         self.debug_data.time = current_time
         # update sites etc.
         mujoco.mj_forward(self.debug_model, self.debug_data)
@@ -601,7 +601,9 @@ class FR3_PushT(FrankaPandaServer):
             #         f" arg idx: {idx}"
             #         f"ctr: {self.ctr}"
             #     )
-        self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+        # self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+        self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
+
     
     def _states_received(self):
         """
@@ -639,8 +641,8 @@ if __name__ == '__main__':
     rclpy.init()
     max_speed = 0.35
     task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=16,
-                    sim_steps_per_control_step=1,
+                    planning_horizon=13,
+                    sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                  "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
@@ -662,7 +664,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    seed = 4
+    seed = 5
 
     num_samples = 1024
 
@@ -722,7 +724,7 @@ if __name__ == '__main__':
             sigma_max=0.55,
             num_elites=72,
             sigma_start=0.3,
-            beta=0.4,
+            beta=0.45,
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,
@@ -772,6 +774,7 @@ if __name__ == '__main__':
             debug_data=data,
             viewer=v,
             trace_idxs=trace_idxs,
+            run_time_sec=120.0
         )
 
 
@@ -784,7 +787,7 @@ if __name__ == '__main__':
             print("Shutting down controller...")
         finally:
             executor.shutdown()
-            path = get_data_path() / "sim-real-3dof" 
+            # path = get_data_path() / "sim-real-3dof" 
             controller.save_log(path)
             controller.destroy_node()
             rclpy.shutdown()
