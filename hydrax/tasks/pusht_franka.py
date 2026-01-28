@@ -70,8 +70,8 @@ class PushTFranka(Task):
                 )
             elif block_type == 'sim-real':
                 mj_model = mujoco.MjModel.from_xml_path(
-                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint_small.xml").as_posix()
-                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint.xml").as_posix()
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint_small.xml").as_posix()
+                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint.xml").as_posix()
                     
                 )
             else:
