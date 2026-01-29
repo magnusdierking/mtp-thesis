@@ -41,10 +41,15 @@ from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 from pynput import keyboard
 
-def np_yaw_from_quat(x, y, z, w):
-    # standard ZYX Euler convention
-    yaw = np.arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
-    return yaw 
+def np_yaw_from_quat(qx, qy, qz, qw):
+    norm = np.sqrt(qx**2 + qy**2 + qz**2 + qw**2)
+    qw /= norm; qx /= norm; qy /= norm; qz /= norm
+    
+    sin_yaw_2 = 2 * (qw * qz + qx * qy)
+    cos_yaw_2 = 1 - 2 * (qy**2 + qz**2)
+    yaw = np.arctan2(sin_yaw_2, cos_yaw_2)
+    return yaw
+
 
 
 
@@ -111,7 +116,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
 
-        self.init_pos = np.array([0.55 + np.random.uniform(-0.03 , 0.03), 
+        self.init_pos = np.array([0.45 + np.random.uniform(-0.03 , 0.03), 
                                   0.0 + np.random.uniform(-0.03, 0.03),
                                   0.04])  
 
@@ -193,10 +198,10 @@ class FR3_PushT(FrankaPandaServer):
         self.get_logger().info("Jitting controller...")
         st = time.time()
 
-        self.debug_data.qpos[[0, 1, 2]] = np.array([-self.lin_t[1], 
-                                              self.lin_t[0] - 0.5 - 0.0425, 
-                                              np_yaw_from_quat(x=self.quat_t[0], y=self.quat_t[1], z=self.quat_t[2], w=self.quat_t[3])
-                                              ])
+        self.debug_data.qpos[[0, 1, 2]] = np.array([self.lin_t[0] - 0.5425, 
+                                                    self.lin_t[1], 
+                                                    np_yaw_from_quat(qx=self.quat_t[0], qy=self.quat_t[1], qz=self.quat_t[2], qw=self.quat_t[3])
+                                                    ])    
         self.debug_data.qpos[3:10] = self.robot_q
         self.debug_data.qvel[3:10] = self.robot_dq
         self.debug_data.time = self.get_clock().now().nanoseconds / 1e9
@@ -232,7 +237,7 @@ class FR3_PushT(FrankaPandaServer):
         ##    Start keyboard Controller   ##    
         ####################################
         self._key_lock = threading.Lock()
-        self.teleop_enabled = True 
+        self.teleop_enabled = False 
         self._key_vx = 0.0
         self._key_vy = 0.0
         self._key_entered = False
@@ -370,11 +375,11 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.0266
-        t.transform.translation.y = +0.004
-        t.transform.translation.z = -0.025 - 0.0001
+        t.transform.translation.x = -0.015 #0.0266
+        t.transform.translation.y = 0.005    #+0.004
+        t.transform.translation.z = -0.025 
 
-        quat = quaternion_from_euler(0.0, 0.0, np.pi)
+        quat = quaternion_from_euler(0.0, 0.0, -np.pi)  # radians
         t.transform.rotation.x = quat[0]
         t.transform.rotation.y = quat[1]
         t.transform.rotation.z = quat[2]
@@ -496,10 +501,10 @@ class FR3_PushT(FrankaPandaServer):
             return
         current_time = self.get_clock().now().nanoseconds / 1e9
         # resolve state 
-        self.debug_data.qpos[[0, 1, 2]] = np.array([-self.lin_t[1],
-                                              self.lin_t[0] - 0.5,
-                                              np_yaw_from_quat(x=self.quat_t[0], y=self.quat_t[1], z=self.quat_t[2], w=self.quat_t[3])
-                                              ])
+        self.debug_data.qpos[[0, 1, 2]] = np.array([self.lin_t[0] - 0.5425,
+                                                    self.lin_t[1],
+                                                    np_yaw_from_quat(qx=self.quat_t[0], qy=self.quat_t[1], qz=self.quat_t[2], qw=self.quat_t[3])
+                                                    ])
         self.debug_data.qpos[3:10] = self.robot_q
         self.debug_data.qvel[3:10] = self.robot_dq
         self.debug_data.time = current_time
@@ -576,34 +581,22 @@ class FR3_PushT(FrankaPandaServer):
             self._timeout_callback()
             return
         if not self.teleop_enabled:
-            return
-
-        with self._key_lock:
-            vx = self._key_vx
-            vy = self._key_vy
-            key_entered = self._key_entered
-
-        if self._key_entered:
-            vx = 0.0
-            vy = 0.0
-        else:
-            # delta_t = self.get_clock().now().nanoseconds / 1e9 - self.last_planning_time
-            # t_per_action = self.ctrl.task.dt / self.ctrl.task.sim_steps_per_control_step
-            # idx = int(delta_t // t_per_action)
-            # self.action = self.actions[idx]  # (vx, vy)
             vx = 1.0 * float(self.action[0])
-            vy = 1.0 * float(self.action[1]
-                             )
-           
-            # self.get_logger().warn(
-            #         f"action: {self.action}"
-            #         f"delta_t: {delta_t:.4f}"
-            #         f" arg idx: {idx}"
-            #         f"ctr: {self.ctr}"
-            #     )
-        # self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
-        self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
+            vy = 1.0 * float(self.action[1])
+            # self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
+            self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
 
+        else:
+            with self._key_lock:
+                vx = self._key_vx
+                vy = self._key_vy
+                key_entered = self._key_entered
+
+            if self._key_entered:
+                vx = 0.0
+                vy = 0.0
+            self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+            
     
     def _states_received(self):
         """
@@ -664,7 +657,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    seed = 5
+    seed = 666
 
     num_samples = 1024
 
@@ -724,7 +717,7 @@ if __name__ == '__main__':
             sigma_max=0.55,
             num_elites=72,
             sigma_start=0.3,
-            beta=0.45,
+            beta=0.35,
             alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,
@@ -774,7 +767,6 @@ if __name__ == '__main__':
             debug_data=data,
             viewer=v,
             trace_idxs=trace_idxs,
-            run_time_sec=120.0
         )
 
 
@@ -787,7 +779,7 @@ if __name__ == '__main__':
             print("Shutting down controller...")
         finally:
             executor.shutdown()
-            # path = get_data_path() / "sim-real-3dof" 
+            path = get_data_path() / "sim-real-3dof" 
             controller.save_log(path)
             controller.destroy_node()
             rclpy.shutdown()

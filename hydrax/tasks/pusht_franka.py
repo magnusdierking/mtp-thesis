@@ -347,7 +347,7 @@ class PushTFranka(Task):
         ee_block_distance_cost = ee_block_distance
         
         if self.block_type == 'joint' or self.block_type == 'sim-real':
-            total_goal_err = 40 * position_cost + 1 * orientation_cost
+            total_goal_err = 30 * position_cost + 3 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost  
         elif self.block_type == 'free':
             # Jitter
@@ -360,7 +360,7 @@ class PushTFranka(Task):
         if self.block_type == 'joint' or self.block_type == 'sim-real':
             return 10 * self.running_cost(state, jnp.zeros(self.model.nu))
         elif self.block_type == 'free':
-            return 5 * self.running_cost(state, jnp.zeros(self.model.nu)) 
+            return 10 * self.running_cost(state, jnp.zeros(self.model.nu)) 
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         return {}

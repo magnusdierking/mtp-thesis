@@ -113,7 +113,7 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         # 10-14 seeds
-        self.init_pos = np.array([0.6 + np.random.uniform(-0.03 , 0.03), 
+        self.init_pos = np.array([0.45 + np.random.uniform(-0.03 , 0.03), 
                                   0.0 + np.random.uniform(-0.03, 0.03),
                                   0.045])  
         # 20-24 seeds
@@ -244,7 +244,7 @@ class FR3_PushT(FrankaPandaServer):
         ##    Start keyboard Controller   ##    
         ####################################
         self._key_lock = threading.Lock()
-        self.teleop_enabled = True 
+        self.teleop_enabled = False 
         self._key_vx = 0.0
         self._key_vy = 0.0
         self._key_entered = False
@@ -382,12 +382,12 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.023
-        t.transform.translation.y = 0.0
-        t.transform.translation.z = -0.025 - 0.002
+        t.transform.translation.x = 0.028
+        t.transform.translation.y = 0.0007
+        t.transform.translation.z = -0.027 #-0.025 - 0.002
 
         # quat = quaternion_from_euler(-0.05, 0.02, np.pi)
-        quat = quaternion_from_euler(0.01, -0.00, np.pi/2)
+        quat = quaternion_from_euler(0.0, 0.01, -np.pi)
 
         t.transform.rotation.x = quat[0]
         t.transform.rotation.y = quat[1]
@@ -511,7 +511,7 @@ class FR3_PushT(FrankaPandaServer):
         current_time = self.get_clock().now().nanoseconds / 1e9
         sim_z = self.debug_data.qpos[2]  # current object height in simulation
         # resolve state 
-        self.debug_data.qpos[0:7] = np.array([self.lin_t[0], self.lin_t[1], sim_z,
+        self.debug_data.qpos[0:7] = np.array([self.lin_t[0], self.lin_t[1], self.lin_t[2],
                                               self.quat_t[3], self.quat_t[0], self.quat_t[1], self.quat_t[2]])
         self.debug_data.qpos[7:14] = self.robot_q
         self.debug_data.qvel[6:13] = self.robot_dq
@@ -601,26 +601,22 @@ class FR3_PushT(FrankaPandaServer):
         if self.shutdown_flag.is_set():
             self._timeout_callback()
             return
+        if not self.teleop_enabled:
+            vx = 1.0 * float(self.action[0])
+            vy = 1.0 * float(self.action[1])
+            # self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
+            self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+
         else:
-            # compute index based on time since last planning
-            delta_t = self.get_clock().now().nanoseconds / 1e9 - self.last_planning_time
-            idx = int(delta_t / self.ctrl.task.dt)
-            self.get_logger().warn(
-                f"delta_t: {delta_t:.4f}"
-                f" arg idx: {idx}"
-            )
-            action = self.actions[idx]
-            vx = 1.0 * float(action[0])
-            vy = 1.0 * float(action[1])
-           
-            # self.get_logger().warn(
-            #         f"action: {self.action}"
-            #         f"delta_t: {delta_t:.4f}"
-            #         f" arg idx: {idx}"
-            #         f"ctr: {self.ctr}"
-            #     )
-        # self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
-        self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+            with self._key_lock:
+                vx = self._key_vx
+                vy = self._key_vy
+                key_entered = self._key_entered
+
+            if self._key_entered:
+                vx = 0.0
+                vy = 0.0
+            self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
     
 
     def _states_received(self):
@@ -661,8 +657,8 @@ if __name__ == '__main__':
     rclpy.init()
     max_speed = 0.3
     task = PushTFranka(ik_type = 'pinv',
-                planning_horizon=20,
-                sim_steps_per_control_step=1,
+                planning_horizon=10,
+                sim_steps_per_control_step=2,
                 ctrl_limits={"u_min": jnp.array([-max_speed, -max_speed]), 
                                 "u_max": jnp.array([max_speed, max_speed])},
                 actuation_type='velocity',
@@ -684,7 +680,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    seed = 0
+    seed = 55
     # PS 10
 
     num_samples = 1024 #512
@@ -717,7 +713,7 @@ if __name__ == '__main__':
             num_samples=num_samples,
             sigma_start=0.3,
             sigma_min=0.05,
-            num_elites=36,
+            num_elites=72,
             num_randomizations=1,
             savgol_filter=True,
             shift=True,
@@ -749,8 +745,8 @@ if __name__ == '__main__':
             sigma_max=0.55,
             num_elites=72,
             sigma_start=0.3,
-            beta=0.3,
-            alpha=0.0,
+            beta=0.25,
+            alpha=0.1,
             interpolation='bspline',
             num_randomizations=1,
             seed=seed,

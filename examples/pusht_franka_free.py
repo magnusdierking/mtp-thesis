@@ -70,7 +70,7 @@ sigma_start = 0.2
 det_init = {
     "block_pos_x": 0.6,
     "block_pos_y": -0.1,
-    "block_angle": np.pi/2,
+    "block_angle": np.pi/4,
     "ee_goal_pos": [0.45, 0.1, 0.035]
 }
 

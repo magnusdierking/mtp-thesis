@@ -64,7 +64,7 @@ class MTP(SamplingBasedController):
         planning_freq: int = 1, # !experimental
         keep_elites: int = 1,   #!experimental
         savgol_filter: bool = False, # !experimental
-        use_spline: bool = True, #!experimental
+        use_spline: bool = False, #!experimental
         default_zero_controls: bool = False, #!experimental
     ):
         """Initialize the controller.
