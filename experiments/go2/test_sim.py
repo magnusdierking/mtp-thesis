@@ -28,9 +28,16 @@ for i in range(model.nu):
     print(f"Control input {i}: {name}")
 
 
+# set to home keyframe
+home_qpos = model.key_qpos[0:model.nq]
+data.qpos[:] = home_qpos
+data.qvel[:] = 0.0
     
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
         # print joints
         mujoco.mj_step(model, data)
+        # key ctrl
+        data.ctrl[:] = model.key_ctrl[0:model.nu]
+        print(f"Control inputs: {data.ctrl[:]}")
         v.sync()

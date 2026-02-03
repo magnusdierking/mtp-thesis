@@ -11,6 +11,35 @@ import numpy as np
 from hydrax.task_base import Task
 
 
+def get_foot_step(duty_ratio, cadence, amplitude, phases, time):
+    """
+    Compute the foot step height.
+    Args:
+        amplitude: The height of the step.
+        cadence: The cadence of the step (per second).
+        duty_ratio: The duty ratio of the step (% on the ground).
+        phases: The phase of the step. Warps around 1. (N-dim where N is the number of legs)
+        time: The time of the step.
+    """
+
+    def step_height(t, footphase, duty_ratio):
+        angle = (t + jnp.pi - footphase) % (2 * jnp.pi) - jnp.pi
+        angle = jnp.where(duty_ratio < 1, angle * 0.5 / (1 - duty_ratio), angle)
+        clipped_angle = jnp.clip(angle, -jnp.pi / 2, jnp.pi / 2)
+        value = jnp.where(duty_ratio < 1, jnp.cos(clipped_angle), 0)
+        final_value = jnp.where(jnp.abs(value) >= 1e-6, jnp.abs(value), 0.0)
+        return final_value
+
+    h_steps = amplitude * jax.vmap(step_height, in_axes=(None, 0, None))(
+        time * 2 * jnp.pi * cadence + jnp.pi,
+        2 * jnp.pi * phases,
+        duty_ratio,
+    )
+    return h_steps
+
+
+
+
 class Go2VelocityTask(Task):
     """
     Simple locomotion task for a Unitree Go2-like quadruped using IMU + joint sensors.
@@ -82,14 +111,10 @@ class Go2VelocityTask(Task):
         ctrl_limits: Optional[Dict[str, jnp.ndarray]] = None,
         home_keyframe: Optional[str] = "home",
         ):
+        
         if xml_path is None:
             raise ValueError("Please provide the path to your Go2 MuJoCo XML (scene_mjx.xml)")
-
-
         xml_path = Path(xml_path).as_posix()
-
-
-        # Load MuJoCo model backing this task
         mj_model = mujoco.MjModel.from_xml_path(xml_path)
 
 
@@ -138,6 +163,7 @@ class Go2VelocityTask(Task):
         if len(candidates) == 0:
             raise ValueError(f"No actuator targets joint id {jidx} ({mj_model.joint(jidx).name}).")
         self._actuator_index_for_joint.append(int(candidates[0]))
+        print(f"Actuator indices for joints: {self._actuator_index_for_joint}")
 
 
         # ------ Task targets & weights ------
@@ -155,9 +181,10 @@ class Go2VelocityTask(Task):
         self.w_vel = jnp.array([4.0, 2.0]) # vx, vy tracking
         self.w_yaw = 1.5
         self.w_orient = 0.5
-        self.w_height = 1.0
+        self.w_height = 10.0
         self.w_joint_vel = 1e-3
         self.w_control = 1e-4
+        self.w_gait = 10.0
 
 
         # Per-joint sensor ids (scalar sensors)
@@ -200,11 +227,6 @@ class Go2VelocityTask(Task):
 
 
         mj_model = self.mj_model
-        mj_model.opt.timestep = 0.002
-        mj_model.opt.iterations = 20
-        mj_model.opt.ls_iterations = 20
-
-
         mj_data = mujoco.MjData(mj_model)
 
 
@@ -228,7 +250,7 @@ class Go2VelocityTask(Task):
                     for i, aidx in enumerate(self._actuator_index_for_joint):
                         mj_data.ctrl[aidx] = q[i]
             else:
-                mj_data.ctrl[:] = 0.0
+                mj_data.ctrl[:] = mj_model.key_ctrl[0:mj_model.nu]
         else:
             # Fallback: place base above ground and set a stable crouch
             # Root: [x, y, z, qw, qx, qy, qz]
@@ -285,6 +307,15 @@ class Go2VelocityTask(Task):
     def _get_body_angvel(self, state: mjx.Data) -> jax.Array:
         adr = self.model.sensor_adr[self._imu_global_angvel_id]
         return state.sensordata[adr : adr + 3]
+    
+    def _get_feet_height(self, state: mjx.Data) -> jax.Array:   
+        # Example: get foot heights from site positions
+        foot_heights = []
+        for foot_name in ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]:
+            site_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, foot_name)
+            foot_pos = self.mj_model.site_pos[site_id]
+            foot_heights.append(foot_pos[2])  # z-coordinate
+        return jnp.array(foot_heights)
 
     # ------------------------------ Cost functions ------------------------------
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
@@ -307,13 +338,24 @@ class Go2VelocityTask(Task):
         if self.target_height is not None:
             z = self._get_body_pos(state)[2]
             height_cost = self.w_height * ((z - self.target_height) ** 2)
-
+            
+        # gait via foot heights
+        foot_heights = self._get_feet_height(state)
+        foot_targets = get_foot_step(
+            duty_ratio=0.75,
+            cadence=1.0,
+            amplitude=0.08,
+            phases=jnp.array([0.0, 0.5, 0.5, 0.0]),
+            time=state.time,
+        )
+        gait_cost = self.w_gait * jnp.sum((foot_heights - foot_targets) ** 2)
+        
         # Smoothness regularizers
         jvel = self._get_joint_vel(state)
         joint_vel_cost = self.w_joint_vel * jnp.sum(jvel ** 2)
         ctrl_cost = self.w_control * jnp.sum(control ** 2)
 
-        return vel_cost + yaw_cost + orient_cost + height_cost + joint_vel_cost + ctrl_cost
+        return vel_cost + yaw_cost + orient_cost + height_cost + joint_vel_cost + ctrl_cost + gait_cost
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         return self.running_cost(state, jnp.zeros(self.model.nu))
@@ -322,13 +364,13 @@ class Go2VelocityTask(Task):
     # --------------------------- (Optional) Randomization ---------------------------
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         # Example: randomize geom friction slightly
-        n_geoms = self.model.geom_friction.shape[0]
-        multiplier = jax.random.uniform(rng, (n_geoms,), minval=0.9, maxval=1.1)
-        new_frictions = self.model.geom_friction.at[:, 0].set(
-            self.model.geom_friction[:, 0] * multiplier
-        )
-        return {"geom_friction": new_frictions}
-
+        # n_geoms = self.model.geom_friction.shape[0]
+        # multiplier = jax.random.uniform(rng, (n_geoms,), minval=0.9, maxval=1.1)
+        # new_frictions = self.model.geom_friction.at[:, 0].set(
+        #     self.model.geom_friction[:, 0] * multiplier
+        # )
+        # return {"geom_friction": new_frictions}
+        return {}
 
 ################################## 
 ##            Special           ##

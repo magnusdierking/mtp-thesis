@@ -211,7 +211,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     mjx_data = mjx_data.replace(
         mocap_pos=mj_data.mocap_pos, mocap_quat=mj_data.mocap_quat
     )
-    policy_params = controller.init_params(seed)
+    policy_params = controller.init_params(seed, init_ctrl=mj_data.ctrl)
     jit_optimize = jax.jit(controller.optimize, donate_argnums=(1,))
     # jit_optimize = jax.jit(controller.optimize, donate_argnums=(0,1))
     #jit_optimize = controller.optimize
@@ -424,16 +424,16 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # rotation_error = np.linalg.norm(controller.task._get_orientation_err(mj_data))
             # distance = controller.task._get_ee_block_distance(mj_data)
 
-            state_error = controller.task.running_cost(mj_data)
-            test = controller.task._get_ee_block_distance(mj_data)
+            state_error = controller.task.running_cost(mj_data, u)
+            # test = controller.task._get_ee_block_distance(mj_data)
             # print(f"Distance between ee and block: {test:.4f} m")
 
             # state_error = 20 * linear_error + 1 * rotation_error
             # print(f"Distance: {state_error}, Linear: {linear_error}, Rotation: {rotation_error}")
            
             # only for pusht
-            sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
-            ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
+            # sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
+            # ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
 
             # ----- adaptive beta (single alpha) -----
             # x = jnp.array(mj_data.qpos)
@@ -482,8 +482,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     end="\r",
                 )
 
-            print(f"State cost: {controller.task._get_orientation_err(mj_data):.4f}            ", end="\r")
-
             # Log data for the current step
             logs.append({
                 "step": step,
@@ -491,7 +489,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "plan_time": plan_time,
                 "qpos": np.array(mj_data.qpos).tolist(),
                 "qvel": np.array(mj_data.qvel).tolist(),
-                "ee_pos": np.array(ee_pos).tolist(),
+                # "ee_pos": np.array(ee_pos).tolist(),
                 "control": np.array(u).tolist(),
                 # "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
                 "state_error": float(state_error),

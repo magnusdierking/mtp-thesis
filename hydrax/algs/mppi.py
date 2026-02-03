@@ -87,10 +87,14 @@ class MPPI(SamplingBasedController):
         if savgol_filter:
             self.savgol_filter_fn = make_savgol_filter(window_length=7, polyorder=3, axis=1)
 
-    def init_params(self, seed: int = 0) -> MPPIParams:
+    def init_params(self, seed: int = 0, init_ctrl: jax.Array = None) -> MPPIParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
-        spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
+        if init_ctrl is not None:
+            # stack to full horizon
+            spline = jnp.tile(init_ctrl, reps=(self.task.planning_horizon, 1))
+        else:
+            spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
         return MPPIParams(spline=spline, rng=rng)
 
     def sample_controls(

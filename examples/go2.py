@@ -10,7 +10,13 @@ from hydrax.tasks.go2 import Go2VelocityTask
 
 # Define the task (cost and dynamics)
 task = Go2VelocityTask(xml_path=(get_root_path() / "models" / "unitree_go2" / "scene_mjx.xml").as_posix(),
-                       actuation_type='velocity')
+                       actuation_type='velocity',
+                       sim_steps_per_control_step=2,
+                       planning_horizon=10,  
+                       target_vx = 0.2, # m/s
+                       target_vy = 0.0, # m/s
+                       target_yaw_rate = 0.0, # rad/s
+                       target_height = 0.445,)
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(
@@ -34,9 +40,9 @@ elif args.algorithm == "mppi":
     ctrl = MPPI(
         task,
         num_samples=128,
-        noise_level=0.3,
+        noise_level=0.1,
         temperature=0.1,
-        num_randomizations=4,
+        num_randomizations=1,
         seed=seed,
     )
 elif args.algorithm == "mtp":
@@ -92,13 +98,3 @@ run_interactive(
     record_video=False,
     seed=seed,
     )
-
-# run_headless_simulation(
-#     task,
-#     ctrl,
-#     frequency=50,
-#     seeds=[seed],
-#     max_step=1000,
-#     log_file_prefix="pusht_franka_" + args.algorithm,
-#     save_path="./results"
-#     )
