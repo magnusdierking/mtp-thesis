@@ -68,19 +68,45 @@ class SamplingBasedController(ABC):
         self.set_seed(seed)
 
     def set_seed(self, seed: int) -> None:
-        if self.num_randomizations > 1:
-            # Make domain randomized models
-            rng = jax.random.key(seed)
-            rng, subrng = jax.random.split(rng)
-            subrngs = jax.random.split(subrng, self.num_randomizations)
-            randomizations = jax.vmap(self.task.domain_randomize_model)(subrngs)
-            self.model = self.task.model.tree_replace(randomizations)
+        pass
+        # if self.num_randomizations > 1:
+        #     # Make domain randomized models
+        #     rng = jax.random.key(seed)
+        #     rng, subrng = jax.random.split(rng)
+        #     subrngs = jax.random.split(subrng, self.num_randomizations)
 
-            # Keep track of which elements of the model have randomization
-            self.randomized_axes = jax.tree.map(lambda x: None, self.task.model)
-            self.randomized_axes = self.randomized_axes.tree_replace(
-                {key: 0 for key in randomizations.keys()}
-            )
+        #     randomizations = jax.vmap(self.task.domain_randomize_model)(subrngs)
+        #     self.model = self.task.model.tree_replace(randomizations)
+
+        #     # Keep track of which elements of the model have randomization
+        #     self.randomized_axes = jax.tree.map(lambda x: None, self.task.model)
+        #     self.randomized_axes = self.randomized_axes.tree_replace(
+        #         {key: 0 for key in randomizations.keys()}
+        #     )
+            
+            
+    def init_randomization_model(self, new_randomizations: dict) -> None:
+        self.update_domain_randomization_model(new_randomizations)
+        # Create axes tree matching the model structure
+        self.randomized_axes = jax.tree_util.tree_map(lambda x: None, self.model)
+        self.randomized_axes = self.randomized_axes.tree_replace(
+            {key: 0 for key in new_randomizations.keys()}
+        )
+
+
+    def update_domain_randomization_model(self, new_randomizations: dict) -> None:
+        """Update the domain randomization model with new samples.
+        """
+        # checks
+        for field in new_randomizations.keys():
+            model_field = getattr(self.model, field, None)
+            if model_field is None:
+                raise ValueError(f"Unknown field '{field}' in randomizations.")
+            if len(new_randomizations[field]) != self.num_randomizations:
+                raise ValueError(f"Shape mismatch for field '{field}': "
+                                 f"expected {self.num_randomizations}, "
+                                 f"got {new_randomizations[field].shape}.")
+        self.model = self.model.tree_replace(new_randomizations)
 
     def optimize(self, state: mjx.Data, params: Any) -> Tuple[Any, Trajectory]:
         """Perform an optimization step to update the policy parameters.
@@ -170,7 +196,7 @@ class SamplingBasedController(ABC):
             The states (stacked) experienced during the rollouts.
             A Trajectory object containing the control, costs, and trace sites.
         """
-
+        
         def _scan_fn(
             x: mjx.Data, u: jax.Array
         ) -> Tuple[mjx.Data, Tuple[mjx.Data, jax.Array, jax.Array]]:

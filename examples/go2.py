@@ -42,6 +42,8 @@ elif args.algorithm == "mppi":
         num_samples=128,
         noise_level=0.1,
         temperature=0.1,
+        shift=True,
+        planning_freq=10,
         num_randomizations=1,
         seed=seed,
     )
@@ -89,7 +91,7 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=50,
+    frequency=10,
     show_traces=True,
     trace_width=0.75,
     max_traces=10,

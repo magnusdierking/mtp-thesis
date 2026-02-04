@@ -82,7 +82,7 @@ class MPPI(SamplingBasedController):
         self.last_a_idx = int(self.task.dt * planning_freq)
         replan_period = 1 / planning_freq
         prediction_horizon = self.task.planning_horizon * self.task.dt
-        self.last_a_idx = jnp.floor(replan_period / prediction_horizon * self.task.planning_horizon).astype(jnp.int32)
+        self.last_a_idx = int((replan_period / prediction_horizon) * self.task.planning_horizon)
         print(f"MPPI last_a_idx: {self.last_a_idx}")
         
         self.default_zero_controls = default_zero_controls

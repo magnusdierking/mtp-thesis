@@ -98,10 +98,14 @@ class CEM(SamplingBasedController):
         if savgol_filter:
             self.savgol_filter_fn = make_savgol_filter(window_length=7, polyorder=2, axis=1)
 
-    def init_params(self, seed: int = 0) -> CEMParams:
+    def init_params(self, seed: int = 0, init_ctrl: jax.Array = None) -> CEMParams:
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
-        spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
+        if init_ctrl is not None:
+            # stack to full horizon
+            spline = jnp.tile(init_ctrl, reps=(self.task.planning_horizon, 1))
+        else:
+            spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
         cov = jnp.full_like(spline, self.sigma_start)
         elites = spline[None, ...].repeat(self.keep_elites, axis=0)
         predicted_state = jnp.zeros((self.num_randomizations, len(self.task.trace_site_ids), 7), dtype=jnp.float32) # ! experimental

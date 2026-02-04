@@ -23,6 +23,8 @@ class PSParams:
     mean: jax.Array
     spline: jax.Array
     rng: jax.Array
+    predicted_state: jax.Array = None  # optional
+    domain_weights: jax.Array = None  # optional
 
 
 class PredictiveSampling(SamplingBasedController):
@@ -58,7 +60,10 @@ class PredictiveSampling(SamplingBasedController):
         self.alpha = alpha
         # shift
         self.shift = shift
-        self.last_a_idx = int(self.task.dt * planning_freq)
+        replan_period = 1 / planning_freq
+        prediction_horizon = self.task.planning_horizon * self.task.dt
+        self.last_a_idx = int(replan_period / prediction_horizon * self.task.planning_horizon)
+        print(f"PS last_a_idx: {self.last_a_idx}")
 
         self.savgol_filter = savgol_filter  
         if savgol_filter:
@@ -68,7 +73,14 @@ class PredictiveSampling(SamplingBasedController):
         """Initialize the policy parameters."""
         rng = jax.random.key(seed)
         mean = spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
-        return PSParams(mean=mean, spline=spline,   rng=rng)
+        predicted_state = jnp.zeros((self.num_randomizations, len(self.task.trace_site_ids), 7), dtype=jnp.float32) # ! experimental
+        domain_weights = jnp.ones((self.num_randomizations,), dtype=jnp.float32) / self.num_randomizations # ! experimental
+        
+        return PSParams(mean=mean, 
+                        spline=spline, 
+                        predicted_state=predicted_state, 
+                        domain_weights=domain_weights, 
+                        rng=rng)
 
     def sample_controls(self, params: PSParams) -> Tuple[jax.Array, PSParams]:
         """Sample a control sequence."""
@@ -101,10 +113,14 @@ class PredictiveSampling(SamplingBasedController):
         mean = rollouts.controls[best_idx]
 
         mean = mean + self.alpha * (params.mean - mean)
-        return params.replace(mean=mean, spline=mean)
+        # predicted_state = rollouts.trace_sites[:, best_idx, self.last_a_idx, ...] # one timestep over all domains, for rolloed out 
+        predicted_state = rollouts.trace_sites[:, best_idx, -1, ...] # one timestep over all domains, for rolloed out 
+        
+        return params.replace(mean=mean, spline=mean, predicted_state=predicted_state)
 
     def get_action(self, params: PSParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""
         idx_float = t / self.task.dt  # zero order hold
         idx = jnp.floor(idx_float).astype(jnp.int32)
+        # jax.debug.print("PS get_action idx: {}", idx)
         return params.mean[idx]

@@ -65,7 +65,9 @@ class PushTFranka(Task):
                     (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint_dr.xml").as_posix()
                 )
             elif block_type == 'dr-free':
-                raise NotImplementedError("dr-free not implemented yet")
+                mj_model = mujoco.MjModel.from_xml_path(
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free_dr.xml").as_posix()
+                )
             elif block_type == 'free':
                 mj_model = mujoco.MjModel.from_xml_path(
                     (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()

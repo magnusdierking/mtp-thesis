@@ -103,12 +103,14 @@ class SamplingBasedController(ABC):
             
             
     def init_randomization_model(self, new_randomizations: dict) -> None:
-        """Calls update but also updates the axis"""
         self.update_domain_randomization_model(new_randomizations)
-        self.randomized_axes = jax.tree.map(lambda x: None, self.task.model)
+        # Create axes tree matching the model structure
+        self.randomized_axes = jax.tree_util.tree_map(lambda x: None, self.model)
+        # simply set axis=0 for randomized leaves
         self.randomized_axes = self.randomized_axes.tree_replace(
             {key: 0 for key in new_randomizations.keys()}
         )
+        print("Randomized axes:", self.randomized_axes.geom_friction)
 
 
     def update_domain_randomization_model(self, new_randomizations: dict) -> None:
@@ -116,7 +118,7 @@ class SamplingBasedController(ABC):
         """
         # checks
         for field in new_randomizations.keys():
-            model_field = getattr(self.task.model, field, None)
+            model_field = getattr(self.model, field, None)
             if model_field is None:
                 raise ValueError(f"Unknown field '{field}' in randomizations.")
             if len(new_randomizations[field]) != self.num_randomizations:
@@ -267,6 +269,7 @@ class SamplingBasedController(ABC):
             Tuple ``(costs, trace_sites)`` where ``costs`` has shape ``(R, T + 1)``
             and ``trace_sites`` has shape ``(R, T + 1, S, 3)``.
         """
+        jax.debug.print("Running randomization with model geom_friction: {}", model_r.geom_friction[89])
         with jax.named_scope("rollout_step"):
             costs_R, sites_R = jax.vmap(self.eval_rollout, in_axes=(None, None, 0))(
                 model_r, state_r, controls_all

@@ -122,15 +122,20 @@ class ConditionalValueAtRisk(RiskStrategy):
         
 
     def combine_costs(self, costs: jax.Array) -> jax.Array:
-        """Take the expected cost in the tail beyond the (1 - α) quantile."""
+    
         quant = jnp.quantile(costs, 1.0 - self.alpha, axis=0)
-        idx = costs >= quant
-        tmp_cost = costs[idx]
-        tmp_weights = self.weights[idx] 
-        return jnp.average(tmp_cost, axis=0, weights=tmp_weights)
+        jax.debug.print("Shape of costs: {shape}", shape=costs.shape)
+        mask = jnp.where(costs >= quant, 1.0, 0.0)
+        tmp_cost = jnp.where(costs >= quant, costs, 0.0)
+        nbr_values = jnp.sum(mask, axis=0)
+
+        normalized_weights = self.weights[:, None] * mask / nbr_values
+        return jnp.average(tmp_cost, axis=0, weights=normalized_weights)
+
 
 class InverseValueAtRisk(RiskStrategy):
-    """Take the cost value at the α quantile."""
+    """Take the cost value at the (1-α) quantile. (alpha fraction of cost is below this value)"""
+
 
     def __init__(self, alpha: float):
         """Set the quantile level α."""
@@ -140,8 +145,10 @@ class InverseValueAtRisk(RiskStrategy):
         """Take the cost value at the α quantile."""
         return jnp.quantile(costs, self.alpha, axis=0)
      
+
 class InverseConditionalValueAtRisk(RiskStrategy):
-    """Take the expected cost in the head below the (1 - α) quantile."""
+    """Take the expected cost in the head below the (1 - α) quantile. 
+    (highest alpha fraction of cost ignored)"""
 
     def __init__(self, alpha: float, weights: jax.Array = None):
         """Set the quantile level α."""
@@ -151,7 +158,10 @@ class InverseConditionalValueAtRisk(RiskStrategy):
     def combine_costs(self, costs: jax.Array) -> jax.Array:
         """Take the expected cost in the head below the (1 - α) quantile."""
         quant = jnp.quantile(costs, 1.0 - self.alpha, axis=0)
-        idx = costs <= quant
-        tmp_cost = costs[idx]
-        tmp_weights = self.weights[idx]
-        return jnp.average(tmp_cost, axis=0, weights=tmp_weights)
+        jax.debug.print("Shape of costs: {shape}", shape=costs.shape)
+        mask = jnp.where(costs <= quant, 1.0, 0.0)
+        tmp_cost = jnp.where(costs <= quant, costs, 0.0)
+        nbr_values = jnp.sum(mask, axis=0)
+
+        normalized_weights = self.weights[:, None] * mask / jnp.sum(self.weights[:, None] * mask, axis=0)
+        return jnp.average(tmp_cost, axis=0, weights=normalized_weights)

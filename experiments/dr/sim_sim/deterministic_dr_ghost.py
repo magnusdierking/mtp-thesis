@@ -12,7 +12,7 @@ import numpy as np
 from domain_adaptation import AdaptiveDomainRandomizationStrategy
 from mujoco import mjx
 
-from hydrax.alg_base import SamplingBasedController
+from hydrax.alg_base_opt import SamplingBasedController, Trajectory
 from hydrax.files import get_root_path
 from hydrax.utils.utils import mat2quat, quat_error_body, se3_left_invariant_metric
 from hydrax.utils.video import VideoRecorder
@@ -167,6 +167,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
     # Initialize the controller
     mjx_data = mjx.put_data(mj_model, mj_data)
+    
     mjx_data = mjx_data.replace(mocap_pos=mj_data.mocap_pos, mocap_quat=mj_data.mocap_quat)
     policy_params = controller.init_params(seed)
     jit_optimize = jax.jit(controller.optimize, donate_argnums=(1,))
@@ -304,12 +305,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             ref_site = sites_of_interest[
                 :, -1, ...
             ]  # (domains, 7)
-            print("Predicted sites shape:", sites_of_interest.shape)
+            # print("Predicted sites shape:", sites_of_interest.shape)
             # print("Sites of interest shape:", sites_of_interest.shape)
             for bid, idx in zip(mocap_T_bids, range(len(mocap_T_bids)), strict=True):
                 mj_data.mocap_pos[bid] = ref_site[idx, :3]
                 mj_data.mocap_quat[bid] = ref_site[idx, 3:]
-                print(f"Setting mocap bid {bid} to {ref_site[idx, :3]}, {ref_site[idx, 3:]}")
+                # print(f"Setting mocap bid {bid} to {ref_site[idx, :3]}, {ref_site[idx, 3:]}")
             # rest of mocap copies T
             if len(mocap_T_bids) < 24:
                 bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
@@ -395,11 +396,11 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 probs = probs / (np.sum(probs) + 1e-12)
                 print("Probabilities:", probs)
                 entropy = -np.sum(probs * np.log(probs + 1e-12))
-                print("Domain distribution entropy:", entropy)
+                # print("Domain distribution entropy:", entropy)
                 max_entropy = jnp.log(len(probs) + 1e-12)
-                print("Max entropy:", max_entropy)
+                # print("Max entropy:", max_entropy)
                 normalized_entropy = entropy / (max_entropy + 1e-12)
-                print("Normalized entropy:", normalized_entropy)
+                # print("Normalized entropy:", normalized_entropy)
 
                 new_probs = (
                     1 - normalized_entropy

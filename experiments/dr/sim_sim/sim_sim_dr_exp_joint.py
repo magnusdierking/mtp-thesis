@@ -11,7 +11,7 @@ from an_mtp_dr import AnMTP
 from deterministic_dr_ghost import run_interactive
 from domain_adaptation import UniformDomainRandomization
 
-from hydrax.algs import CEM, MPPI, MTP
+from hydrax.algs import CEM, MPPI, MTP, PredictiveSampling
 from hydrax.risk import (
     AverageCost,
     ConditionalValueAtRisk,
@@ -29,7 +29,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 
-NUM_SAMPLES = 32
+NUM_SAMPLES = 128
 NUM_RANDOMIZATIONS = 24
 MAX_SPEED = 0.35  # m/s
 
@@ -38,6 +38,7 @@ update_cov = False
 sigma_max = 0.35
 sigma_min = 0.15
 sigma_start = 0.2
+
 # joint
 # det_init = {
 #     "block_pos_x": 0.1,
@@ -52,6 +53,7 @@ sigma_start = 0.2
 #     "block_angle": np.pi/3,
 #     "ee_goal_pos": [0.4, 0.0, 0.035]
 # }
+
 # free easy
 det_init = {
     "block_pos_x": -0.1,
@@ -87,6 +89,7 @@ algorithm_subparsers.add_parser("mppi")
 algorithm_subparsers.add_parser("cem")
 algorithm_subparsers.add_parser("mtp")
 algorithm_subparsers.add_parser("anmtp")
+algorithm_subparsers.add_parser("ps")
 
 # Domain randomization argument (normal argument, not subparser)
 parser.add_argument(
@@ -102,7 +105,7 @@ args = parser.parse_args()
 print(args)
 
 
-risk_alpha = 0.25  # for (C)VaR
+risk_alpha = 0.05  # for (C)VaR
 
 if args.risk is None or args.risk == "average":
     args.risk = "average"
@@ -179,30 +182,22 @@ elif args.algorithm == "mtp":
     )
     error_log = f"./../data/error_log_pushT/mtp_{seed}.npy"
 
-elif args.algorithm == "anmtp":
-    print("Running AnMTP")
-    ctrl = AnMTP(
+elif args.algorithm == "ps":
+    print("Running Predictive Sampling")
+    ctrl = PredictiveSampling(
         task,
         num_samples=NUM_SAMPLES,
-        M=3,  # horizon via control points
-        N=64,  # samples
-        planning_frequency=5,
-        sigma_min=sigma_min,
-        sigma_max=sigma_max,
-        sigma_start=sigma_start,
-        num_elites=12,
-        keep_elites=1,  # !experimental
-        beta=0.3,
-        beta_lr=0.1,  # adaptation step size
-        beta_min=0.25,
-        beta_max=0.35,
-        alpha=0.1,
-        interpolation="bspline",
+        noise_level=0.2,
         num_randomizations=NUM_RANDOMIZATIONS,
+        shift=True,
+        planning_freq=5,
         risk_strategy=aggregation,
+        savgol_filter=True,
         seed=seed,
+        alpha=0.1,
     )
-    error_log = f"./../data/error_log_pushT/anmtp_{seed}.npy"
+    error_log = f"./../data/error_log_pushT/ps_{seed}.npy"
+
 
 # Define the model used for simulation
 mj_model, mj_data = task.reset(seed=seed)
@@ -217,9 +212,11 @@ dr_strategy = UniformDomainRandomization(
         # "top": {"field": "geom_solref", "min": [0.1], "max": [3], "internal_idx": [1]},
     },
     randomized_joints={
-        # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-        # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-        "T_z": {"field": "dof_damping", "min": 0.0, "max": 1.0},
+        # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 2.0},
+        # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 2.0},
+        "T_x": {"field": "dof_damping", "min": 0.0, "max": 2.0},
+        "T_y": {"field": "dof_damping", "min": 0.0, "max": 2.0},
+        # "T_z": {"field": "dof_damping", "min": 0.0, "max": 1.0},
     },
     num_randomizations=NUM_RANDOMIZATIONS,
 )
@@ -238,10 +235,10 @@ ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
 
 new_randomizations = dr_strategy.get_current_randomizations()
 
-print(ctrl.model.dof_damping[:,2])
+# print(ctrl.model.dof_damping[:,2])
 
 
-max_traces = 16
+max_traces = 128
 trace_idxs = [i * max_traces for i in range(NUM_SAMPLES // max_traces)] if max_traces > 0 else []
 print("Tracing indices:", trace_idxs)
 

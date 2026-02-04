@@ -211,7 +211,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     mjx_data = mjx_data.replace(
         mocap_pos=mj_data.mocap_pos, mocap_quat=mj_data.mocap_quat
     )
-    policy_params = controller.init_params(seed, init_ctrl=mj_data.ctrl)
+    # policy_params = controller.init_params(seed, init_ctrl=mj_data.ctrl)
+    # TODO - for go2 init ctrl is crucial
+    policy_params = controller.init_params(seed)
+
     jit_optimize = jax.jit(controller.optimize, donate_argnums=(1,))
     # jit_optimize = jax.jit(controller.optimize, donate_argnums=(0,1))
     #jit_optimize = controller.optimize

@@ -571,6 +571,7 @@ class FR3_PushT(FrankaPandaServer):
             f" (Visualization: {t3 - t2:.3f} s)"
         )
 
+
     def _send_keyboard_command(self):
         """
         Send velocity command (twist) to moveit servo based on keyboard input.

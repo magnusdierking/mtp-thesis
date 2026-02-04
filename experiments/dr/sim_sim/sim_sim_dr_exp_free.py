@@ -4,12 +4,12 @@ from pathlib import Path
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
-from hydrax.algs import MPPI, MTP, CEM
+from hydrax.algs import MPPI, MTP, CEM, PredictiveSampling
 # from hydrax.algs.mtp.an_mtp_opt import AnMTP
 from an_mtp_dr import AnMTP
-
+from mujoco import mjx
 from hydrax.utils.files import get_data_path
-from deterministic_dr import run_interactive
+from deterministic_dr_ghost import run_interactive
 
 from hydrax.tasks.pusht_franka import PushTFranka
 import jax.numpy as jnp
@@ -18,12 +18,64 @@ import numpy as np
 from hydrax.risk import RiskStrategy, ExpectedCost, AverageCost, ValueAtRisk, ConditionalValueAtRisk,InverseValueAtRisk, InverseConditionalValueAtRisk
 from domain_adaptation import UniformDomainRandomization
 
-"""
-Run an interactive simulation of the push-T task with predictive sampling.
-"""
+
+import jax
+import jax.numpy as jnp
+from typing import Optional
+
+def apply_domain_randomization(
+    model: mjx.Model,
+    field: str,
+    values: jnp.ndarray,
+    *,
+    component_idx: Optional[int] = None,
+) -> mjx.Model:
+    """
+    Args:
+      model: mjx.Model or a batched mjx.Model.
+      field: Name of the mjx.Model attribute to change, e.g. "geom_friction" or "geom_solref".
+      values: Array of new values, one per domain.
+              Shape:
+                - if you are fully replacing the field: (batch, *field.shape[1:])
+                - if you are replacing just one component: (batch, *field.shape[2:])
+      component_idx: If not None, replace only this component of the last axis
+                     (e.g. 0 or 1 for solref, 0/1/2 for geom_friction).
+                     If None, the entire field is replaced.
+
+    Returns:
+      A new mjx.Model with the updated field.
+    """
+    # Get the original field
+    orig = getattr(model, field)
+
+    # If the model is unbatched and you want to batch only this field, add batch dim
+    # (commonly you instead create a batched model externally via vmap).
+    if values.ndim == orig.ndim + 1:
+        # values has batch dim, orig does not
+        # Example: orig: (ngeom, 3), values: (batch, ngeom, 3)
+        new_field = values
+    else:
+        # Assume orig already has a batch dimension: (batch, ...)
+        if component_idx is None:
+            # Replace entire field: shapes must match
+            new_field = values
+        else:
+            # Replace a single component along the last axis
+            # orig: (batch, ..., C), values: (batch, ..., )
+            # or values: (batch, ..., 1) which we squeeze
+            v = values
+            if v.shape[-1] == 1:
+                v = jnp.squeeze(v, axis=-1)
+            # Broadcast v to match orig except last dimension
+            # We rely on JAX broadcasting for any trailing dimensions.
+            new_field = orig.at[..., component_idx].set(v)
+
+    # Use tree_replace/replace to build a new model
+    # For current mjx versions, Model is a dataclass-like PyTree, so replace works:
+    return model.replace(**{field: new_field})
 
 
-NUM_SAMPLES = 32     
+NUM_SAMPLES = 128  
 NUM_RANDOMIZATIONS = 24   
 MAX_SPEED = 0.35  # m/s
 
@@ -60,13 +112,12 @@ task = PushTFranka(ik_type = 'pinv',
                     sim_steps_per_control_step=2,
                     ctrl_limits={"u_min": jnp.array([-MAX_SPEED, -MAX_SPEED]), 
                                  "u_max": jnp.array([MAX_SPEED, MAX_SPEED])},
+                    trace_sites=["T_1", "T_2","ee_site", "T_3", "block_site"],
                     actuation_type='velocity',
                     sampling_space="velocity",
                     det_init=det_init,
-                    block_type = 'free',
+                    block_type = 'dr-free',
                 )
-
-
 
 
 parser = argparse.ArgumentParser(
@@ -80,7 +131,7 @@ algorithm_subparsers = parser.add_subparsers(
 algorithm_subparsers.add_parser("mppi")
 algorithm_subparsers.add_parser("cem")
 algorithm_subparsers.add_parser("mtp")
-algorithm_subparsers.add_parser("anmtp")
+algorithm_subparsers.add_parser("ps")
 
 # Domain randomization argument (normal argument, not subparser)
 parser.add_argument(
@@ -97,27 +148,26 @@ parser.add_argument(
 args = parser.parse_args()
 print(args)
 
-risk_alpha = 0.25  # for (C)VaR
+risk_alpha = 0.5  # for (C)VaR
+uniform_weights = jnp.ones((NUM_RANDOMIZATIONS,), dtype=jnp.float32) / NUM_RANDOMIZATIONS
 
 if args.risk is None or args.risk == "average": 
     args.risk = "average"  
     aggregation = AverageCost()
 elif args.risk == "expectation":
     # initialize with uniform weights
-    aggregation = ExpectedCost(jnp.ones((NUM_RANDOMIZATIONS,), dtype=jnp.float32) / NUM_RANDOMIZATIONS)
+    aggregation = ExpectedCost(weights=uniform_weights)
 elif args.risk == "var":
     aggregation = ValueAtRisk(alpha=risk_alpha)
 elif args.risk == "cvar":
-    aggregation = ConditionalValueAtRisk(alpha=risk_alpha)
+    aggregation = ConditionalValueAtRisk(alpha=risk_alpha, weights=uniform_weights)
 elif args.risk == "ivar":
     aggregation = InverseValueAtRisk(alpha=risk_alpha)
 elif args.risk == "icvar":
-    aggregation = InverseConditionalValueAtRisk(alpha=risk_alpha)
+    aggregation = InverseConditionalValueAtRisk(alpha=risk_alpha, weights=uniform_weights)
 
 
-
-# Set the controller based on command-line arguments
-if args.algorithm is None: 
+if args.algorithm is None:
     args.algorithm = "mtp"  # Default to MTP
 elif args.algorithm == "mppi":
     print("Running MPPI")
@@ -127,13 +177,13 @@ elif args.algorithm == "mppi":
         noise_level=0.2,
         temperature=0.1,
         num_randomizations=NUM_RANDOMIZATIONS,
-        colorize_noise=False,   # !experimental
+        colorize_noise=False,  # !experimental
         alpha=0.1,
         seed=seed,
         update_cov=update_cov,
     )
-    error_log = "./../data/error_log_pushT/mppi_{seed}.npy".format(seed=seed)
-    
+    error_log = f"./../data/error_log_pushT/mppi_{seed}.npy"
+
 elif args.algorithm == "cem":
     print("Running CEM")
     ctrl = CEM(
@@ -144,57 +194,52 @@ elif args.algorithm == "cem":
         sigma_min=sigma_min,
         sigma_max=sigma_max,
         alpha=0.1,
+        shift=True,
+        planning_freq=5,
         num_randomizations=NUM_RANDOMIZATIONS,
         seed=seed,
         update_cov=update_cov,
     )
     error_log = "./../data/error_log_pushT/cem_{seed}.npy".format(seed=seed)
-    
+
 elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
         task,
         num_samples=NUM_SAMPLES,
-        M=3, # horizon via control points
-        N=64, # samples
+        M=3,  # horizon via control points
+        N=64,  # samples
         sigma_min=sigma_min,
         sigma_max=sigma_max,
         sigma_start=sigma_start,
         num_elites=12,
         beta=0.25,
         alpha=0.1,
-        interpolation='bspline',
+        interpolation="bspline",
         num_randomizations=NUM_RANDOMIZATIONS,
         seed=seed,
         update_cov=update_cov,
         planning_freq=5,
     )
-    error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
+    error_log = f"./../data/error_log_pushT/mtp_{seed}.npy"
+
+elif args.algorithm == "ps":
+    print("Running Predictive Sampling")
+    ctrl = PredictiveSampling(
+        task,
+        num_samples=NUM_SAMPLES,
+        noise_level=0.2,
+        num_randomizations=NUM_RANDOMIZATIONS,
+        shift=True,
+        planning_freq=5,
+        risk_strategy=aggregation,
+        savgol_filter=True,
+        seed=seed,
+        alpha=0.1,
+    )
+    error_log = f"./../data/error_log_pushT/ps_{seed}.npy"
     
-elif args.algorithm == "anmtp":
-    print("Running AnMTP")
-    ctrl = AnMTP(
-            task,
-            num_samples=NUM_SAMPLES,
-            M=3, # horizon via control points
-            N=64, # samples
-            planning_frequency=5,
-            sigma_min=sigma_min,
-            sigma_max=sigma_max,
-            sigma_start=sigma_start,
-            num_elites=12,
-            keep_elites=1,   # !experimental
-            beta = 0.3,
-            beta_lr = 0.1,        # adaptation step size
-            beta_min = 0.25,
-            beta_max = 0.35,
-            alpha=0.1,
-            interpolation='bspline',
-            num_randomizations=NUM_RANDOMIZATIONS,
-            risk_strategy=aggregation,
-            seed=seed,
-        )
-    error_log = "./../data/error_log_pushT/anmtp_{seed}.npy".format(seed=seed)
+
     
 # Define the model used for simulation
 mj_model, mj_data = task.reset(seed=seed)
@@ -204,16 +249,12 @@ dr_strategy = UniformDomainRandomization(
     seed=seed,
     task=task,
     controller=ctrl,
-    randomized_bodies={#"ee": {"field": "geom_solimp", "min": [0.001], "max": [1.0], "internal_idx": [2]},
-                     "ground": {"field": "geom_friction", "min": [0.001], "max": [100.1], "internal_idx": [0]},
+    randomized_bodies={"ee": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
+                       "ground": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
+                    #  "ground": {"field": "geom_solimp", "min": [0.002], "max": [0.3], "internal_idx": [2]},
                         # "top": {"field": "geom_solref", "min": [0.1], "max": [3], "internal_idx": [1]},                        
     },
-    randomized_joints = {
-        # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-        # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-        # "T_z": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-        # "dof_frictionloss": (0.0, 1.0, ["T_x", "T_y"]),  # randomize frictionloss of T
-    },
+    randomized_joints = {},
     num_randomizations=NUM_RANDOMIZATIONS,
 )
 
@@ -226,22 +267,32 @@ if not path.exists():
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
 
+# print(dr_strategy.get_current_randomizations()["geom_solref"].shape) # (24 90 3)
 
 ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
+ctrl.update_domain_randomization_model(dr_strategy.get_current_randomizations())
 
-new_randomizations = dr_strategy.get_current_randomizations()
-print("New randomizations:", new_randomizations["geom_friction"][:,[3]])
-print(task.model.geom_friction)
+# new_randomizations = dr_strategy.get_current_randomizations()
+# print("New randomizations:", new_randomizations["geom_friction"][:,[3]])
+# print(ctrl.model.geom_friction.shape)
+
+# ctrl.model = apply_domain_randomization(
+#     ctrl.model,
+#     field="geom_solref",
+#     values=dr_strategy.get_current_randomizations()["geom_solref"],
+#     component_idx=0,
+# )
+
+# print("Updated controller model geom_solref:", ctrl.model.geom_solref.shape)
 
 
-print(ctrl.model.geom_friction[:,[3]])
-# sys.exit()
 
 
+# exit(0)
 
-num_traces = 1
-incr = NUM_SAMPLES // num_traces
-trace_idxs = [i * incr for i in range(num_traces)]
+
+max_traces = 128
+trace_idxs = [i * max_traces for i in range(NUM_SAMPLES // max_traces)] if max_traces > 0 else []
 print("Tracing indices:", trace_idxs)
 
 run_interactive(
@@ -251,11 +302,11 @@ run_interactive(
     frequency=5,
     show_traces=True,
     trace_width=0.55,
-    max_traces=num_traces,
+    max_traces=max_traces,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,
-    max_step=200,
+    max_step=500,
     seed=seed,
     # log_file=path.as_posix(),
     dr_strategy = dr_strategy,
