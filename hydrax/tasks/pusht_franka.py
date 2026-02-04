@@ -43,7 +43,8 @@ class PushTFranka(Task):
     def __init__(
         self, planning_horizon: int = 16, sim_steps_per_control_step: int = 5, 
         nu: int = 2, 
-        ctrl_limits = {"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
+        ctrl_limits = {"u_min": jnp.array([-0.45, -0.45]), 
+                       "u_max": jnp.array([0.45, 0.45])},
         trace_sites=["T_1", "T_2","ee_site", "T_3"],
         actuation_type: str = 'velocity',
         sampling_space: str = 'velocity',
@@ -59,20 +60,19 @@ class PushTFranka(Task):
                 (get_root_path() / "models" / "fr3_pushT_pos" / "scene_mjx.xml").as_posix()
             )
         elif actuation_type == 'velocity':
-            if block_type == 'joint':
+            if block_type == 'dr-3dof':
                 mj_model = mujoco.MjModel.from_xml_path(
-                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint.xml").as_posix()
+                    (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint_dr.xml").as_posix()
                 )
+            elif block_type == 'dr-free':
+                raise NotImplementedError("dr-free not implemented yet")
             elif block_type == 'free':
                 mj_model = mujoco.MjModel.from_xml_path(
-                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free_pyramidal.xml").as_posix()
                     (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_free.xml").as_posix()
                 )
-            elif block_type == 'sim-real':
+            elif block_type == '3dof':
                 mj_model = mujoco.MjModel.from_xml_path(
                     (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint_small.xml").as_posix()
-                    # (get_root_path() / "models" / "fr3_pushT_vel" / "scene_mjx_joint.xml").as_posix()
-                    
                 )
             else:
                 raise ValueError("block_type must be 'joint', 'free' or 'sim-real'")
@@ -91,6 +91,16 @@ class PushTFranka(Task):
             nu=nu,
             ctrl_limits=ctrl_limits,
         )
+        
+        ghost_Ts = [f"ghost_block_{i}" for i in range(24)]
+        self.mocap_T_bids = []
+        if block_type == 'dr-3dof' or block_type == 'dr-free':
+            # No access to nbr of domains
+            for bid in range(mj_model.nbody):
+                mocap_id = mj_model.body_mocapid[bid]
+                if mocap_id >= 0 and mj_model.body(bid).name in ghost_Ts:
+                    self.mocap_T_bids.append(mocap_id)
+            
 
         # Get sensor ids
         self.block_position_sensor = mujoco.mj_name2id(
@@ -134,9 +144,9 @@ class PushTFranka(Task):
         self.block_type = block_type
 
         # Get block joint indices
-        if block_type == 'joint' or block_type == 'sim-real':
+        if block_type == 'dr-3dof' or block_type == 'sim-real':
             self.block_joint_names = ['T_x', 'T_y', 'T_z']
-        elif block_type == 'free':
+        elif block_type == 'free' or block_type == 'dr-free':
             self.block_joint_names = ['T']  
 
        
@@ -257,6 +267,10 @@ class PushTFranka(Task):
         
         return mj_model, mj_data
 
+    
+    def get_mocap_T_bids(self):
+        return self.mocap_T_bids
+    
     ##################################
     ##       Goal Error Terms       ##
     ##################################
@@ -346,10 +360,10 @@ class PushTFranka(Task):
         ee_block_distance = self._get_ee_block_distance(state)
         ee_block_distance_cost = ee_block_distance
         
-        if self.block_type == 'joint' or self.block_type == 'sim-real':
+        if self.block_type == '3dof' or self.block_type == 'dr-3dof':
             total_goal_err = 30 * position_cost + 3 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost  
-        elif self.block_type == 'free':
+        elif self.block_type == 'free' or self.block_type == 'dr-free':
             # Jitter
             total_goal_err = 30 * position_cost + 3 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost  
@@ -357,9 +371,9 @@ class PushTFranka(Task):
                                                                               
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
-        if self.block_type == 'joint' or self.block_type == 'sim-real':
+        if self.block_type == '3dof' or self.block_type == 'dr-3dof':
             return 10 * self.running_cost(state, jnp.zeros(self.model.nu))
-        elif self.block_type == 'free':
+        elif self.block_type == 'free' or self.block_type == 'dr-free':
             return 10 * self.running_cost(state, jnp.zeros(self.model.nu)) 
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:

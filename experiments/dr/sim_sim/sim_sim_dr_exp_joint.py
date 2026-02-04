@@ -8,7 +8,7 @@ sys.path.append(str(parent_dir))
 import jax.numpy as jnp
 import numpy as np
 from an_mtp_dr import AnMTP
-from deterministic_dr import run_interactive
+from deterministic_dr_ghost import run_interactive
 from domain_adaptation import UniformDomainRandomization
 
 from hydrax.algs import CEM, MPPI, MTP
@@ -64,15 +64,16 @@ det_init = {
 task = PushTFranka(
     ik_type="pinv",
     planning_horizon=10,
-    sim_steps_per_control_step=2,
+    sim_steps_per_control_step=3,
     ctrl_limits={
         "u_min": jnp.array([-MAX_SPEED, -MAX_SPEED]),
         "u_max": jnp.array([MAX_SPEED, MAX_SPEED]),
     },
+    trace_sites=["T_1", "T_2","ee_site", "T_3", "block_site"],
     actuation_type="velocity",
     sampling_space="velocity",
     det_init=det_init,
-    block_type="sim-real",
+    block_type="dr-3dof",
 )
 
 
@@ -149,6 +150,8 @@ elif args.algorithm == "cem":
         sigma_min=sigma_min,
         sigma_max=sigma_max,
         alpha=0.1,
+        shift=True,
+        planning_freq=5,
         num_randomizations=NUM_RANDOMIZATIONS,
         seed=seed,
         update_cov=update_cov,
@@ -216,7 +219,7 @@ dr_strategy = UniformDomainRandomization(
     randomized_joints={
         # "T_x": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
         # "T_y": {"field": "dof_frictionloss", "min": 0.0, "max": 1.0},
-        "T_z": {"field": "dof_damping", "min": 0.0, "max": 100.0},
+        "T_z": {"field": "dof_damping", "min": 0.0, "max": 1.0},
     },
     num_randomizations=NUM_RANDOMIZATIONS,
 )
@@ -237,9 +240,9 @@ new_randomizations = dr_strategy.get_current_randomizations()
 
 print(ctrl.model.dof_damping[:,2])
 
-num_traces = 1
-incr = NUM_SAMPLES // num_traces
-trace_idxs = [i * incr for i in range(num_traces)]
+
+max_traces = 16
+trace_idxs = [i * max_traces for i in range(NUM_SAMPLES // max_traces)] if max_traces > 0 else []
 print("Tracing indices:", trace_idxs)
 
 run_interactive(
@@ -249,7 +252,7 @@ run_interactive(
     frequency=5,
     show_traces=True,
     trace_width=0.55,
-    max_traces=num_traces,
+    max_traces=max_traces,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,

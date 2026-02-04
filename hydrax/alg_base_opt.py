@@ -104,25 +104,25 @@ class SamplingBasedController(ABC):
             
     def init_randomization_model(self, new_randomizations: dict) -> None:
         """Calls update but also updates the axis"""
+        self.update_domain_randomization_model(new_randomizations)
         self.randomized_axes = jax.tree.map(lambda x: None, self.task.model)
         self.randomized_axes = self.randomized_axes.tree_replace(
             {key: 0 for key in new_randomizations.keys()}
         )
-        self.update_domain_randomization_model(new_randomizations)
 
 
     def update_domain_randomization_model(self, new_randomizations: dict) -> None:
         """Update the domain randomization model with new samples.
         """
         # checks
-        for field, value in new_randomizations.items():
+        for field in new_randomizations.keys():
             model_field = getattr(self.task.model, field, None)
             if model_field is None:
                 raise ValueError(f"Unknown field '{field}' in randomizations.")
-            if len(value) != self.num_randomizations:
+            if len(new_randomizations[field]) != self.num_randomizations:
                 raise ValueError(f"Shape mismatch for field '{field}': "
                                  f"expected {self.num_randomizations}, "
-                                 f"got {value.shape}.")
+                                 f"got {new_randomizations[field].shape}.")
         self.model = self.model.tree_replace(new_randomizations)
             
 

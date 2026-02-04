@@ -71,7 +71,7 @@ def differential_IK(
     return dq
 
 
-xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx_joint_small.xml"
+xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx_joint_dr.xml"
 xml_dir = os.path.dirname(xml_path)
 
 # Change working directory temporarily
@@ -98,12 +98,6 @@ for i in range(model.nsite):
     name = model.site(i).name
     print(f"Site {i}: {name}")
 
-for bid in range(model.nbody):
-    mocap_id = model.body_mocapid[bid]
-    if mocap_id >= 0:
-        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-        print(f"mocap_id={mocap_id}, body_id={bid}, name={name}")
-
 # actuatros
 print("Number of actuators:", model.nu)
 
@@ -123,7 +117,7 @@ print("Actuator joint ids:", actuator_jids)
 
 ee_body_id = model.body("ee_frame").id
 goal_quat_ee = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-goal_pos_ee = np.array([0.45, 0.2, 0.045]) #np.array([0.3, 0.0, 0.05])
+goal_pos_ee = np.array([0.35, 0.2, 0.045]) #np.array([0.3, 0.0, 0.05])
 joint_limits = model.jnt_range[actuator_joint_idxs]
 
 # IK loop parameters
@@ -219,21 +213,24 @@ def quat_to_yaw(qx, qy, qz, qw):
     cosy = 1.0 - 2.0 * (qy * qy + qz * qz)
     return np.arctan2(siny, cosy)
 
-# Oreintation sensor id
-block_orientation_sensor = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_SENSOR, "orientation_site"
-        )
-sensor_adr_orientation = model.sensor_adr[block_orientation_sensor]
 
-# Position sensor id
-block_position_sensor = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_SENSOR, "position_site"
-        )
-sensor_adr_position = model.sensor_adr[block_position_sensor]
+# Build lookup dict once after model load
+ghost_Ts = [f"ghost_block_{i}" for i in range(24)]
+print("Ghost blocks:", ghost_Ts)
+mocap_T_bids = []
+
+for bid in range(model.nbody):
+    mocap_id = model.body_mocapid[bid]
+    if mocap_id >= 0 and model.body(bid).name in ghost_Ts:
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+        mocap_T_bids.append(mocap_id)
+
+print("Mocap lookup:", mocap_T_bids)
+print("Number of mocap bodies:", len(mocap_T_bids))
 
 
 
-speed = 0.2
+speed = 0.1
 with mujoco.viewer.launch_passive(model, data) as v:
     while v.is_running():
         
@@ -251,6 +248,22 @@ with mujoco.viewer.launch_passive(model, data) as v:
         )
         data.ctrl[:] = dq
         step += 1
+        
+        truth_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, b"block")
+        truth_quad = data.xquat[truth_id]
+        truth_pos = data.xpos[truth_id]
+        
+        # add noise to all mocap bodies
+        for bid in mocap_T_bids:    
+            noise_pos = np.random.normal(0, 0.1, size=2)
+            
+            
+            # current mocap pose
+            new_pos = truth_pos.copy()
+            new_pos[:2] += noise_pos
+
+            data.mocap_pos[bid] = new_pos
+            data.mocap_quat[bid] = truth_quad
 
         # sys.stdout.write(f"\rQuaternion: {block_quat}, Position: {block_pos} ")
         # sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ} | time: {data.time:.4f}s | ee vel: {vel} ")

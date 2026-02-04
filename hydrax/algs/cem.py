@@ -25,6 +25,8 @@ class CEMParams:
     spline: jax.Array
     cov: jax.Array
     elites: jax.Array = None   # (num_elites, T, U), optional
+    predicted_state: jax.Array = None  # optional
+    domain_weights: jax.Array = None  # optional
 
 
 class CEM(SamplingBasedController):
@@ -77,7 +79,11 @@ class CEM(SamplingBasedController):
         self.alpha_noise = alpha_noise
         # shift
         self.shift = shift
-        self.last_a_idx = int(self.task.dt * planning_freq)
+        replan_period = 1 / planning_freq
+        prediction_horizon = self.task.planning_horizon * self.task.dt
+        self.last_a_idx = int(replan_period / prediction_horizon * self.task.planning_horizon)
+        print(f"CEM last_a_idx: {self.last_a_idx}")
+        
         
         if keep_elites > num_elites:
             print(f"Warning: keep_elites ({keep_elites}) > num_elites ({num_elites}). Setting keep_elites = num_elites.")
@@ -98,7 +104,14 @@ class CEM(SamplingBasedController):
         spline = jnp.zeros((self.task.planning_horizon, self.task.nu))
         cov = jnp.full_like(spline, self.sigma_start)
         elites = spline[None, ...].repeat(self.keep_elites, axis=0)
-        return CEMParams(spline=spline, cov=cov, rng=rng, elites=elites)
+        predicted_state = jnp.zeros((self.num_randomizations, len(self.task.trace_site_ids), 7), dtype=jnp.float32) # ! experimental
+        domain_weights = jnp.ones((self.num_randomizations,), dtype=jnp.float32) / self.num_randomizations # ! experimental
+        
+        return CEMParams(spline=spline, cov=cov, 
+                         rng=rng, elites=elites, 
+                         predicted_state=predicted_state,
+                         domain_weights=domain_weights,
+                         )
 
     def sample_controls(self, params: CEMParams) -> Tuple[jax.Array, CEMParams]:
         """Sample a control sequence."""
@@ -153,11 +166,15 @@ class CEM(SamplingBasedController):
             cov = jnp.std(rollouts.controls[elites], axis=0)
             cov = jnp.clip(cov, a_min=self.sigma_min, a_max=self.sigma_max)
         new_elites = rollouts.controls[elites[:self.keep_elites]]
-        return params.replace(spline=spline, cov=cov, elites=new_elites)
+        # rollouts.trace_sites is (domains, samples, steps, sites, 7)
+        predicted_state = rollouts.trace_sites[:, indices[0], -1, ...] # one timestep over all domains, for rolloed out 
+        
+        return params.replace(spline=spline, cov=cov, elites=new_elites, predicted_state=predicted_state)
 
     def get_action(self, params: CEMParams, t: float) -> jax.Array:
         """Get the control action for the current time step, zero order hold."""
         idx_float = t / self.task.dt 
         idx = jnp.floor(idx_float).astype(jnp.int32)
+        jax.debug.print("CEM get_action idx: {}", idx)
         action = params.spline[idx]
         return action

@@ -50,7 +50,7 @@ class AnMTP(SamplingBasedController):
         sigma_max: float = 1.0,
         temperature: float = 0.1,
         num_randomizations: int = 1,
-        planning_frequency: int = 25,
+        planning_freq: int = 25,
         beta: float = 0.1,
         beta_lr: float = 0.2,        # adaptation step size
         beta_min: float = 0.0,
@@ -120,7 +120,8 @@ class AnMTP(SamplingBasedController):
         # Experimental domain randomization
         # compute horizon step to save and compare to next observed state
         horizon_time = self.task.planning_horizon  * self.task.dt 
-        planning_time = 1.0 / planning_frequency
+        planning_time = 1.0 / planning_freq
+        self.last_a_idx = int(self.task.dt * planning_freq)
         self.observation_step = (planning_time / horizon_time) * self.task.planning_horizon 
         self.observation_step = jnp.floor(self.observation_step).astype(jnp.int32)
         

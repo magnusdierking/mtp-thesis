@@ -640,7 +640,7 @@ if __name__ == '__main__':
                                  "u_max": jnp.array([max_speed, max_speed])},
                     actuation_type='velocity',
                     sampling_space="velocity",
-                    block_type = 'sim-real',
+                    block_type = '3dof',
                 )
     
     # Parse command-line arguments

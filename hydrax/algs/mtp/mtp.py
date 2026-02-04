@@ -122,8 +122,10 @@ class MTP(SamplingBasedController):
         
         # shift
         self.shift = shift
-        self.last_a_idx = int(1 / (planning_freq * self.task.dt))
-        print(f"MTP Controller initialized with last_a_idx = {self.last_a_idx}")
+        replan_period = 1 / planning_freq
+        prediction_horizon = self.task.planning_horizon * self.task.dt
+        self.last_a_idx = jnp.floor(replan_period / prediction_horizon * self.task.planning_horizon).astype(jnp.int32)
+        print(f"MTP last_a_idx: {self.last_a_idx}")
         
         self.default_zero_controls = default_zero_controls
 

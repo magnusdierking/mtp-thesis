@@ -111,7 +111,7 @@ task = PushTFranka(ik_type = 'pinv',
                     actuation_type='velocity',
                     sampling_space="velocity",
                     det_init=det_init,
-                    block_type = 'sim-real',
+                    block_type = '3dof',
                 )
 
 # position control

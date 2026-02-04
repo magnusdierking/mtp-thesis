@@ -72,32 +72,13 @@
         <joint name="T_x" type="slide" pos="0 0 0" axis="1 0 0" frictionloss="0.5" damping="0.0"/>
         <joint name="T_y" type="slide" pos="0 0 0" axis="0 1 0" frictionloss="0.5" damping="0.0"/>
         <joint name="T_z" type="hinge" axis="0 0 1" frictionloss="0.01" damping="0.0"/>
-        <!-- Lower part of T -->
         <geom class="tblock" name="bottom" type="box" size=".025 0.05 0.025" pos="0.0 0.000 0.0" mass="0.1310"/>
-
-          <!-- <geom class="contact_sphere" name="contact_1" type="sphere" size="0.02505" pos="0.0 0.0 0.0" rgba="1 0 0 0.4"/> -->
-
-          <!-- <geom class="contact_sphere" name="contact_2" type="sphere" size="0.02505" pos="0.015 -0.04 0.0" rgba="1 0 0 0.4"/> -->
-          <!-- <geom class="contact_sphere" name="contact_4" type="sphere" size="0.02505" pos="-0.015 -0.04 0.0" rgba="1 0 0 0.4"/> -->
-
-          <!-- <geom class="contact_sphere" name="contact_5" type="sphere" size="0.02505" pos="0.015 0.04 0.0" rgba="1 0 0 0.4"/> -->
-          <!-- <geom class="contact_sphere" name="contact_6" type="sphere" size="0.02505" pos="-0.015 0.04 0.0" rgba="1 0 0 0.4"/> -->
-          
           <site name="T_1" pos="0 -0.025 0" size="0.015" rgba="0 0 0 1"/>
           <site name="T_2" pos="0.03 0.075 0" size="0.015" rgba="0 0 0 1"/>
           <site name="T_3" pos="-0.03 0.075 0" size="0.015" rgba="0 0 0 1"/>
-        <!-- Upper part ot T -->
         <geom class="tblock" name="top" type="box" size=".06 0.025 0.025" pos="0.0 0.075 0.0"  mass="0.171"/>
-
-            <!-- <geom class="contact_sphere" name="contact_7" type="sphere" size="0.02505" pos="0.02 0.075 0.0" rgba="0 1 0 0.4"/> -->
-            <!-- <geom class="contact_sphere" name="contact_8" type="sphere" size="0.02505" pos="-0.02 0.075 0.0" rgba="0 1 0 0.4"/> -->
-            
-            <!-- <geom class="contact_sphere" name="contact_9" type="sphere" size="0.02505" pos="0.05 0.09 0.0" rgba="0 1 0 0.4"/> -->
-            <!-- <geom class="contact_sphere" name="contact_10" type="sphere" size="0.02505" pos="-0.05 0.09 0.0" rgba="0 1 0 0.4"/> -->
-
-            <!-- <geom class="contact_sphere" name="contact_11" type="sphere" size="0.02505" pos="0.05 0.06 0.0" rgba="0 1 0 0.4"/> -->
-            <!-- <geom class="contact_sphere" name="contact_12" type="sphere" size="0.02505" pos="-0.05 0.06 0.0" rgba="0 1 0 0.4"/> -->
       </body>
+
   </worldbody>
 
   <!-- Robot model -->
