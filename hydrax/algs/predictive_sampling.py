@@ -114,7 +114,7 @@ class PredictiveSampling(SamplingBasedController):
 
         mean = mean + self.alpha * (params.mean - mean)
         # predicted_state = rollouts.trace_sites[:, best_idx, self.last_a_idx, ...] # one timestep over all domains, for rolloed out 
-        predicted_state = rollouts.trace_sites[:, best_idx, -1, ...] # one timestep over all domains, for rolloed out 
+        predicted_state = rollouts.trace_sites[:, best_idx, (self.last_a_idx + 1), ...] # one timestep over all domains, for rolloed out 
         
         return params.replace(mean=mean, spline=mean, predicted_state=predicted_state)
 

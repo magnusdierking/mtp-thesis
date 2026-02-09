@@ -173,10 +173,11 @@ class MTP(SamplingBasedController):
         spline = mean.copy()
         elites = spline[None, ...].repeat(self.keep_elites, axis=0)
         cov = jnp.full_like(mean, self.sigma_start)
-        predicted_state = jnp.zeros((self.num_randomizations,
-                                     self.last_a_idx + 1, 
-                                     len(self.task.trace_site_ids),
-                                     7), dtype=jnp.float32) 
+        predicted_state = jnp.zeros((self.num_randomizations, len(self.task.trace_site_ids), 7), dtype=jnp.float32) 
+        # predicted_state = jnp.zeros((self.num_randomizations,
+        #                              self.last_a_idx + 1, 
+        #                              len(self.task.trace_site_ids),
+        #                              7), dtype=jnp.float32) 
         domain_weights = jnp.ones((self.num_randomizations,), dtype=jnp.float32) / self.num_randomizations 
         
         return MTPParams(rng=rng, 
@@ -353,7 +354,8 @@ class MTP(SamplingBasedController):
         spline = rollouts.controls[next_idx]  # use the best elite as control
         new_elites = rollouts.controls[elite_indices[:self.keep_elites]]
         
-        predicted_state = rollouts.trace_sites[:, next_idx, :(self.last_a_idx + 1), ...] 
+        # predicted_state = rollouts.trace_sites[:, next_idx, :(self.last_a_idx + 1), ...] 
+        predicted_state = rollouts.trace_sites[:, next_idx, (self.last_a_idx + 1), ...] 
 
 
         return params.replace(mean=mean, cov=cov, spline=spline, elites=new_elites, predicted_state=predicted_state)

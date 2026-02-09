@@ -217,7 +217,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             record_video = False
         renderer = mujoco.Renderer(mj_model, height=height, width=width)
 
-    # !LIVE PLOT SETUP ------------------------------------------------#
+    # !LIVE PLOT SETUP ------------------------------------------------ #
     
     mocap_T_bids = controller.task.get_mocap_T_bids()
 

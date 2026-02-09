@@ -33,7 +33,7 @@ Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 
-NUM_SAMPLES = 32
+NUM_SAMPLES = 128
 NUM_RANDOMIZATIONS = 24
 MAX_SPEED = 0.35  # m/s
 
@@ -251,20 +251,20 @@ for i in range(mj_model.njnt):
 
 rng = jax.random.PRNGKey(0)
 randomization_dict = {
-    'joints': {
-        "T_z": {
-            "dof_damping": (None, jnp.linspace(0.0, 0.01, NUM_RANDOMIZATIONS)),
-            "dof_frictionloss": (None, jnp.linspace(0.0, 0.01, NUM_RANDOMIZATIONS)),
-        },
-        "T_x": {
-            "dof_damping": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)),
-            "dof_frictionloss": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)),
-        },
-        "T_y": {
-            "dof_damping": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)),
-            "dof_frictionloss": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)), 
-        },
-    },
+    # 'joints': {
+    #     "T_z": {
+    #         "dof_damping": (None, jnp.linspace(0.0, 0.01, NUM_RANDOMIZATIONS)),
+    #         "dof_frictionloss": (None, jnp.linspace(0.0, 0.01, NUM_RANDOMIZATIONS)),
+    #     },
+    #     "T_x": {
+    #         "dof_damping": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)),
+    #         "dof_frictionloss": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)),
+    #     },
+    #     "T_y": {
+    #         "dof_damping": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)),
+    #         "dof_frictionloss": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)), 
+    #     },
+    # },
     # 'geoms': {
     #     'ground': {
     #         'geom_solimp': (2, jnp.linspace(0.002, 0.3, NUM_RANDOMIZATIONS)),  
@@ -286,19 +286,6 @@ ctrl.model, randomized_axes = compute_randomizations(
     randomization_dict,
 )
 ctrl.update_randomized_axes(randomized_axes)
-
-# ! ToDo transform randomizations to matrix for processing (plus metadata dict)
-
-# print(ctrl.model.body_mass.shape)
-# exit(0)
-
-
-
-
-
-
-
-
 
 
 

@@ -7,7 +7,6 @@ parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
 from hydrax.algs import MPPI, MTP, CEM, PredictiveSampling
-# from hydrax.algs.mtp.an_mtp_opt import AnMTP
 from an_mtp_dr import AnMTP
 from mujoco import mjx
 from hydrax.utils.files import get_data_path
@@ -27,60 +26,8 @@ from typing import Dict, Optional
 from domain_randomization_utils import compute_randomizations
 
 
-def apply_domain_randomization(
-    model: mjx.Model,
-    field: str,
-    values: jnp.ndarray,
-    *,
-    component_idx: Optional[int] = None,
-) -> mjx.Model:
-    """
-    Args:
-      model: mjx.Model or a batched mjx.Model.
-      field: Name of the mjx.Model attribute to change, e.g. "geom_friction" or "geom_solref".
-      values: Array of new values, one per domain.
-              Shape:
-                - if you are fully replacing the field: (batch, *field.shape[1:])
-                - if you are replacing just one component: (batch, *field.shape[2:])
-      component_idx: If not None, replace only this component of the last axis
-                     (e.g. 0 or 1 for solref, 0/1/2 for geom_friction).
-                     If None, the entire field is replaced.
-
-    Returns:
-      A new mjx.Model with the updated field.
-    """
-    # Get the original field
-    orig = getattr(model, field)
-
-    # If the model is unbatched and you want to batch only this field, add batch dim
-    # (commonly you instead create a batched model externally via vmap).
-    if values.ndim == orig.ndim + 1:
-        # values has batch dim, orig does not
-        # Example: orig: (ngeom, 3), values: (batch, ngeom, 3)
-        new_field = values
-    else:
-        # Assume orig already has a batch dimension: (batch, ...)
-        if component_idx is None:
-            # Replace entire field: shapes must match
-            new_field = values
-        else:
-            # Replace a single component along the last axis
-            # orig: (batch, ..., C), values: (batch, ..., )
-            # or values: (batch, ..., 1) which we squeeze
-            v = values
-            if v.shape[-1] == 1:
-                v = jnp.squeeze(v, axis=-1)
-            # Broadcast v to match orig except last dimension
-            # We rely on JAX broadcasting for any trailing dimensions.
-            new_field = orig.at[..., component_idx].set(v)
-
-    # Use tree_replace/replace to build a new model
-    # For current mjx versions, Model is a dataclass-like PyTree, so replace works:
-    return model.replace(**{field: new_field})
-
-
-NUM_SAMPLES = 64
-NUM_RANDOMIZATIONS = 6  
+NUM_SAMPLES = 128
+NUM_RANDOMIZATIONS = 24
 MAX_SPEED = 0.35  # m/s
 
 seed = 42
@@ -88,21 +35,8 @@ update_cov = False
 sigma_max = 0.35
 sigma_min = 0.15
 sigma_start = 0.2
-# joint
-# det_init = {
-#     "block_pos_x": 0.1,
-#     "block_pos_y": 0.15,
-#     "block_angle": np.pi/3,
-#     "ee_goal_pos": [0.5, -0.0, 0.035]
-# }
-#free hard
-# det_init = {
-#     "block_pos_x": 0.4,
-#     "block_pos_y": 0.15,
-#     "block_angle": np.pi/3,
-#     "ee_goal_pos": [0.4, 0.0, 0.035]
-# }
-# free easy
+
+
 det_init = {
     "block_pos_x": 0.45,
     "block_pos_y": 0.15,
@@ -277,33 +211,18 @@ path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
 
 
 
-for i in range(mj_model.nbody):
-    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_BODY, i)
-    print(f"Body {i}: {name}")
-    
-for i in range(mj_model.ngeom):
-    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_GEOM, i)
-    print(f"Geom {i}: {name}")
-
-for i in range(mj_model.njnt):
-    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, i)
-    print(f"Joint {i}: {name}")
-
-
-
 
 randomization_dict = {
     'geoms': {
         'ground': {
-            'geom_solimp': (2, jnp.linspace(0.002, 0.3, NUM_RANDOMIZATIONS)),  
-            'geom_friction': (None, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)), 
+            'geom_friction': (0, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)), 
         },
     },
-    # 'bodies': {
-    #     'block': {
-    #         'body_mass': (None, jnp.linspace(0.1, 0.5, NUM_RANDOMIZATIONS)),
-    #     },
-    # }
+    'bodies': {
+        'block': {
+            'body_mass': (None, jnp.linspace(0.1, 0.5, NUM_RANDOMIZATIONS)),
+        },
+    }
 }
 
 
