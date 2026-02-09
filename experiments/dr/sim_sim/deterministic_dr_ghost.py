@@ -391,10 +391,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 distances = np.array(distances)
 
                 # probabilities via softmax
-                temperature = 1.0 #np.std(distances) + 1e-12
+                temperature = np.std(distances) + 1e-12
                 probs = np.exp(-distances / temperature)  # temperature scaling
                 probs = probs / (np.sum(probs) + 1e-12)
-                print("Probabilities:", probs)
                 entropy = -np.sum(probs * np.log(probs + 1e-12))
                 # print("Domain distribution entropy:", entropy)
                 max_entropy = jnp.log(len(probs) + 1e-12)
@@ -405,8 +404,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 new_probs = (
                     1 - normalized_entropy
                 ) * probs + normalized_entropy * policy_params.domain_weights
-
-                # policy_params = policy_params.replace(domain_weights=jnp.array(new_probs))
+                print("normalized entropy:", normalized_entropy)
+                print("Updated domain probabilities:", new_probs)
+                policy_params = policy_params.replace(domain_weights=jnp.array(new_probs))
 
                 # !-------------------------------------------
 

@@ -1,6 +1,8 @@
 import argparse, sys
 from pathlib import Path
 
+import mujoco
+
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
@@ -21,7 +23,9 @@ from domain_adaptation import UniformDomainRandomization
 
 import jax
 import jax.numpy as jnp
-from typing import Optional
+from typing import Dict, Optional
+from domain_randomization_utils import compute_randomizations
+
 
 def apply_domain_randomization(
     model: mjx.Model,
@@ -75,8 +79,8 @@ def apply_domain_randomization(
     return model.replace(**{field: new_field})
 
 
-NUM_SAMPLES = 128  
-NUM_RANDOMIZATIONS = 24   
+NUM_SAMPLES = 64
+NUM_RANDOMIZATIONS = 6  
 MAX_SPEED = 0.35  # m/s
 
 seed = 42
@@ -249,8 +253,12 @@ dr_strategy = UniformDomainRandomization(
     seed=seed,
     task=task,
     controller=ctrl,
-    randomized_bodies={"ee": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
-                       "ground": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
+    randomized_bodies={#"ground": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
+                    #    "bottom": {"field": "body_mass", "min": [0.1], "max": [5.0], "internal_idx": [0]},
+                    #    "top": {"field": "body_mass", "min": [0.1], "max": [5.0], "internal_idx": [0]},
+                    #    "bottom": {"field": "geom_mass", "min": [0.1], "max": [5.0], "internal_idx": [0]},
+                    #    "ee": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
+                    #    "ground": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
                     #  "ground": {"field": "geom_solimp", "min": [0.002], "max": [0.3], "internal_idx": [2]},
                         # "top": {"field": "geom_solref", "min": [0.1], "max": [3], "internal_idx": [1]},                        
     },
@@ -267,28 +275,48 @@ if not path.exists():
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
 
-# print(dr_strategy.get_current_randomizations()["geom_solref"].shape) # (24 90 3)
 
-ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
-ctrl.update_domain_randomization_model(dr_strategy.get_current_randomizations())
 
-# new_randomizations = dr_strategy.get_current_randomizations()
-# print("New randomizations:", new_randomizations["geom_friction"][:,[3]])
-# print(ctrl.model.geom_friction.shape)
+for i in range(mj_model.nbody):
+    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_BODY, i)
+    print(f"Body {i}: {name}")
+    
+for i in range(mj_model.ngeom):
+    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_GEOM, i)
+    print(f"Geom {i}: {name}")
 
-# ctrl.model = apply_domain_randomization(
-#     ctrl.model,
-#     field="geom_solref",
-#     values=dr_strategy.get_current_randomizations()["geom_solref"],
-#     component_idx=0,
-# )
-
-# print("Updated controller model geom_solref:", ctrl.model.geom_solref.shape)
+for i in range(mj_model.njnt):
+    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, i)
+    print(f"Joint {i}: {name}")
 
 
 
 
-# exit(0)
+randomization_dict = {
+    'geoms': {
+        'ground': {
+            'geom_solimp': (2, jnp.linspace(0.002, 0.3, NUM_RANDOMIZATIONS)),  
+            'geom_friction': (None, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)), 
+        },
+    },
+    # 'bodies': {
+    #     'block': {
+    #         'body_mass': (None, jnp.linspace(0.1, 0.5, NUM_RANDOMIZATIONS)),
+    #     },
+    # }
+}
+
+
+
+ctrl.model, randomized_axes = compute_randomizations(
+    ctrl.model,
+    mj_model,
+    randomization_dict,
+)
+ctrl.update_randomized_axes(randomized_axes)
+
+
+
 
 
 max_traces = 128

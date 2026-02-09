@@ -73,9 +73,6 @@ class SamplingBasedController(ABC):
         self.control_mapper = task.make_control_mapper()
         self.gravity_compensator = task.make_gravity_compensator()
 
-        # Set the random seed for domain randomization
-        self.set_seed(seed)
-        
         # invariants
         self._T      = self.task.planning_horizon
         self._act_idx   = jnp.array(self.task.actuator_joint_idxs)
@@ -84,48 +81,46 @@ class SamplingBasedController(ABC):
         self._xfrc0 = jnp.zeros((self.model.nbody, 6), dtype=jnp.float32) # maybe not needed
         
         
-    def set_seed(self, seed: int) -> None:
-        pass
-        # if self.num_randomizations > 1:
-        #     # Make domain randomized models
-        #     rng = jax.random.key(seed)
-        #     rng, subrng = jax.random.split(rng)
-        #     subrngs = jax.random.split(subrng, self.num_randomizations)
-
-        #     randomizations = jax.vmap(self.task.domain_randomize_model)(subrngs)
-        #     self.model = self.task.model.tree_replace(randomizations)
-
-        #     # Keep track of which elements of the model have randomization
-        #     self.randomized_axes = jax.tree.map(lambda x: None, self.task.model)
-        #     self.randomized_axes = self.randomized_axes.tree_replace(
-        #         {key: 0 for key in randomizations.keys()}
-        #     )
-            
-            
-    def init_randomization_model(self, new_randomizations: dict) -> None:
-        self.update_domain_randomization_model(new_randomizations)
-        # Create axes tree matching the model structure
-        self.randomized_axes = jax.tree_util.tree_map(lambda x: None, self.model)
-        # simply set axis=0 for randomized leaves
-        self.randomized_axes = self.randomized_axes.tree_replace(
-            {key: 0 for key in new_randomizations.keys()}
-        )
-        print("Randomized axes:", self.randomized_axes.geom_friction)
-
-
-    def update_domain_randomization_model(self, new_randomizations: dict) -> None:
-        """Update the domain randomization model with new samples.
+        
+        
+    def update_randomized_axes(self, randomized_fields: list[str]) -> None:
+        """Initialize vmap axes for randomized fields.
+        
+        Args:
+            randomized_fields: List of field names, e.g. ['geom_friction', 'jnt_frictionloss']
         """
-        # checks
-        for field in new_randomizations.keys():
-            model_field = getattr(self.model, field, None)
-            if model_field is None:
-                raise ValueError(f"Unknown field '{field}' in randomizations.")
-            if len(new_randomizations[field]) != self.num_randomizations:
-                raise ValueError(f"Shape mismatch for field '{field}': "
-                                 f"expected {self.num_randomizations}, "
-                                 f"got {new_randomizations[field].shape}.")
-        self.model = self.model.tree_replace(new_randomizations)
+        randomized_set = set(randomized_fields)
+        
+        self.randomized_axes = jax.tree_util.tree_map_with_path(
+            lambda path, x: 0 if (path and path[-1].name in randomized_set) else None,
+            self.model
+        )
+        
+        # print(f"Randomized fields: {self.randomized_axes}")
+            
+    # def init_randomization_model(self, new_randomizations: dict) -> None:
+    #     self.update_domain_randomization_model(new_randomizations)
+    #     # Create axes tree matching the model structure
+    #     self.randomized_axes = jax.tree_util.tree_map(lambda x: None, self.model)
+    #     # simply set axis=0 for randomized leaves
+    #     self.randomized_axes = self.randomized_axes.tree_replace(
+    #         {key: 0 for key in new_randomizations.keys()}
+    #     )
+
+
+    # def update_domain_randomization_model(self, new_randomizations: dict) -> None:
+    #     """Update the domain randomization model with new samples.
+    #     """
+    #     # checks
+    #     for field in new_randomizations.keys():
+    #         model_field = getattr(self.model, field, None)
+    #         if model_field is None:
+    #             raise ValueError(f"Unknown field '{field}' in randomizations.")
+    #         if len(new_randomizations[field]) != self.num_randomizations:
+    #             raise ValueError(f"Shape mismatch for field '{field}': "
+    #                              f"expected {self.num_randomizations}, "
+    #                              f"got {new_randomizations[field].shape}.")
+    #     self.model = self.model.tree_replace(new_randomizations)
             
 
     @jax.named_call
@@ -269,7 +264,7 @@ class SamplingBasedController(ABC):
             Tuple ``(costs, trace_sites)`` where ``costs`` has shape ``(R, T + 1)``
             and ``trace_sites`` has shape ``(R, T + 1, S, 3)``.
         """
-        jax.debug.print("Running randomization with model geom_friction: {}", model_r.geom_friction[89])
+        # jax.debug.print("Running randomization with model geom_friction: {}", model_r.geom_friction[89])
         with jax.named_scope("rollout_step"):
             costs_R, sites_R = jax.vmap(self.eval_rollout, in_axes=(None, None, 0))(
                 model_r, state_r, controls_all

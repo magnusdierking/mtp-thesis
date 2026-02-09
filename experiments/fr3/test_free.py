@@ -72,7 +72,7 @@ def differential_IK(
 
 
 # xml_path = "./../hydrax/models/g1/scene.xml"
-xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx_free_pyramidal.xml"
+xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx_free_dr.xml"
 # xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_sim_real.xml"
 xml_dir = os.path.dirname(xml_path)
 
@@ -102,17 +102,11 @@ for i in range(model.nsite):
 
 for bid in range(model.nbody):
     mocap_id = model.body_mocapid[bid]
-    if mocap_id >= 0:
-        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
-        print(f"mocap_id={mocap_id}, body_id={bid}, name={name}")
+    name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid)
+    mass = model.body_mass[bid]
+    print(f"body_id={bid}, name={name}, mass={mass}, mocap_id={mocap_id}")
 
-# actuatros
-print("Number of actuators:", model.nu)
 
-for i in range(model.nsensor):
-    dim = model.sensor_dim[i]
-    adr = model.sensor_adr[i]
-    print(f"Sensor {i}: dim={dim} adr={adr}")
 
 # # Initial guess
 q = np.array([0.0, -np.pi/4, 0.0, -9*np.pi/10, 0.0, 3*np.pi/4, np.pi/4])
@@ -121,7 +115,6 @@ actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 
 actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
 actuator_jids = model.jnt_qposadr[actuator_joint_idxs]
 dof_adr  = model.jnt_dofadr[actuator_joint_idxs] 
-print("Actuator joint ids:", actuator_jids)
 
 ee_body_id = model.body("ee_frame").id
 goal_quat_ee = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]

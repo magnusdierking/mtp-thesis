@@ -6,6 +6,8 @@ parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
 import jax.numpy as jnp
+import mujoco
+import jax
 import numpy as np
 from an_mtp_dr import AnMTP
 from deterministic_dr_ghost import run_interactive
@@ -19,17 +21,19 @@ from hydrax.risk import (
     InverseConditionalValueAtRisk,
     InverseValueAtRisk,
     ValueAtRisk,
+    BestCase,
+    WorstCase,  
 )
 from hydrax.tasks.pusht_franka import PushTFranka
 from hydrax.utils.files import get_data_path
 
-
+from domain_randomization_utils import compute_randomizations
 """
 Run an interactive simulation of the push-T task with predictive sampling.
 """
 
 
-NUM_SAMPLES = 128
+NUM_SAMPLES = 32
 NUM_RANDOMIZATIONS = 24
 MAX_SPEED = 0.35  # m/s
 
@@ -231,11 +235,72 @@ if not path.exists():
 path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
 
 
-ctrl.init_randomization_model(dr_strategy.get_current_randomizations())
+for i in range(mj_model.nbody):
+    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_BODY, i)
+    print(f"Body {i}: {name}")
+    
+for i in range(mj_model.ngeom):
+    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_GEOM, i)
+    print(f"Geom {i}: {name}")
 
-new_randomizations = dr_strategy.get_current_randomizations()
+for i in range(mj_model.njnt):
+    name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, i)
+    print(f"Joint {i}: {name}")
 
-# print(ctrl.model.dof_damping[:,2])
+
+
+rng = jax.random.PRNGKey(0)
+randomization_dict = {
+    'joints': {
+        "T_z": {
+            "dof_damping": (None, jnp.linspace(0.0, 0.01, NUM_RANDOMIZATIONS)),
+            "dof_frictionloss": (None, jnp.linspace(0.0, 0.01, NUM_RANDOMIZATIONS)),
+        },
+        "T_x": {
+            "dof_damping": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)),
+            "dof_frictionloss": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)),
+        },
+        "T_y": {
+            "dof_damping": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)),
+            "dof_frictionloss": (None, jnp.linspace(0.0, 1.0, NUM_RANDOMIZATIONS)), 
+        },
+    },
+    # 'geoms': {
+    #     'ground': {
+    #         'geom_solimp': (2, jnp.linspace(0.002, 0.3, NUM_RANDOMIZATIONS)),  
+    #         'geom_friction': (0, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)), 
+    #     },
+    # },
+    'bodies': {
+        'block': {
+            'body_mass': (None, jnp.linspace(0.1, 0.5, NUM_RANDOMIZATIONS)),
+        },
+    }
+}
+
+
+
+ctrl.model, randomized_axes = compute_randomizations(
+    ctrl.model,
+    mj_model,
+    randomization_dict,
+)
+ctrl.update_randomized_axes(randomized_axes)
+
+# ! ToDo transform randomizations to matrix for processing (plus metadata dict)
+
+# print(ctrl.model.body_mass.shape)
+# exit(0)
+
+
+
+
+
+
+
+
+
+
 
 
 max_traces = 128

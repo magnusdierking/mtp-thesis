@@ -117,7 +117,7 @@ print("Actuator joint ids:", actuator_jids)
 
 ee_body_id = model.body("ee_frame").id
 goal_quat_ee = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-goal_pos_ee = np.array([0.35, 0.2, 0.045]) #np.array([0.3, 0.0, 0.05])
+goal_pos_ee = np.array([0.42, 0.2, 0.045]) #np.array([0.3, 0.0, 0.05])
 joint_limits = model.jnt_range[actuator_joint_idxs]
 
 # IK loop parameters
@@ -190,18 +190,14 @@ data.qpos[1] = 0.0
 data.qpos[2] = 0.08  # block z position
 angle = 0.0 #np.pi / 2# 30 degrees
 
-quat = euler_to_quaternion(0, 0, angle) # x,y,z,w
-print("Block quaternion (x,y,z,w):", quat[0], quat[1], quat[2], quat[3])
-data.qpos[3:7] = np.array([quat[3], quat[0], quat[1], quat[2]])  # x, y, z, w
-
 
 bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "block")
 print("mass:", model.body_mass[bid])
 print("diaginertia:", model.body_inertia[bid])
 print("inertial quat:", model.body_ipos[bid], model.body_iquat[bid])  # COM + quat
 
-
-mujoco.mj_step(model, data)
+for _ in range(10):
+    mujoco.mj_step(model, data)
 
 step = 0
 scale = 0.8
@@ -249,21 +245,21 @@ with mujoco.viewer.launch_passive(model, data) as v:
         data.ctrl[:] = dq
         step += 1
         
-        truth_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, b"block")
-        truth_quad = data.xquat[truth_id]
-        truth_pos = data.xpos[truth_id]
+        # truth_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, b"block")
+        # truth_quad = data.xquat[truth_id]
+        # truth_pos = data.xpos[truth_id]
         
-        # add noise to all mocap bodies
-        for bid in mocap_T_bids:    
-            noise_pos = np.random.normal(0, 0.1, size=2)
+        # # add noise to all mocap bodies
+        # for bid in mocap_T_bids:    
+        #     noise_pos = np.random.normal(0, 0.1, size=2)
             
             
-            # current mocap pose
-            new_pos = truth_pos.copy()
-            new_pos[:2] += noise_pos
+        #     # current mocap pose
+        #     new_pos = truth_pos.copy()
+        #     new_pos[:2] += noise_pos
 
-            data.mocap_pos[bid] = new_pos
-            data.mocap_quat[bid] = truth_quad
+        #     data.mocap_pos[bid] = new_pos
+        #     data.mocap_quat[bid] = truth_quad
 
         # sys.stdout.write(f"\rQuaternion: {block_quat}, Position: {block_pos} ")
         # sys.stdout.write(f"\rncon: {data.ncon} | nj: {data.nJ} | time: {data.time:.4f}s | ee vel: {vel} ")
