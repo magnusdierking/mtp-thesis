@@ -113,8 +113,8 @@ class FR3_PushT(FrankaPandaServer):
         ##       Move to initial pose     ##    
         ####################################
         # 10-14 seeds
-        self.init_pos = np.array([0.45 + np.random.uniform(-0.03 , 0.03), 
-                                  0.0 + np.random.uniform(-0.03, 0.03),
+        self.init_pos = np.array([0.55 + np.random.uniform(-0.03 , 0.03), 
+                                  -0.05 + np.random.uniform(-0.03, 0.03),
                                   0.045])  
         # 20-24 seeds
         # self.init_pos = np.array([0.5 + np.random.uniform(-0.03 , 0.03), 
@@ -363,14 +363,14 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
 
-        t.transform.translation.x = 1.13100  #1.07658 
-        t.transform.translation.y = -1.26694 #-1.23784
-        t.transform.translation.z = -0.02314  # 0.04381
+        t.transform.translation.x = 1.13157  #1.07658 
+        t.transform.translation.y = -1.26628 #-1.23784
+        t.transform.translation.z = -0.021356  # 0.04381
 
-        t.transform.rotation.x = -0.01394     #-0.01901
-        t.transform.rotation.y = -0.00061     # 0.00215
-        t.transform.rotation.z = 0.99987     # 0.99975
-        t.transform.rotation.w = 0.00784     # -0.01119
+        t.transform.rotation.x = -0.01356     #-0.01901
+        t.transform.rotation.y = -0.00012     # 0.00215
+        t.transform.rotation.z = 0.99988     # 0.99975
+        t.transform.rotation.w = 0.00736     # -0.01119
 
         self.static_tf = t
         self.br.sendTransform(t)
@@ -382,12 +382,12 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.028
-        t.transform.translation.y = 0.0007
-        t.transform.translation.z = -0.027 #-0.025 - 0.002
+        t.transform.translation.x = 0.022
+        t.transform.translation.y = 0.0045
+        t.transform.translation.z = -0.0285 #-0.025 - 0.002
 
         # quat = quaternion_from_euler(-0.05, 0.02, np.pi)
-        quat = quaternion_from_euler(0.0, 0.01, -np.pi)
+        quat = quaternion_from_euler(0.0, -0.02, -np.pi)
 
         t.transform.rotation.x = quat[0]
         t.transform.rotation.y = quat[1]
@@ -680,10 +680,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    seed = 55
+    seed = 5555
     # PS 10
 
-    num_samples = 1024 #512
+    num_samples = 512 #512
     planning_freq = 8  # Hz
 
 
@@ -809,6 +809,6 @@ if __name__ == '__main__':
         finally:
             executor.shutdown()
             path = get_data_path() / "sim-real-free" 
-            controller.save_log(path)
+            # controller.save_log(path)
             controller.destroy_node()
             rclpy.shutdown()
