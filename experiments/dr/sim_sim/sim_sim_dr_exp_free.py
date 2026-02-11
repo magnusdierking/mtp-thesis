@@ -9,7 +9,7 @@ sys.path.append(str(parent_dir))
 from hydrax.algs import MPPI, MTP, CEM, PredictiveSampling
 from an_mtp_dr import AnMTP
 from mujoco import mjx
-from hydrax.utils.files import get_data_path
+from hydrax.utils.files import get_data_path, get_root_path 
 from deterministic_dr_ghost import run_interactive
 
 from hydrax.tasks.pusht_franka import PushTFranka
@@ -23,10 +23,10 @@ from domain_adaptation import UniformDomainRandomization
 import jax
 import jax.numpy as jnp
 from typing import Dict, Optional
-from domain_randomization_utils import compute_randomizations
+from domain_randomization_utils import compute_randomizations, compute_randomizations_with_derived_quantities
 
 
-NUM_SAMPLES = 128
+NUM_SAMPLES = 32
 NUM_RANDOMIZATIONS = 24
 MAX_SPEED = 0.35  # m/s
 
@@ -182,27 +182,6 @@ elif args.algorithm == "ps":
 # Define the model used for simulation
 mj_model, mj_data = task.reset(seed=seed)
 
-print("Using Uniform Domain Randomization.")
-dr_strategy = UniformDomainRandomization(
-    seed=seed,
-    task=task,
-    controller=ctrl,
-    randomized_bodies={#"ground": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
-                    #    "bottom": {"field": "body_mass", "min": [0.1], "max": [5.0], "internal_idx": [0]},
-                    #    "top": {"field": "body_mass", "min": [0.1], "max": [5.0], "internal_idx": [0]},
-                    #    "bottom": {"field": "geom_mass", "min": [0.1], "max": [5.0], "internal_idx": [0]},
-                    #    "ee": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
-                    #    "ground": {"field": "geom_friction", "min": [0.1], "max": [5.0], "internal_idx": [0]},
-                    #  "ground": {"field": "geom_solimp", "min": [0.002], "max": [0.3], "internal_idx": [2]},
-                        # "top": {"field": "geom_solref", "min": [0.1], "max": [3], "internal_idx": [1]},                        
-    },
-    randomized_joints = {},
-    num_randomizations=NUM_RANDOMIZATIONS,
-)
-
-# "bottom": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
-# "top": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
-# "ground": {"field": "geom_friction", "min": [0.0001], "max": [10], "internal_idx": [0]},
 
 path = get_data_path() / "dr_sim"  
 if not path.exists():       
@@ -217,25 +196,104 @@ randomization_dict = {
         'ground': {
             'geom_friction': (0, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)), 
         },
+        # 'bottom': {
+        #     'geom_mass': (0, jnp.linspace(0.01, 1.5, NUM_RANDOMIZATIONS)), 
+        # },
+        # 'top': {
+        #     'geom_mass': (0, jnp.linspace(0.05, 1.0, NUM_RANDOMIZATIONS)),    
+        # },
     },
-    'bodies': {
-        'block': {
-            'body_mass': (None, jnp.linspace(0.1, 0.5, NUM_RANDOMIZATIONS)),
-        },
-    }
+    # 'bodies': {
+    #     'block': {
+    #         'body_mass': (None, jnp.linspace(0.1, 1.5, NUM_RANDOMIZATIONS)),
+    #         # 'body_ipos': (0, jnp.linspace(0.0, 0.08, NUM_RANDOMIZATIONS)),
+    #     },
+    # }
 }
+# print(dir(ctrl.model))
+# sys.exit(0)
+# Define mass values for each geom
+top_masses = jnp.linspace(0.01, 0.35, NUM_RANDOMIZATIONS)
+bottom_masses = jnp.linspace(0.1, 1.0, NUM_RANDOMIZATIONS)
+
+body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
+
+randomized_axes = ["body_mass", 
+                   "body_inertia", 
+                   "body_ipos", 
+                   "body_invweight0",
+                   "dof_invweight0",
+                   "dof_M0",
+                   "dof_armature",
+                   "body_subtreemass",
+                   ]
+
+derived_values = {field: [] for field in randomized_axes}
+
+for top_mass, bottom_mass in zip(top_masses, bottom_masses):
+    spec = mujoco.MjSpec.from_file((get_root_path() / "hydrax" / "models" / "fr3_pushT_vel" / "scene_mjx_free_dr.xml").as_posix())
+    body = spec.body("block")
+    
+    # Set mass for each geom by name
+    for geom in body.geoms:
+        if geom.name == "top":
+            geom.mass = float(top_mass)
+            print(f"Set 'top' geom mass: {top_mass}")
+        elif geom.name == "bottom":
+            geom.mass = float(bottom_mass)
+            print(f"Set 'bottom' geom mass: {bottom_mass}")
+    
+    compiled_model = spec.compile()
+    total_mass = compiled_model.body_mass[body_id]
+    print(f"Compiled body mass (top={top_mass:.3f} + bottom={bottom_mass:.3f}): {total_mass:.3f}")
+    print(f"Compiled inertia: {compiled_model.body_inertia[body_id]}")
+    print(f"Compiled ipos: {compiled_model.body_ipos[body_id]}\n")
+    
+    # Append derived quantities to lists
+    derived_values["body_mass"].append(compiled_model.body_mass)
+    derived_values["body_inertia"].append(compiled_model.body_inertia)
+    derived_values["body_ipos"].append(compiled_model.body_ipos)
+    derived_values["body_invweight0"].append(compiled_model.body_invweight0)
+    derived_values["dof_invweight0"].append(compiled_model.dof_invweight0)
+    derived_values["dof_M0"].append(compiled_model.dof_M0)
+    derived_values["dof_armature"].append(compiled_model.dof_armature)
+    derived_values["body_subtreemass"].append(compiled_model.body_subtreemass)
+
+# Turn all lists in derived_values into arrays
+for field in derived_values:
+    derived_values[field] = jnp.array(derived_values[field])
+
+print("\n=== Final Randomized Values ===")
+for field, values in derived_values.items():
+    print(f"{field} (block body): {values[:, body_id]}")
 
 
-
-ctrl.model, randomized_axes = compute_randomizations(
-    ctrl.model,
-    mj_model,
-    randomization_dict,
-)
 ctrl.update_randomized_axes(randomized_axes)
 
+ctrl.model = ctrl.model.replace(**derived_values)
+
+# ctrl.model, randomized_axes = compute_randomizations(
+#     ctrl.model,
+#     mj_model,
+#     randomization_dict,
+# )
+
+# sys.exit(0)
+
+# ctrl.model, randomized_axes = compute_randomizations_with_derived_quantities(
+#     ctrl.model,
+#     mj_model,
+#     (get_root_path() / "hydrax" / "models" / "fr3_pushT_vel" / "scene_mjx_free_dr.xml").as_posix(),
+#     randomization_dict,
+# )
+
+# ctrl.update_randomized_axes(randomized_axes)
 
 
+# print inertias of ctrl.model
+print(ctrl.model.body_mass.shape)
+print("Inertia difference:", ctrl.model.body_inertia[0] - ctrl.model.body_inertia[-1])
+# sys.exit(0)
 
 
 max_traces = 128
@@ -256,6 +314,6 @@ run_interactive(
     max_step=500,
     seed=seed,
     # log_file=path.as_posix(),
-    dr_strategy = dr_strategy,
+    # dr_strategy = dr_strategy,
     trace_idxs=trace_idxs,
     )

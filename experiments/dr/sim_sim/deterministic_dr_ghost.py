@@ -225,6 +225,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     site_id2 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_2")
     site_id3 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
     site_id4 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_3")
+    site_id5 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "block_site")
 
     # true poses
     old_observation1 = np.concatenate(
@@ -238,6 +239,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     )
     old_observation4 = np.concatenate(
         (np.array(mj_data.site_xpos[site_id4]), np.array(mat2quat(mj_data.site_xmat[site_id4])))
+    )
+    old_observation5 = np.concatenate(
+        (np.array(mj_data.site_xpos[site_id5]), np.array(mat2quat(mj_data.site_xmat[site_id5])))
     )
 
     sites_of_interest = policy_params.predicted_state
@@ -350,39 +354,53 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 ),
                 axis=-1,
             )
+            
+            new_observation5 = jnp.concatenate(
+                (
+                    jnp.array(mj_data.site_xpos[site_id5]),
+                    jnp.array(mat2quat(mj_data.site_xmat[site_id5])),
+                ),
+                axis=-1,
+            )
 
             # check if any change in observation
-            if np.allclose(np.array(new_observation1), old_observation1, atol=1e-2) and np.allclose(
-                np.array(new_observation2), old_observation2, atol=1e-2
-            ):
+            if np.allclose(np.array(new_observation5), old_observation5, atol=1e-2):
                 # no change, skip update
                 print("No change in T observation, skipping DR update.")
 
             else:
                 old_observation1 = new_observation1
                 old_observation2 = new_observation2
+                old_observation3 = new_observation3
+                old_observation4 = new_observation4
+                old_observation5 = new_observation5
 
-                distance_1 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                    sites_of_interest[..., 0, :], new_observation1
-                )
-                distance_2 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                    sites_of_interest[..., 1, :], new_observation2
-                )
-                # ee
-                distance_3 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                    sites_of_interest[..., 2, :], new_observation3
-                )
-                distance_4 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                    sites_of_interest[..., 3, :], new_observation4
-                )
-                distances = distance_1 + distance_2 + distance_4
+                # distance_1 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
+                #     sites_of_interest[..., 0, :], new_observation1
+                # )
+                # distance_2 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
+                #     sites_of_interest[..., 1, :], new_observation2
+                # )
+                # # ee
+                # distance_3 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
+                #     sites_of_interest[..., 2, :], new_observation3
+                # )
+                # distance_4 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
+                #     sites_of_interest[..., 3, :], new_observation4
+                # )
+                # distances = distance_1 + distance_2 + distance_4
+                distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
+                    sites_of_interest[..., 4, :], new_observation5
+                )  # (domains,)
 
                 #! post process distances
                 # normalize distances to [0, 1]
+                cost_range = jnp.max(distances) - jnp.min(distances)
                 distances = (distances - jnp.min(distances)) / (
-                    jnp.max(distances) - jnp.min(distances) + 1e-12
+                    cost_range + 1e-12
                 )
                 distances = jnp.clip(distances, 0.0, 1.0)
+                # print("Normalized distances:", distances)
 
                 max_distance = jnp.max(distances)
                 if not jnp.isfinite(max_distance):
@@ -391,9 +409,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 distances = np.array(distances)
 
                 # probabilities via softmax
-                temperature = np.std(distances) + 1e-12
+                temperature = 0.1 #cost_range / np.log(len(distances)) 
                 probs = np.exp(-distances / temperature)  # temperature scaling
                 probs = probs / (np.sum(probs) + 1e-12)
+                # print("Domain probabilities before update:", probs)
                 entropy = -np.sum(probs * np.log(probs + 1e-12))
                 # print("Domain distribution entropy:", entropy)
                 max_entropy = jnp.log(len(probs) + 1e-12)
@@ -404,9 +423,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 new_probs = (
                     1 - normalized_entropy
                 ) * probs + normalized_entropy * policy_params.domain_weights
-                print("normalized entropy:", normalized_entropy)
-                print("Updated domain probabilities:", new_probs)
+                # print("normalized entropy:", normalized_entropy)
+                # print("Updated domain probabilities:", new_probs)
                 policy_params = policy_params.replace(domain_weights=jnp.array(new_probs))
+                print("Updated domain weights:", policy_params.domain_weights)
 
                 # !-------------------------------------------
 

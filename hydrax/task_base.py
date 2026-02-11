@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Sequence, Optional
+import time
 
 import jax
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
 import numpy as np
+
 
 
 class Task(ABC):
@@ -49,7 +51,12 @@ class Task(ABC):
         """
         assert isinstance(mj_model, mujoco.MjModel)
         self.mj_model = mj_model
+        old_time = time.time()
+        
         self.model = mjx.put_model(mj_model)
+        new_time = time.time()
+        print(f"Time to convert model to mjx: {new_time - old_time:.4f} seconds")
+        
         self.planning_horizon = planning_horizon
         self.sim_steps_per_control_step = sim_steps_per_control_step
         
