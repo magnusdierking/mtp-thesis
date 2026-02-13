@@ -6,25 +6,32 @@ import mujoco
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
-from hydrax.algs import MPPI, MTP, CEM, PredictiveSampling
-from an_mtp_dr import AnMTP
-from mujoco import mjx
-from hydrax.utils.files import get_data_path, get_root_path 
-from deterministic_dr_ghost import run_interactive
-
-from hydrax.tasks.pusht_franka import PushTFranka
-import jax.numpy as jnp
-import numpy as np
-
-from hydrax.risk import RiskStrategy, ExpectedCost, AverageCost, ValueAtRisk, ConditionalValueAtRisk,InverseValueAtRisk, InverseConditionalValueAtRisk
-from domain_adaptation import UniformDomainRandomization
-
+from typing import Dict, Optional
 
 import jax
 import jax.numpy as jnp
-from typing import Dict, Optional
-from domain_randomization_utils import compute_randomizations, compute_randomizations_with_derived_quantities
+import numpy as np
+from an_mtp_dr import AnMTP
+from deterministic_dr_ghost import run_interactive
+from domain_adaptation import UniformDomainRandomization
+from domain_randomization_utils import (
+    compute_randomizations,
+    compute_randomizations_with_derived_quantities,
+)
+from mujoco import mjx
 
+from hydrax.algs import CEM, MPPI, MTP, PredictiveSampling
+from hydrax.risk import (
+    AverageCost,
+    ConditionalValueAtRisk,
+    ExpectedCost,
+    InverseConditionalValueAtRisk,
+    InverseValueAtRisk,
+    RiskStrategy,
+    ValueAtRisk,
+)
+from hydrax.tasks.pusht_franka import PushTFranka
+from hydrax.utils.files import get_data_path, get_root_path
 
 NUM_SAMPLES = 32
 NUM_RANDOMIZATIONS = 24
