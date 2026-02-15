@@ -10,7 +10,6 @@ import numpy as np
 import rclpy
 from scipy.spatial.transform import Rotation as R
 
-from experiments.dr.sim_sim.sim_sim_dr_exp_free import NUM_RANDOMIZATIONS
 from hydrax.algs import CEM, MPPI, MTP, PredictiveSampling
 from hydrax.risk import (
     AverageCost,
@@ -22,6 +21,8 @@ from hydrax.risk import (
 )
 from hydrax.tasks.pusht_franka import PushTFranka
 from hydrax.utils.files import get_data_path
+from hydrax.utils.utils import mat2quat, quat_error_body, se3_left_invariant_metric
+
 
 jax.config.update("jax_platform_name", "gpu")
 import jax.numpy as jnp
@@ -175,7 +176,7 @@ class FR3_PushT(FrankaPandaServer):
         #! mj_model on CPU
         #! model on GPu
         # Create mjx_data on host,  push to device
-        self._domain_randomize_mjx_model()
+        
         self.mjx_data = mjx.make_data(self.ctrl.model)
         self.policy_params = self.ctrl.init_params(seed)
 
@@ -199,6 +200,9 @@ class FR3_PushT(FrankaPandaServer):
 
         # Do a forward once (host side is fine here)
         self.mjx_data = mjx.forward(self.ctrl.model, self.mjx_data)
+        
+        # add domain randomization
+        self._domain_randomize_mjx_model()
         self.dt = self.debug_model.opt.timestep
 
         # Make unified jitted step function
@@ -239,8 +243,12 @@ class FR3_PushT(FrankaPandaServer):
         ).compile()
 
         # warmstart simulation
-        for _ in range(5):
-            self.mjx_data = mjx.step(self.ctrl.model, self.mjx_data)
+        # for _ in range(5):
+        #     self.mjx_data = jax.vmap(
+        #         mjx.forward,
+        #         in_axes=(self.ctrl.randomized_axes, None)
+        #     )(self.ctrl.model, self.mjx_data)
+            # self.mjx_data = mjx.step(self.ctrl.model, self.mjx_data)
         # warmstart controller
         for _ in range(1):
             self.mjx_data, self.policy_params, _ = self.jit_step(
@@ -279,13 +287,18 @@ class FR3_PushT(FrankaPandaServer):
         self.finished_task = False
         self.servo_freq = 30  # Hz
         self.plan_freq = planning_freq  # Hz ! needs to be lower than max (GIL)
-        self.action = None
         self.actions = None
+        self.predicted_states = None
+        self.domain_weights = None
+        self.action = None
+
+        self.mocap_T_bids = controller.task.get_mocap_T_bids()
 
         self.sim_group = MutuallyExclusiveCallbackGroup()
 
         self.start_time = self.get_clock().now().nanoseconds / 1e9
         self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
+
         self.create_timer(
             1.0 / self.plan_freq, self._run_controller, callback_group=self.sim_group
         )
@@ -297,6 +310,10 @@ class FR3_PushT(FrankaPandaServer):
         )
         self.run_time_sec = run_time_sec
         self.create_timer(self.run_time_sec, self._timeout_callback)
+
+
+
+
 
     def _domain_randomize_mjx_model(self):
         top_masses = jnp.linspace(0.01, 0.35, self.ctrl.num_randomizations)
@@ -318,7 +335,7 @@ class FR3_PushT(FrankaPandaServer):
             "body_invweight0",
             "dof_invweight0",
             "dof_M0",
-            "dof_armature",
+            # "dof_armature",
             "body_subtreemass",
         ]
 
@@ -360,7 +377,7 @@ class FR3_PushT(FrankaPandaServer):
             derived_values["body_invweight0"].append(compiled_model.body_invweight0)
             derived_values["dof_invweight0"].append(compiled_model.dof_invweight0)
             derived_values["dof_M0"].append(compiled_model.dof_M0)
-            derived_values["dof_armature"].append(compiled_model.dof_armature)
+            # derived_values["dof_armature"].append(compiled_model.dof_armature)
             derived_values["body_subtreemass"].append(compiled_model.body_subtreemass)
 
         # Turn all lists in derived_values into arrays
@@ -463,14 +480,14 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = "fr3_link0"
         t.child_frame_id = "optitrack"
 
-        t.transform.translation.x = 1.13157  # 1.07658
-        t.transform.translation.y = -1.26628  # -1.23784
-        t.transform.translation.z = -0.021356  # 0.04381
+        t.transform.translation.x = 1.11564  #1.07658 
+        t.transform.translation.y = -1.26901 #-1.23784
+        t.transform.translation.z = -0.0264  # 0.04381
 
-        t.transform.rotation.x = -0.01356  # -0.01901
-        t.transform.rotation.y = -0.00012  # 0.00215
-        t.transform.rotation.z = 0.99988  # 0.99975
-        t.transform.rotation.w = 0.00736  # -0.01119
+        t.transform.rotation.x = -0.01411     #-0.01901
+        t.transform.rotation.y = -0.00319     # 0.00215
+        t.transform.rotation.z = 0.99984     # 0.99975
+        t.transform.rotation.w = 0.01083     # -0.01119
 
         self.static_tf = t
         self.br.sendTransform(t)
@@ -482,9 +499,9 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = "objectPushT"
         t.child_frame_id = "objectPushT_MuJoCo"
 
-        t.transform.translation.x = 0.022
-        t.transform.translation.y = 0.0045
-        t.transform.translation.z = -0.0285  # -0.025 - 0.002
+        t.transform.translation.x = 0.02075
+        t.transform.translation.y = -0.011
+        t.transform.translation.z = -0.0285
 
         # quat = quaternion_from_euler(-0.05, 0.02, np.pi)
         quat = quaternion_from_euler(0.0, -0.02, -np.pi)
@@ -508,7 +525,11 @@ class FR3_PushT(FrankaPandaServer):
                 mocap_quat=jnp.array(mocap_quat),
                 time=curr_time,
             )
-            mjx_data = mjx.forward(self.ctrl.model, mjx_data)
+            # vmapped_forward = jax.vmap(
+            #     mjx.forward,
+            #     in_axes=(self.ctrl.randomized_axes, None)
+            # )
+            # mjx_data = vmapped_forward(self.ctrl.model, mjx_data)
             planning_data = mjx_data
 
             # --- on device ---
@@ -624,6 +645,30 @@ class FR3_PushT(FrankaPandaServer):
         self.debug_data.qvel[6:13] = self.robot_dq
         self.debug_data.time = current_time
 
+        # Domain Randomization - compare actual observation to predictions
+        if self.predicted_states is not None:
+            # observation of T state over domains
+            ref_site = self.predicted_states[
+                :, -1, ...
+            ]  # (domains, 7)
+            for bid, idx in zip(self.mocap_T_bids, range(len(self.mocap_T_bids)), strict=True):
+                self.debug_data.mocap_pos[bid] = ref_site[idx, :3]
+                self.debug_data.mocap_quat[bid] = ref_site[idx, 3:]
+                # print(f"Setting mocap bid {bid} to {ref_site[idx, :3]}, {ref_site[idx, 3:]}")
+            # rest of mocap copies T
+            if len(self.mocap_T_bids) < 24:
+                bid = mujoco.mj_name2id(self.debug_model, mujoco.mjtObj.mjOBJ_BODY, "block")
+                for bid in range(len(self.mocap_T_bids), 24):
+                    self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
+                    self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
+            
+            # compute error to actual observtion
+            current_obs = np.array(self.debug_data.qpos[:7], dtype=np.float32)
+            distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
+                        self.predicted_states[..., 4, :], current_obs
+                    )
+
+
         # update sites etc.
         # mujoco.mj_forward(self.debug_model, self.debug_data)
         mujoco.mj_step(self.debug_model, self.debug_data)
@@ -640,24 +685,18 @@ class FR3_PushT(FrankaPandaServer):
         )
         # self.action = self.ctrl.get_action(self.policy_params, 0.0)
         self.actions = np.array(self.policy_params.spline)
-        self.predicted_states = np.array(self.policy_params.predicted_states)
+        self.predicted_states = np.array(self.policy_params.predicted_state)
         self.domain_weights = np.array(self.policy_params.domain_weights)
-
         self.action = self.actions[0]
         t2 = time.time()
 
-        # linear_error = np.linalg.norm(self.ctrl.task._get_position_err(self.debug_data))
-        # rotation_error = np.linalg.norm(self.ctrl.task._get_orientation_err(self.debug_data))
-        # goal_error = 30 * np.square(linear_error) + 3 * rotation_error
-        # test = self.ctrl.task._get_ee_block_distance(self.debug_data)
-        # self.get_logger().info(f"EE-Block distance: {test:.4f} m")
         terminal_error = self.ctrl.task.running_cost(self.debug_data)
         ee_position = self.ctrl.task._get_ee_position(self.debug_data)
 
         self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
         self.ctr += 1
 
-        self.get_logger().info(f"Step {self.ctr}: Terminal error: {terminal_error:.4f}")
+        self.get_logger().info(f"Step {self.ctr}: Domains error: {distances:.4f}")
 
         self.log.append(
             {
@@ -712,6 +751,7 @@ class FR3_PushT(FrankaPandaServer):
         if not self.teleop_enabled:
             vx = 1.0 * float(self.action[0])
             vy = 1.0 * float(self.action[1])
+            self.get_logger().info(f"SMPC action: vx={vx:.3f}, vy={vy:.3f}")
             # self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
             self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
 
@@ -896,7 +936,7 @@ if __name__ == "__main__":
             risk_strategy=aggregation,
         )
 
-    model = task.mj_model
+    model = task.mj_model # CPU model
     data = mujoco.MjData(model)
 
     with mujoco.viewer.launch_passive(model, data) as v:

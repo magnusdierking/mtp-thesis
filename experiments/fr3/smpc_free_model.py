@@ -363,14 +363,14 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'fr3_link0'
         t.child_frame_id = 'optitrack'
 
-        t.transform.translation.x = 1.13157  #1.07658 
-        t.transform.translation.y = -1.26628 #-1.23784
-        t.transform.translation.z = -0.021356  # 0.04381
+        t.transform.translation.x = 1.11564   # 1.07658 
+        t.transform.translation.y = -1.26901  #-1.23784
+        t.transform.translation.z = -0.0264   # 0.04381
 
-        t.transform.rotation.x = -0.01356     #-0.01901
-        t.transform.rotation.y = -0.00012     # 0.00215
-        t.transform.rotation.z = 0.99988     # 0.99975
-        t.transform.rotation.w = 0.00736     # -0.01119
+        t.transform.rotation.x = -0.01411     #-0.01901
+        t.transform.rotation.y = -0.00319     # 0.00215
+        t.transform.rotation.z = 0.99984      # 0.99975
+        t.transform.rotation.w = 0.01083      #-0.01119
 
         self.static_tf = t
         self.br.sendTransform(t)
@@ -382,9 +382,9 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.022
-        t.transform.translation.y = 0.0045
-        t.transform.translation.z = -0.0285 #-0.025 - 0.002
+        t.transform.translation.x = 0.02075
+        t.transform.translation.y = -0.011
+        t.transform.translation.z = -0.0285 
 
         # quat = quaternion_from_euler(-0.05, 0.02, np.pi)
         quat = quaternion_from_euler(0.0, -0.02, -np.pi)
