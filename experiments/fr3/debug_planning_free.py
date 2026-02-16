@@ -195,6 +195,7 @@ class FR3_PushT(FrankaPandaServer):
         ####################################
         self._key_lock = threading.Lock()
         self.teleop_enabled = False 
+        self.velocity = 0.2
         self._key_vx = 0.0
         self._key_vy = 0.0
         self._key_entered = False
@@ -212,7 +213,7 @@ class FR3_PushT(FrankaPandaServer):
         self.ctr = 0
 
         self.finished_task = False
-        self.servo_freq = 30  # Hz
+        self.servo_freq = 50  # Hz
         self.plan_freq = planning_freq    # Hz ! needs to be lower than max (GIL)
         self.action = None
         self.actions = None
@@ -255,13 +256,13 @@ class FR3_PushT(FrankaPandaServer):
                 key_entered = False
 
                 if key == keyboard.Key.up:
-                    vx = 0.1
+                    vx = self.velocity
                 elif key == keyboard.Key.down:
-                    vx = -0.1
+                    vx = -self.velocity
                 elif key == keyboard.Key.left:
-                    vy = +0.1
+                    vy = +self.velocity
                 elif key == keyboard.Key.right:
-                    vy = -0.1
+                    vy = -self.velocity
                 elif key == keyboard.Key.space:
                     key_entered = True
                 else:
@@ -330,8 +331,8 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.02075
-        t.transform.translation.y = -0.011
+        t.transform.translation.x = 0.0
+        t.transform.translation.y = 0.0
         t.transform.translation.z = -0.0285 #-0.025 - 0.002
 
         # quat = quaternion_from_euler(-0.05, 0.02, np.pi)
@@ -496,6 +497,7 @@ class FR3_PushT(FrankaPandaServer):
                 vx = 0.0
                 vy = 0.0
             self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+            self.get_logger().info(f"Teleop command: vx={vx:.3f}, vy={vy:.3f}, teleop_enabled={self.teleop_enabled}")
     
 
     def _states_received(self):
@@ -542,7 +544,7 @@ if __name__ == '__main__':
                                 "u_max": jnp.array([max_speed, max_speed])},
                 actuation_type='velocity',
                 sampling_space="velocity",
-                block_type = 'free',
+                block_type = 'dr-free',
             )
     
     # Parse command-line arguments

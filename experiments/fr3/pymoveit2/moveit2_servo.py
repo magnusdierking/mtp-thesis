@@ -195,18 +195,18 @@ class MoveIt2Servo:
         Input is scaled by `linear_speed` and `angular_speed`, respectively.
         """
 
-        if not self.is_enabled:
-            self._node.get_logger().warn(
-                "Command failed because MoveIt Servo is not yet enabled."
-            )
-            if enable_if_disabled:
-                self._node.get_logger().warn(
-                    f"Calling '{self.__start_service.srv_name}' service to enable MoveIt Servo..."
-                )
-                if not self.enable():
-                    return
-            else:
-                return
+        # if not self.is_enabled:
+        #     self._node.get_logger().warn(
+        #         "Command failed because MoveIt Servo is not yet enabled."
+        #     )
+        #     if enable_if_disabled:
+        #         self._node.get_logger().warn(
+        #             f"Calling '{self.__start_service.srv_name}' service to enable MoveIt Servo..."
+        #         )
+        #         if not self.enable():
+        #             return
+        #     else:
+        #         return
 
         twist_msg = deepcopy(self.__twist_msg)
         twist_msg.header.stamp = self._node.get_clock().now().to_msg()

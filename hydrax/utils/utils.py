@@ -76,7 +76,7 @@ def euler_to_quaternion(roll, pitch, yaw):
 
 
 # SE3 left invariant metric
-def se3_left_invariant_metric(p1, p2, rot_weight=1.0, trans_weight=100.0):
+def se3_left_invariant_metric(p1, p2, rot_weight=1.0, trans_weight=1.0):
     """Compute left-invariant metric between two SE(3) poses.
 
     Args:

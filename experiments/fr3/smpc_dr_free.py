@@ -9,6 +9,7 @@ import jax
 import numpy as np
 import rclpy
 from scipy.spatial.transform import Rotation as R
+from collections import deque
 
 from hydrax.algs import CEM, MPPI, MTP, PredictiveSampling
 from hydrax.risk import (
@@ -288,11 +289,12 @@ class FR3_PushT(FrankaPandaServer):
         self.servo_freq = 30  # Hz
         self.plan_freq = planning_freq  # Hz ! needs to be lower than max (GIL)
         self.actions = None
+        self.action = None
         self.predicted_states = None
         self.domain_weights = None
-        self.action = None
+        self.signal_queue = deque(maxlen=10)
 
-        self.mocap_T_bids = controller.task.get_mocap_T_bids()
+        self.mocap_T_bids = self.ctrl.task.get_mocap_T_bids()
 
         self.sim_group = MutuallyExclusiveCallbackGroup()
 
@@ -316,8 +318,8 @@ class FR3_PushT(FrankaPandaServer):
 
 
     def _domain_randomize_mjx_model(self):
-        top_masses = jnp.linspace(0.01, 0.35, self.ctrl.num_randomizations)
-        bottom_masses = jnp.linspace(0.1, 1.0, self.ctrl.num_randomizations)
+        top_masses = jnp.linspace(0.05, 0.015, self.ctrl.num_randomizations)
+        bottom_masses = jnp.linspace(0.05, 0.015, self.ctrl.num_randomizations)
 
         self.randomization_matrix = jnp.array(
             [
@@ -335,7 +337,7 @@ class FR3_PushT(FrankaPandaServer):
             "body_invweight0",
             "dof_invweight0",
             "dof_M0",
-            # "dof_armature",
+            "dof_armature",
             "body_subtreemass",
         ]
 
@@ -377,7 +379,7 @@ class FR3_PushT(FrankaPandaServer):
             derived_values["body_invweight0"].append(compiled_model.body_invweight0)
             derived_values["dof_invweight0"].append(compiled_model.dof_invweight0)
             derived_values["dof_M0"].append(compiled_model.dof_M0)
-            # derived_values["dof_armature"].append(compiled_model.dof_armature)
+            derived_values["dof_armature"].append(compiled_model.dof_armature)
             derived_values["body_subtreemass"].append(compiled_model.body_subtreemass)
 
         # Turn all lists in derived_values into arrays
@@ -651,7 +653,8 @@ class FR3_PushT(FrankaPandaServer):
             ref_site = self.predicted_states[
                 :, -1, ...
             ]  # (domains, 7)
-            for bid, idx in zip(self.mocap_T_bids, range(len(self.mocap_T_bids)), strict=True):
+            mocap_T_bids = self.mocap_T_bids[:self.ctrl.num_randomizations]
+            for bid, idx in zip(mocap_T_bids, range(len(mocap_T_bids)), strict=True):
                 self.debug_data.mocap_pos[bid] = ref_site[idx, :3]
                 self.debug_data.mocap_quat[bid] = ref_site[idx, 3:]
                 # print(f"Setting mocap bid {bid} to {ref_site[idx, :3]}, {ref_site[idx, 3:]}")
@@ -667,10 +670,8 @@ class FR3_PushT(FrankaPandaServer):
             distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
                         self.predicted_states[..., 4, :], current_obs
                     )
+            self.get_logger().info(f"Step {self.ctr}: Domains error: {distances}")
 
-
-        # update sites etc.
-        # mujoco.mj_forward(self.debug_model, self.debug_data)
         mujoco.mj_step(self.debug_model, self.debug_data)
 
         t1 = time.time()
@@ -696,7 +697,6 @@ class FR3_PushT(FrankaPandaServer):
         self.last_planning_time = self.get_clock().now().nanoseconds / 1e9
         self.ctr += 1
 
-        self.get_logger().info(f"Step {self.ctr}: Domains error: {distances:.4f}")
 
         self.log.append(
             {
@@ -748,12 +748,14 @@ class FR3_PushT(FrankaPandaServer):
         if self.shutdown_flag.is_set():
             self._timeout_callback()
             return
-        if not self.teleop_enabled:
-            vx = 1.0 * float(self.action[0])
-            vy = 1.0 * float(self.action[1])
-            self.get_logger().info(f"SMPC action: vx={vx:.3f}, vy={vy:.3f}")
-            # self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
-            self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+        if not self.teleop_enabled and self.action is not None:
+            delta_t = self.get_clock().now().nanoseconds / 1e9 - self.last_planning_time
+            idx = int(delta_t / self.ctrl.task.dt)
+            vx = 1.0 * float(self.actions[idx, 0])  
+            vy = 1.0 * float(self.actions[idx, 1])
+            self.get_logger().info(f"SMPC action: idx={idx}, vx={vx:.3f}, vy={vy:.3f}")
+            # self.servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
+            self.servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
 
         else:
             with self._key_lock:
@@ -813,7 +815,7 @@ if __name__ == "__main__":
     seed = 5555
     # PS 10
 
-    num_samples = 200  # 512
+    num_samples = 128  # 512
     NUM_RANDOMIZATIONS = 10
     planning_freq = 5  # Hz
 
@@ -856,6 +858,7 @@ if __name__ == "__main__":
             "u_min": jnp.array([-max_speed, -max_speed]),
             "u_max": jnp.array([max_speed, max_speed]),
         },
+        trace_sites=["T_1", "T_2","ee_site", "T_3", "block_site"],
         actuation_type="velocity",
         sampling_space="velocity",
         block_type="dr-free",
