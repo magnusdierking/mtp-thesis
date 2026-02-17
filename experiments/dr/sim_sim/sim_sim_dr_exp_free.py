@@ -34,8 +34,8 @@ from hydrax.risk import (
 from hydrax.tasks.pusht_franka import PushTFranka
 from hydrax.utils.files import get_data_path, get_root_path
 
-NUM_SAMPLES = 32
-NUM_RANDOMIZATIONS = 24
+NUM_SAMPLES = 128
+NUM_RANDOMIZATIONS = 10
 MAX_SPEED = 0.35  # m/s
 
 seed = 42
@@ -46,10 +46,12 @@ sigma_start = 0.2
 
 
 det_init = {
-    "block_pos_x": 0.6,
-    "block_pos_y": 0.1,
-    "block_angle": 6 * np.pi / 5,
-    "ee_goal_pos": [0.5, -0.1, 0.035],
+    "block_pos_x": 0.6 + np.random.uniform(-0.05, 0.05),
+    "block_pos_y": 0.1 + np.random.uniform(-0.05, 0.05),
+    "block_angle": 6 * np.pi / 5 + np.random.uniform(-0.2, 0.2),
+    "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
+                    -0.1 + np.random.uniform(-0.05, 0.05), 
+                    0.035],
 }
 
 
@@ -197,36 +199,36 @@ elif args.algorithm == "ps":
 mj_model, mj_data = task.reset(seed=seed)
 
 
-path = get_data_path() / "dr_sim"
+path = get_data_path() / "dr_sim_sim"
 if not path.exists():
     path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
+path = path / f"seed_{seed}_{args.algorithm}_{args.risk}"
 
 
-randomization_dict = {
-    "geoms": {
-        "ground": {
-            "geom_friction": (0, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)),
-        },
+# randomization_dict = {
+#     "geoms": {
+#         "ground": {
+#             "geom_friction": (0, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)),
+#         },
         # 'bottom': {
         #     'geom_mass': (0, jnp.linspace(0.01, 1.5, NUM_RANDOMIZATIONS)),
         # },
         # 'top': {
         #     'geom_mass': (0, jnp.linspace(0.05, 1.0, NUM_RANDOMIZATIONS)),
         # },
-    },
+    # },
     # 'bodies': {
     #     'block': {
     #         'body_mass': (None, jnp.linspace(0.1, 1.5, NUM_RANDOMIZATIONS)),
     #         # 'body_ipos': (0, jnp.linspace(0.0, 0.08, NUM_RANDOMIZATIONS)),
     #     },
     # }
-}
+# }
 # print(dir(ctrl.model))
 # sys.exit(0)
 # Define mass values for each geom
-top_masses = jnp.linspace(0.1, 0.11, NUM_RANDOMIZATIONS)
-bottom_masses = jnp.linspace(0.01, 0.5, NUM_RANDOMIZATIONS)
+top_masses = jnp.linspace(0.01, 0.3, NUM_RANDOMIZATIONS)
+bottom_masses = jnp.linspace(0.25, 0.25, NUM_RANDOMIZATIONS)
 
 body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
 
@@ -257,7 +259,7 @@ for top_mass, bottom_mass in zip(top_masses, bottom_masses):
 
     # Set mass for each geom by name
     for geom in body.geoms:
-        if geom.name == "top":
+        if geom.name == "top_left":
             geom.mass = float(top_mass)
             print(f"Set 'top' geom mass: {top_mass}")
         elif geom.name == "bottom":
@@ -270,7 +272,7 @@ for top_mass, bottom_mass in zip(top_masses, bottom_masses):
         f"Compiled body mass (top={top_mass:.3f} + bottom={bottom_mass:.3f}): {total_mass:.3f}"
     )
     print(f"Compiled inertia: {compiled_model.body_inertia[body_id]}")
-    print(f"Compiled ipos: {compiled_model.body_ipos[body_id]}\n")
+    # print(f"Compiled ipos: {compiled_model.body_ipos[body_id]}\n")
 
     # Append derived quantities to lists
     derived_values["body_mass"].append(compiled_model.body_mass)
@@ -286,29 +288,14 @@ for top_mass, bottom_mass in zip(top_masses, bottom_masses):
 for field in derived_values:
     derived_values[field] = jnp.array(derived_values[field])
 
-print("\n=== Final Randomized Values ===")
-for field, values in derived_values.items():
-    print(f"{field} (block body): {values[:, body_id]}")
+# print("\n=== Final Randomized Values ===")
+# for field, values in derived_values.items():
+#     print(f"{field} (block body): {values[:, body_id]}")
 
 
 ctrl.update_randomized_axes(randomized_axes)
 
 ctrl.model = ctrl.model.replace(**derived_values)
-
-# ctrl.model, randomized_axes = compute_randomizations(
-#     ctrl.model,
-#     mj_model,
-#     randomization_dict,
-# )
-
-# sys.exit(0)
-
-# ctrl.model, randomized_axes = compute_randomizations_with_derived_quantities(
-#     ctrl.model,
-#     mj_model,
-#     (get_root_path() / "hydrax" / "models" / "fr3_pushT_vel" / "scene_mjx_free_dr.xml").as_posix(),
-#     randomization_dict,
-# )
 
 
 max_traces = 128
@@ -330,7 +317,6 @@ run_interactive(
     record_video=False,
     max_step=500,
     seed=seed,
-    # log_file=path.as_posix(),
-    # dr_strategy = dr_strategy,
+    log_file=path.as_posix(),
     trace_idxs=trace_idxs,
 )

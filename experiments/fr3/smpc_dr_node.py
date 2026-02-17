@@ -107,7 +107,7 @@ class SMPCPlannerNode(FrankaPandaServer):
         planning_freq=10,
         run_time_sec=60.0,
     ):
-        super().__init__(robot_ip, None)
+        super().__init__(robot_ip=robot_ip, gripper_type=None)
         self.get_logger().info("Initializing SMPC Planner Node …")
 
         self.ctrl = ctrl
@@ -115,6 +115,9 @@ class SMPCPlannerNode(FrankaPandaServer):
         self.debug_model = debug_model
         self.debug_data = debug_data
         self.viewer = viewer
+
+        # wait for node to initialize in the background
+        time.sleep(1.0) 
 
         # ---- MoveIt safety constraints ----
         self.add_collision_primitive(
@@ -150,7 +153,7 @@ class SMPCPlannerNode(FrankaPandaServer):
         self.init_pos = np.array(
             [
                 0.55 + np.random.uniform(-0.03, 0.03),
-                -0.05 + np.random.uniform(-0.03, 0.03),
+                -0.1 + np.random.uniform(-0.03, 0.03),
                 0.045,
             ]
         )
@@ -312,8 +315,8 @@ class SMPCPlannerNode(FrankaPandaServer):
     # ------------------------------------------------------------------
 
     def _domain_randomize_mjx_model(self):
-        top_masses = jnp.linspace(0.01, 0.35, self.ctrl.num_randomizations)
-        bottom_masses = jnp.linspace(0.1, 1.0, self.ctrl.num_randomizations)
+        top_masses = jnp.linspace(0.1, 0.11, self.ctrl.num_randomizations)
+        bottom_masses = jnp.linspace(0.01, 0.5, self.ctrl.num_randomizations)
 
         self.randomization_matrix = jnp.array([top_masses, bottom_masses])
 
@@ -389,10 +392,10 @@ class SMPCPlannerNode(FrankaPandaServer):
         t2.header.stamp = self.get_clock().now().to_msg()
         t2.header.frame_id = "objectPushT"
         t2.child_frame_id = "objectPushT_MuJoCo"
-        t2.transform.translation.x = 0.02075
-        t2.transform.translation.y = -0.011
-        t2.transform.translation.z = -0.0285
-        quat = quaternion_from_euler(0.0, -0.02, -np.pi)
+        t2.transform.translation.x = 0.034
+        t2.transform.translation.y = 0.007
+        t2.transform.translation.z = -0.031 
+        quat = quaternion_from_euler(0.0, 0.02, -np.pi)
         t2.transform.rotation.x = quat[0]
         t2.transform.rotation.y = quat[1]
         t2.transform.rotation.z = quat[2]
@@ -521,6 +524,7 @@ class SMPCPlannerNode(FrankaPandaServer):
         flat = actions.flatten().tolist()
         msg.data = [float(dt)] + flat
         self.spline_pub.publish(msg)
+        # self.get_logger().info(f"Published new spline with actions={actions}")
 
     # ------------------------------------------------------------------
     #  Planning loop (dedicated thread)
@@ -585,6 +589,7 @@ class SMPCPlannerNode(FrankaPandaServer):
         )
 
         # 4 — ghost mocap from previous predictions
+        distances = np.zeros(self.ctrl.num_randomizations, dtype=np.float32)
         if self.predicted_states is not None:
             ref_site = self.predicted_states[:, -1, ...]  # (domains, 7)
             mocap_bids = self.mocap_T_bids[: self.ctrl.num_randomizations]
@@ -640,6 +645,7 @@ class SMPCPlannerNode(FrankaPandaServer):
                 "terminal_error": float(terminal_error),
                 "action": actions[0].tolist(),
                 "block_vel": block_vel.tolist(),
+                "distances": distances.tolist(),
             }
         )
 
@@ -887,7 +893,7 @@ if __name__ == "__main__":
         finally:
             node.shutdown_flag.set()
             executor.shutdown()
-            path = get_data_path() / "sim-real-free"
-            # node.save_log(path)
+            path = get_data_path() / "dr-real"
+            node.save_log(path)
             node.destroy_node()
             rclpy.shutdown()

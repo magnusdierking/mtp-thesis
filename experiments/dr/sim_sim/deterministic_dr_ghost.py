@@ -420,9 +420,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
                     sites_of_interest[..., 4, :], new_observation5
                 )  # (domains,)
-                bandwidth = jnp.median(distances)
-                test = jnp.exp(-distances / bandwidth)
-                print("Test:", test)
+                # bandwidth = jnp.median(distances)
+                # test = jnp.exp(-distances / bandwidth)
+                # print("Test:", test)
                 #! post process distances
                 # normalize distances to [0, 1]
                 cost_range = jnp.max(distances) - jnp.min(distances)
@@ -453,10 +453,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 ) * probs + normalized_entropy * policy_params.domain_weights
                 # print("normalized entropy:", normalized_entropy)
                 # print("Updated domain probabilities:", new_probs)
-                # policy_params = policy_params.replace(
-                #     domain_weights=jnp.array(new_probs)
-                # )
-                # print("Updated domain weights:", policy_params.domain_weights)
+                policy_params = policy_params.replace(
+                    domain_weights=jnp.array(new_probs)
+                )
+                print("Updated domain weights:", policy_params.domain_weights)
 
                 # !-------------------------------------------
 

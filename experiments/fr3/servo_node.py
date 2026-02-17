@@ -53,8 +53,10 @@ class ServoNode(Node):
             angular_speed=1.0,
             frame_id=robot.base_link_name(),
             callback_group=self._cb_group,
-            enable_at_init=False,
+            enable_at_init=True,
         )
+        time.sleep(1.0)  # wait for MoveIt Servo to be ready
+        self._servo.use_twist()
 
         # ----------------------------------------------------------
         #  Spline subscription
@@ -75,6 +77,7 @@ class ServoNode(Node):
         # ----------------------------------------------------------
         #  Keyboard teleop
         # ----------------------------------------------------------
+        self.velocity = 0.2  # m/s
         self._key_lock = threading.Lock()
         self.teleop_enabled = start_in_teleop
         self._key_vx = 0.0
@@ -148,6 +151,8 @@ class ServoNode(Node):
         vx = float(actions[idx, 0])
         vy = float(actions[idx, 1])
 
+        self.get_logger().info(f"Servo tick: idx={idx}")
+
         self._servo(linear=(vx, vy, 0.0), angular=(0.0, 0.0, 0.0))
 
     # --------------------------------------------------------------
@@ -174,13 +179,13 @@ class ServoNode(Node):
 
             vx, vy = 0.0, 0.0
             if key == keyboard.Key.up:
-                vx = 0.1
+                vx = self.velocity
             elif key == keyboard.Key.down:
-                vx = -0.1
+                vx = -self.velocity
             elif key == keyboard.Key.left:
-                vy = 0.1
+                vy = self.velocity
             elif key == keyboard.Key.right:
-                vy = -0.1
+                vy = -self.velocity
             elif key == keyboard.Key.space:
                 with self._key_lock:
                     self._key_vx = 0.0
