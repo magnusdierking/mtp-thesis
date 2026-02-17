@@ -1,6 +1,7 @@
 import pickle
 import time
 from pathlib import Path
+from string import printable
 from typing import Sequence
 
 import jax
@@ -57,7 +58,15 @@ def differential_IK(
     qpos = data.qpos.copy()
     qnow = qpos[jnp.array(actuator_jids)]
     qhome = np.array(
-        [0.51199203, 0.1014329, -0.36340348, -2.9813132, 0.50339095, 3.06692214, -1.92271156]
+        [
+            0.51199203,
+            0.1014329,
+            -0.36340348,
+            -2.9813132,
+            0.50339095,
+            3.06692214,
+            -1.92271156,
+        ]
     )
 
     # Build jacobian
@@ -65,11 +74,15 @@ def differential_IK(
     J_pinv = np.linalg.pinv(J)
     twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
 
-    ee_position_sensor = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos")
+    ee_position_sensor = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
+    )
     sensor_adr_pos = model.sensor_adr[ee_position_sensor]
     ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
 
-    ee_orientation_sensor = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_quat")
+    ee_orientation_sensor = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_quat"
+    )
     sensor_adr = model.sensor_adr[ee_orientation_sensor]
     ee_quat = data.sensordata[sensor_adr : sensor_adr + 4]
     ee_quat = np.array(ee_quat)
@@ -167,8 +180,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
     # Initialize the controller
     mjx_data = mjx.put_data(mj_model, mj_data)
-    
-    mjx_data = mjx_data.replace(mocap_pos=mj_data.mocap_pos, mocap_quat=mj_data.mocap_quat)
+
+    mjx_data = mjx_data.replace(
+        mocap_pos=mj_data.mocap_pos, mocap_quat=mj_data.mocap_quat
+    )
     policy_params = controller.init_params(seed)
     jit_optimize = jax.jit(controller.optimize, donate_argnums=(1,))
 
@@ -218,7 +233,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         renderer = mujoco.Renderer(mj_model, height=height, width=width)
 
     # !LIVE PLOT SETUP ------------------------------------------------ #
-    
+
     mocap_T_bids = controller.task.get_mocap_T_bids()
 
     site_id1 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "T_1")
@@ -229,19 +244,34 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
     # true poses
     old_observation1 = np.concatenate(
-        (np.array(mj_data.site_xpos[site_id1]), np.array(mat2quat(mj_data.site_xmat[site_id1])))
+        (
+            np.array(mj_data.site_xpos[site_id1]),
+            np.array(mat2quat(mj_data.site_xmat[site_id1])),
+        )
     )
     old_observation2 = np.concatenate(
-        (np.array(mj_data.site_xpos[site_id2]), np.array(mat2quat(mj_data.site_xmat[site_id2])))
+        (
+            np.array(mj_data.site_xpos[site_id2]),
+            np.array(mat2quat(mj_data.site_xmat[site_id2])),
+        )
     )
     old_observation3 = np.concatenate(
-        (np.array(mj_data.site_xpos[site_id3]), np.array(mat2quat(mj_data.site_xmat[site_id3])))
+        (
+            np.array(mj_data.site_xpos[site_id3]),
+            np.array(mat2quat(mj_data.site_xmat[site_id3])),
+        )
     )
     old_observation4 = np.concatenate(
-        (np.array(mj_data.site_xpos[site_id4]), np.array(mat2quat(mj_data.site_xmat[site_id4])))
+        (
+            np.array(mj_data.site_xpos[site_id4]),
+            np.array(mat2quat(mj_data.site_xmat[site_id4])),
+        )
     )
     old_observation5 = np.concatenate(
-        (np.array(mj_data.site_xpos[site_id5]), np.array(mat2quat(mj_data.site_xmat[site_id5])))
+        (
+            np.array(mj_data.site_xpos[site_id5]),
+            np.array(mat2quat(mj_data.site_xmat[site_id5])),
+        )
     )
 
     sites_of_interest = policy_params.predicted_state
@@ -276,7 +306,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
         # Add geometry for the ghost reference
         if reference is not None:
-            mujoco.mjv_addGeoms(mj_model, ref_data, vopt, pert, catmask, viewer.user_scn)
+            mujoco.mjv_addGeoms(
+                mj_model, ref_data, vopt, pert, catmask, viewer.user_scn
+            )
 
         # --- init ---
         step = 0
@@ -305,10 +337,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
             # ! get error signal
             # print("Sites in rollouts:", rollouts.trace_sites.shape) # (domains, samples, steps, sites, 7)
-            sites_of_interest = policy_params.predicted_state # (domains, sites, 7)
-            ref_site = sites_of_interest[
-                :, -1, ...
-            ]  # (domains, 7)
+            sites_of_interest = policy_params.predicted_state  # (domains, sites, 7)
+            ref_site = sites_of_interest[:, -1, ...]  # (domains, 7)
             # print("Predicted sites shape:", sites_of_interest.shape)
             # print("Sites of interest shape:", sites_of_interest.shape)
             for bid, idx in zip(mocap_T_bids, range(len(mocap_T_bids)), strict=True):
@@ -322,9 +352,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     mj_data.mocap_pos[bid] = mj_data.xpos[bid]
                     mj_data.mocap_quat[bid] = mj_data.xquat[bid]
             mujoco.mj_forward(mj_model, mj_data)
-            
-            
-            
+
             # true poses
             new_observation1 = jnp.concatenate(
                 (
@@ -354,7 +382,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 ),
                 axis=-1,
             )
-            
+
             new_observation5 = jnp.concatenate(
                 (
                     jnp.array(mj_data.site_xpos[site_id5]),
@@ -392,13 +420,13 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
                     sites_of_interest[..., 4, :], new_observation5
                 )  # (domains,)
-
+                bandwidth = jnp.median(distances)
+                test = jnp.exp(-distances / bandwidth)
+                print("Test:", test)
                 #! post process distances
                 # normalize distances to [0, 1]
                 cost_range = jnp.max(distances) - jnp.min(distances)
-                distances = (distances - jnp.min(distances)) / (
-                    cost_range + 1e-12
-                )
+                distances = (distances - jnp.min(distances)) / (cost_range + 1e-12)
                 distances = jnp.clip(distances, 0.0, 1.0)
                 # print("Normalized distances:", distances)
 
@@ -409,7 +437,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 distances = np.array(distances)
 
                 # probabilities via softmax
-                temperature = 0.1 #cost_range / np.log(len(distances)) 
+                temperature = 0.1  # cost_range / np.log(len(distances))
                 probs = np.exp(-distances / temperature)  # temperature scaling
                 probs = probs / (np.sum(probs) + 1e-12)
                 # print("Domain probabilities before update:", probs)
@@ -425,8 +453,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 ) * probs + normalized_entropy * policy_params.domain_weights
                 # print("normalized entropy:", normalized_entropy)
                 # print("Updated domain probabilities:", new_probs)
-                policy_params = policy_params.replace(domain_weights=jnp.array(new_probs))
-                print("Updated domain weights:", policy_params.domain_weights)
+                # policy_params = policy_params.replace(
+                #     domain_weights=jnp.array(new_probs)
+                # )
+                # print("Updated domain weights:", policy_params.domain_weights)
 
                 # !-------------------------------------------
 

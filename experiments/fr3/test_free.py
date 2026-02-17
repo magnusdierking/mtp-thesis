@@ -47,9 +47,7 @@ def differential_IK(
         "fr3_joint6",
         "fr3_joint7",
     ]
-    actuator_joint_idxs = [
-        model.joint(name).id for name in actuator_joint_names
-    ]
+    actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
     actuator_jids = model.jnt_qposadr[actuator_joint_idxs]
     dof_adr = model.jnt_dofadr[actuator_joint_idxs]
 
@@ -91,9 +89,7 @@ def differential_IK(
     goal_quat = np.array(goal_quat)
     goal_vec = quat_error_body(goal_quat, ee_quat)  # (3,)
 
-    temp = np.concatenate(
-        [world_site_vel_desired, np.array([0.035 - ee_pos[2]])]
-    )
+    temp = np.concatenate([world_site_vel_desired, np.array([0.035 - ee_pos[2]])])
     twist_err = np.concatenate([temp, goal_vec])  # [ex, ey, ez, ewx, ewy, ewz]
     dq = J_pinv @ twist_err
 
@@ -142,9 +138,7 @@ for bid in range(model.nbody):
 
 
 # # Initial guess
-q = np.array(
-    [0.0, -np.pi / 4, 0.0, -9 * np.pi / 10, 0.0, 3 * np.pi / 4, np.pi / 4]
-)
+q = np.array([0.0, -np.pi / 4, 0.0, -9 * np.pi / 10, 0.0, 3 * np.pi / 4, np.pi / 4])
 # q = np.zeros(7)
 actuator_joint_names = [
     "fr3_joint1",
@@ -197,9 +191,7 @@ for i in range(max_iters):
     err = np.concatenate([pos_err, orn_err])  # shape (6,)
 
     if np.linalg.norm(err) < tolerance:
-        print(
-            f"Converged in {i} iterations. Took {time.time() - ik_start_time:.4f} s"
-        )
+        print(f"Converged in {i} iterations. Took {time.time() - ik_start_time:.4f} s")
         break
 
     # Compute Jacobian of the EE
@@ -230,10 +222,10 @@ data.qpos[actuator_jids] = q  # Set the robot's joint positions
 
 
 ## T POSITIONING THE BLOCK
-data.qpos[0] = 0.5
-data.qpos[1] = 0.0
+data.qpos[0] = 0.6
+data.qpos[1] = 0.1
 data.qpos[2] = 0.08  # block z position
-angle = 0.0  # np.pi / 2# 30 degrees
+angle = 6 * np.pi / 5  # 30 degrees
 
 quat = euler_to_quaternion(0, 0, angle)  # x,y,z,w
 print("Block quaternion (x,y,z,w):", quat[0], quat[1], quat[2], quat[3])
@@ -243,9 +235,7 @@ data.qpos[3:7] = np.array([quat[3], quat[0], quat[1], quat[2]])  # x, y, z, w
 bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "block")
 print("mass:", model.body_mass[bid])
 print("diaginertia:", model.body_inertia[bid])
-print(
-    "inertial quat:", model.body_ipos[bid], model.body_iquat[bid]
-)  # COM + quat
+print("inertial quat:", model.body_ipos[bid], model.body_iquat[bid])  # COM + quat
 
 
 mujoco.mj_step(model, data)

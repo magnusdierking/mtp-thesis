@@ -1,4 +1,5 @@
-import argparse, sys
+import argparse
+import sys
 from pathlib import Path
 
 import mujoco
@@ -45,24 +46,27 @@ sigma_start = 0.2
 
 
 det_init = {
-    "block_pos_x": 0.45,
-    "block_pos_y": 0.15,
-    "block_angle": np.pi/4,
-    "ee_goal_pos": [0.35, 0.25, 0.035]
+    "block_pos_x": 0.6,
+    "block_pos_y": 0.1,
+    "block_angle": 6 * np.pi / 5,
+    "ee_goal_pos": [0.5, -0.1, 0.035],
 }
 
 
-task = PushTFranka(ik_type = 'pinv',
-                    planning_horizon=10,
-                    sim_steps_per_control_step=2,
-                    ctrl_limits={"u_min": jnp.array([-MAX_SPEED, -MAX_SPEED]), 
-                                 "u_max": jnp.array([MAX_SPEED, MAX_SPEED])},
-                    trace_sites=["T_1", "T_2","ee_site", "T_3", "block_site"],
-                    actuation_type='velocity',
-                    sampling_space="velocity",
-                    det_init=det_init,
-                    block_type = 'dr-free',
-                )
+task = PushTFranka(
+    ik_type="pinv",
+    planning_horizon=10,
+    sim_steps_per_control_step=2,
+    ctrl_limits={
+        "u_min": jnp.array([-MAX_SPEED, -MAX_SPEED]),
+        "u_max": jnp.array([MAX_SPEED, MAX_SPEED]),
+    },
+    trace_sites=["T_1", "T_2", "ee_site", "T_3", "block_site"],
+    actuation_type="velocity",
+    sampling_space="velocity",
+    det_init=det_init,
+    block_type="dr-free",
+)
 
 
 parser = argparse.ArgumentParser(
@@ -82,22 +86,24 @@ algorithm_subparsers.add_parser("ps")
 parser.add_argument(
     "--dr",
     choices=["uniform", "evolutionary", "bayesian"],
-    help="Domain randomization strategy"
+    help="Domain randomization strategy",
 )
 parser.add_argument(
     "--risk",
     choices=["average", "expectation", "var", "cvar", "ivar", "icvar"],
-    help="risk aggregation method for domain randomization"
+    help="risk aggregation method for domain randomization",
 )
 
 args = parser.parse_args()
 print(args)
 
 risk_alpha = 0.5  # for (C)VaR
-uniform_weights = jnp.ones((NUM_RANDOMIZATIONS,), dtype=jnp.float32) / NUM_RANDOMIZATIONS
+uniform_weights = (
+    jnp.ones((NUM_RANDOMIZATIONS,), dtype=jnp.float32) / NUM_RANDOMIZATIONS
+)
 
-if args.risk is None or args.risk == "average": 
-    args.risk = "average"  
+if args.risk is None or args.risk == "average":
+    args.risk = "average"
     aggregation = AverageCost()
 elif args.risk == "expectation":
     # initialize with uniform weights
@@ -109,7 +115,9 @@ elif args.risk == "cvar":
 elif args.risk == "ivar":
     aggregation = InverseValueAtRisk(alpha=risk_alpha)
 elif args.risk == "icvar":
-    aggregation = InverseConditionalValueAtRisk(alpha=risk_alpha, weights=uniform_weights)
+    aggregation = InverseConditionalValueAtRisk(
+        alpha=risk_alpha, weights=uniform_weights
+    )
 
 
 if args.algorithm is None:
@@ -183,31 +191,28 @@ elif args.algorithm == "ps":
         alpha=0.1,
     )
     error_log = f"./../data/error_log_pushT/ps_{seed}.npy"
-    
 
-    
+
 # Define the model used for simulation
 mj_model, mj_data = task.reset(seed=seed)
 
 
-path = get_data_path() / "dr_sim"  
-if not path.exists():       
+path = get_data_path() / "dr_sim"
+if not path.exists():
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_{args.algorithm}_{args.dr}_{args.risk}"
 
 
-
-
 randomization_dict = {
-    'geoms': {
-        'ground': {
-            'geom_friction': (0, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)), 
+    "geoms": {
+        "ground": {
+            "geom_friction": (0, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)),
         },
         # 'bottom': {
-        #     'geom_mass': (0, jnp.linspace(0.01, 1.5, NUM_RANDOMIZATIONS)), 
+        #     'geom_mass': (0, jnp.linspace(0.01, 1.5, NUM_RANDOMIZATIONS)),
         # },
         # 'top': {
-        #     'geom_mass': (0, jnp.linspace(0.05, 1.0, NUM_RANDOMIZATIONS)),    
+        #     'geom_mass': (0, jnp.linspace(0.05, 1.0, NUM_RANDOMIZATIONS)),
         # },
     },
     # 'bodies': {
@@ -220,27 +225,36 @@ randomization_dict = {
 # print(dir(ctrl.model))
 # sys.exit(0)
 # Define mass values for each geom
-top_masses = jnp.linspace(0.01, 0.35, NUM_RANDOMIZATIONS)
-bottom_masses = jnp.linspace(0.1, 1.0, NUM_RANDOMIZATIONS)
+top_masses = jnp.linspace(0.1, 0.11, NUM_RANDOMIZATIONS)
+bottom_masses = jnp.linspace(0.01, 0.5, NUM_RANDOMIZATIONS)
 
 body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
 
-randomized_axes = ["body_mass", 
-                   "body_inertia", 
-                   "body_ipos", 
-                   "body_invweight0",
-                   "dof_invweight0",
-                   "dof_M0",
-                   "dof_armature",
-                   "body_subtreemass",
-                   ]
+randomized_axes = [
+    "body_mass",
+    "body_inertia",
+    "body_ipos",
+    "body_invweight0",
+    "dof_invweight0",
+    "dof_M0",
+    "dof_armature",
+    "body_subtreemass",
+]
 
 derived_values = {field: [] for field in randomized_axes}
 
 for top_mass, bottom_mass in zip(top_masses, bottom_masses):
-    spec = mujoco.MjSpec.from_file((get_root_path() / "hydrax" / "models" / "fr3_pushT_vel" / "scene_mjx_free_dr.xml").as_posix())
+    spec = mujoco.MjSpec.from_file(
+        (
+            get_root_path()
+            / "hydrax"
+            / "models"
+            / "fr3_pushT_vel"
+            / "scene_mjx_free_dr.xml"
+        ).as_posix()
+    )
     body = spec.body("block")
-    
+
     # Set mass for each geom by name
     for geom in body.geoms:
         if geom.name == "top":
@@ -249,13 +263,15 @@ for top_mass, bottom_mass in zip(top_masses, bottom_masses):
         elif geom.name == "bottom":
             geom.mass = float(bottom_mass)
             print(f"Set 'bottom' geom mass: {bottom_mass}")
-    
+
     compiled_model = spec.compile()
     total_mass = compiled_model.body_mass[body_id]
-    print(f"Compiled body mass (top={top_mass:.3f} + bottom={bottom_mass:.3f}): {total_mass:.3f}")
+    print(
+        f"Compiled body mass (top={top_mass:.3f} + bottom={bottom_mass:.3f}): {total_mass:.3f}"
+    )
     print(f"Compiled inertia: {compiled_model.body_inertia[body_id]}")
     print(f"Compiled ipos: {compiled_model.body_ipos[body_id]}\n")
-    
+
     # Append derived quantities to lists
     derived_values["body_mass"].append(compiled_model.body_mass)
     derived_values["body_inertia"].append(compiled_model.body_inertia)
@@ -294,17 +310,11 @@ ctrl.model = ctrl.model.replace(**derived_values)
 #     randomization_dict,
 # )
 
-# ctrl.update_randomized_axes(randomized_axes)
-
-
-# print inertias of ctrl.model
-print(ctrl.model.body_mass.shape)
-print("Inertia difference:", ctrl.model.body_inertia[0] - ctrl.model.body_inertia[-1])
-# sys.exit(0)
-
 
 max_traces = 128
-trace_idxs = [i * max_traces for i in range(NUM_SAMPLES // max_traces)] if max_traces > 0 else []
+trace_idxs = (
+    [i * max_traces for i in range(NUM_SAMPLES // max_traces)] if max_traces > 0 else []
+)
 print("Tracing indices:", trace_idxs)
 
 run_interactive(
@@ -323,4 +333,4 @@ run_interactive(
     # log_file=path.as_posix(),
     # dr_strategy = dr_strategy,
     trace_idxs=trace_idxs,
-    )
+)
