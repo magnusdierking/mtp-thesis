@@ -71,13 +71,25 @@
         />
 
     <body name="goal" mocap="true" pos="0.55 0.0 0.04" quat="1 0 0 0">
-      <geom class="goal" name="goal_bottom" type="box" size=".05 0.025 0.025" />
       <geom
                 class="goal"
-                name="goal_top"
+                name="goal_bottom"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".075 0.025 0.025"
+            />
+      <geom
+                class="goal"
+                name="goal_top_left"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+            />
+      <geom
+                class="goal"
+                name="goal_top_right"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
             />
     </body>
 
@@ -86,21 +98,9 @@
     </body>
 
     <body name="block" pos="0.5 0.0 0.04" quat="1 0 0 0">
-      <!-- <site name="block_site" pos="0.0 0 0" size="0.02" rgba="1 0 0 1" /> -->
       <site name="block_site" pos="0.0 0 0" size="0.02" rgba="1 0 0 1" />
 
       <joint name="T" type="free" pos="0 0 0" />
-      <!-- <geom
-                class="tblock"
-                name="bottom"
-                type="box"
-                size=".05 0.025 0.025"
-                pos="0.0 0.000 0.0"
-
-            />
-          <site name="T_1" pos="-0.03 0 0" size="0.015" rgba="0 0 0 1" />
-          <site name="T_2" pos="0.075 0.04 0" size="0.015" rgba="0 0 0 1" />
-          <site name="T_3" pos="0.075 -0.04 0" size="0.015" rgba="0 0 0 1" /> -->
       <geom
                 class="tblock"
                 name="bottom"
@@ -112,32 +112,6 @@
           <site name="T_1" pos="-0.03 0 0" size="0.01" rgba="0 0 0 1" />
           <site name="T_2" pos="0.075 0.04 0" size="0.01" rgba="0 0 0 1" />
           <site name="T_3" pos="0.075 -0.04 0" size="0.01" rgba="0 0 0 1" />
-      <!-- Upper part ot T -->
-      <!-- <geom
-              class="tblock"
-              name="top"
-              type="box"
-              size=".025 0.06 0.025"
-              pos="0.075 0.0 0.0"
-              mass="0.27"
-          /> -->
-      <!-- <geom
-              class="tblock"
-              name="top_left"
-              type="box"
-              size=".025 0.03 0.025"
-              pos="0.075 0.03 0.0"
-
-              rgba="0.295 0.227 0.15 1.0"
-          />
-      <geom
-              class="tblock"
-              name="top_right"
-              type="box"
-              size=".025 0.03 0.025"
-              pos="0.075 -0.03 0.0"
-
-          /> -->
       <geom
                 class="tblock"
                 name="top_left"
@@ -163,7 +137,7 @@
                 class="tblock"
                 name="ghost_bottom_0"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -171,10 +145,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_0"
+                name="ghost_top_left_0"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_0"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -186,7 +170,7 @@
                 class="tblock"
                 name="ghost_bottom_1"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -194,10 +178,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_1"
+                name="ghost_top_left_1"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_1"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -209,7 +203,7 @@
                 class="tblock"
                 name="ghost_bottom_2"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -217,10 +211,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_2"
+                name="ghost_top_left_2"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_2"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -232,7 +236,7 @@
                 class="tblock"
                 name="ghost_bottom_3"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -240,10 +244,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_3"
+                name="ghost_top_left_3"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_3"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -255,7 +269,7 @@
                 class="tblock"
                 name="ghost_bottom_4"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -263,10 +277,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_4"
+                name="ghost_top_left_4"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_4"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -278,7 +302,7 @@
                 class="tblock"
                 name="ghost_bottom_5"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -286,10 +310,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_5"
+                name="ghost_top_left_5"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_5"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -301,7 +335,7 @@
                 class="tblock"
                 name="ghost_bottom_6"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -309,10 +343,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_6"
+                name="ghost_top_left_6"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_6"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -324,7 +368,7 @@
                 class="tblock"
                 name="ghost_bottom_7"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -332,10 +376,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_7"
+                name="ghost_top_left_7"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_7"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -347,7 +401,7 @@
                 class="tblock"
                 name="ghost_bottom_8"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -355,10 +409,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_8"
+                name="ghost_top_left_8"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_8"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -370,7 +434,7 @@
                 class="tblock"
                 name="ghost_bottom_9"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -378,10 +442,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_9"
+                name="ghost_top_left_9"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_9"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -393,7 +467,7 @@
                 class="tblock"
                 name="ghost_bottom_10"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -401,10 +475,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_10"
+                name="ghost_top_left_10"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_10"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"
@@ -416,7 +500,7 @@
                 class="tblock"
                 name="ghost_bottom_11"
                 type="box"
-                size=".05 0.025 0.025"
+                size=".075 0.025 0.025"
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
@@ -424,10 +508,20 @@
             />
       <geom
                 class="tblock"
-                name="ghost_top_11"
+                name="ghost_top_left_11"
                 type="box"
-                size=".025 0.06 0.025"
-                pos="0.075 0.0 0.0"
+                size=".025 0.05 0.025"
+                pos="0.1 0.05 0.0"
+                contype="0"
+                conaffinity="0"
+                rgba="0.1 0.1 0.1 0.05"
+            />
+      <geom
+                class="tblock"
+                name="ghost_top_right_11"
+                type="box"
+                size=".025 0.05 0.025"
+                pos="0.1 -0.05 0.0"
                 contype="0"
                 conaffinity="0"
                 rgba="0.1 0.1 0.1 0.05"

@@ -346,9 +346,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 mj_data.mocap_quat[bid] = ref_site[idx, 3:]
                 # print(f"Setting mocap bid {bid} to {ref_site[idx, :3]}, {ref_site[idx, 3:]}")
             # rest of mocap copies T
-            if len(mocap_T_bids) < 24:
+            if len(mocap_T_bids) < 10:
                 bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
-                for bid in range(len(mocap_T_bids), 24):
+                for bid in range(len(mocap_T_bids), 10):
                     mj_data.mocap_pos[bid] = mj_data.xpos[bid]
                     mj_data.mocap_quat[bid] = mj_data.xquat[bid]
             mujoco.mj_forward(mj_model, mj_data)
@@ -417,27 +417,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 #     sites_of_interest[..., 3, :], new_observation4
                 # )
                 # distances = distance_1 + distance_2 + distance_4
-                distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                    sites_of_interest[..., 4, :], new_observation5
-                )  # (domains,)
-                # bandwidth = jnp.median(distances)
-                # test = jnp.exp(-distances / bandwidth)
-                # print("Test:", test)
-                #! post process distances
-                # normalize distances to [0, 1]
-                cost_range = jnp.max(distances) - jnp.min(distances)
-                distances = (distances - jnp.min(distances)) / (cost_range + 1e-12)
-                distances = jnp.clip(distances, 0.0, 1.0)
-                # print("Normalized distances:", distances)
-
-                max_distance = jnp.max(distances)
-                if not jnp.isfinite(max_distance):
-                    max_distance = 1.0
-                distances = jnp.nan_to_num(distances, nan=max_distance)
-                distances = np.array(distances)
+                distances = jax.vmap(
+                    se3_left_invariant_metric, in_axes=(0, None, None, None)
+                )(sites_of_interest[..., 4, :], new_observation5, 2, 10)  # (domains,)
 
                 # probabilities via softmax
-                temperature = 0.1  # cost_range / np.log(len(distances))
+                temperature = np.median(distances)
                 probs = np.exp(-distances / temperature)  # temperature scaling
                 probs = probs / (np.sum(probs) + 1e-12)
                 # print("Domain probabilities before update:", probs)

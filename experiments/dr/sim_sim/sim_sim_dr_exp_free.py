@@ -34,7 +34,7 @@ from hydrax.risk import (
 from hydrax.tasks.pusht_franka import PushTFranka
 from hydrax.utils.files import get_data_path, get_root_path
 
-NUM_SAMPLES = 128
+NUM_SAMPLES = 32
 NUM_RANDOMIZATIONS = 10
 MAX_SPEED = 0.35  # m/s
 
@@ -46,12 +46,14 @@ sigma_start = 0.2
 
 
 det_init = {
-    "block_pos_x": 0.6 + np.random.uniform(-0.05, 0.05),
+    "block_pos_x": 0.55 + np.random.uniform(-0.05, 0.05),
     "block_pos_y": 0.1 + np.random.uniform(-0.05, 0.05),
     "block_angle": 6 * np.pi / 5 + np.random.uniform(-0.2, 0.2),
-    "ee_goal_pos": [0.5 + np.random.uniform(-0.05, 0.05), 
-                    -0.1 + np.random.uniform(-0.05, 0.05), 
-                    0.035],
+    "ee_goal_pos": [
+        0.5 + np.random.uniform(-0.05, 0.05),
+        -0.1 + np.random.uniform(-0.05, 0.05),
+        0.035,
+    ],
 }
 
 
@@ -202,33 +204,37 @@ mj_model, mj_data = task.reset(seed=seed)
 path = get_data_path() / "dr_sim_sim"
 if not path.exists():
     path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{seed}_{args.algorithm}_{args.risk}"
+path = path / f"seed_{seed}_{args.algorithm}_{args.risk}.pkl"
 
 
-# randomization_dict = {
-#     "geoms": {
-#         "ground": {
-#             "geom_friction": (0, jnp.linspace(0.1, 5.0, NUM_RANDOMIZATIONS)),
-#         },
-        # 'bottom': {
-        #     'geom_mass': (0, jnp.linspace(0.01, 1.5, NUM_RANDOMIZATIONS)),
-        # },
-        # 'top': {
-        #     'geom_mass': (0, jnp.linspace(0.05, 1.0, NUM_RANDOMIZATIONS)),
-        # },
-    # },
-    # 'bodies': {
-    #     'block': {
-    #         'body_mass': (None, jnp.linspace(0.1, 1.5, NUM_RANDOMIZATIONS)),
-    #         # 'body_ipos': (0, jnp.linspace(0.0, 0.08, NUM_RANDOMIZATIONS)),
-    #     },
-    # }
-# }
+randomization_dict = {
+    "geoms": {
+        "ground": {
+            "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+        },
+        "bottom": {
+            "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+        },
+        "vertical": {
+            "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+        },
+    }
+}
 # print(dir(ctrl.model))
 # sys.exit(0)
+#
+ctrl.model, randomized_axes = compute_randomizations(
+    ctrl.model,
+    mj_model,
+    randomization_dict,
+)
+ctrl.update_randomized_axes(randomized_axes)
+
+
+#
 # Define mass values for each geom
-top_masses = jnp.linspace(0.01, 0.3, NUM_RANDOMIZATIONS)
-bottom_masses = jnp.linspace(0.25, 0.25, NUM_RANDOMIZATIONS)
+top_masses = jnp.linspace(0.15, 0.15, NUM_RANDOMIZATIONS)
+bottom_masses = jnp.linspace(0.01, 0.55, NUM_RANDOMIZATIONS)
 
 body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
 
@@ -259,7 +265,7 @@ for top_mass, bottom_mass in zip(top_masses, bottom_masses):
 
     # Set mass for each geom by name
     for geom in body.geoms:
-        if geom.name == "top_left":
+        if geom.name == "vertical":
             geom.mass = float(top_mass)
             print(f"Set 'top' geom mass: {top_mass}")
         elif geom.name == "bottom":
@@ -293,9 +299,9 @@ for field in derived_values:
 #     print(f"{field} (block body): {values[:, body_id]}")
 
 
-ctrl.update_randomized_axes(randomized_axes)
+# ctrl.update_randomized_axes(randomized_axes)
 
-ctrl.model = ctrl.model.replace(**derived_values)
+# ctrl.model = ctrl.model.replace(**derived_values)
 
 
 max_traces = 128
