@@ -315,8 +315,8 @@ class SMPCPlannerNode(FrankaPandaServer):
     # ------------------------------------------------------------------
 
     def _domain_randomize_mjx_model(self):
-        top_masses = jnp.linspace(0.04, 0.04, self.ctrl.num_randomizations)
-        bottom_masses = jnp.linspace(0.07, 0.07, self.ctrl.num_randomizations)
+        top_masses = jnp.linspace(0.01, 0.3, self.ctrl.num_randomizations)
+        bottom_masses = jnp.linspace(0.01, 0.4, self.ctrl.num_randomizations)
 
         self.randomization_matrix = jnp.array([top_masses, bottom_masses])
 
@@ -393,8 +393,8 @@ class SMPCPlannerNode(FrankaPandaServer):
         t2.header.stamp = self.get_clock().now().to_msg()
         t2.header.frame_id = "objectPushT"
         t2.child_frame_id = "objectPushT_MuJoCo"
-        t2.transform.translation.x = 0.03
-        t2.transform.translation.y = 0.003
+        t2.transform.translation.x = 0.026
+        t2.transform.translation.y = 0.005
         t2.transform.translation.z = -0.035
         quat = quaternion_from_euler(0.0, 0.0, -np.pi)
         t2.transform.rotation.x = quat[0]
@@ -594,21 +594,39 @@ class SMPCPlannerNode(FrankaPandaServer):
         weights = np.ones(self.ctrl.num_randomizations, dtype=np.float32) / self.ctrl.num_randomizations
         if self.predicted_states is not None:
             ref_site = self.predicted_states[:, -1, ...]  # (domains, 7), only for last sight
-            mocap_bids = self.mocap_T_bids[: self.ctrl.num_randomizations]
-            for idx, bid in enumerate(mocap_bids):
-                self.debug_data.mocap_pos[bid] = ref_site[idx, :3]
-                self.debug_data.mocap_quat[bid] = ref_site[idx, 3:]
-            if len(self.mocap_T_bids) < 10:
-                for bid in range(len(self.mocap_T_bids), 10):
-                    self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
-                    self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
+            # mocap_bids = self.mocap_T_bids[: self.ctrl.num_randomizations]
+            # for idx, bid in enumerate(mocap_bids):
+            #     self.debug_data.mocap_pos[bid] = ref_site[idx, :3]
+            #     self.debug_data.mocap_quat[bid] = ref_site[idx, 3:]
+            # if len(self.mocap_T_bids) < 10:
+            #     for bid in range(len(self.mocap_T_bids), 10):
+            #         self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
+            #         self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
 
             current_obs = np.array(self.debug_data.qpos[:7], dtype=np.float32)
             distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
                 self.predicted_states[:, -1, ...],
                 current_obs,
             )
-            self.get_logger().info(f"Step {self.ctr}: domain error: {distances}")
+            temperature = np.median(distances)
+            probs = np.exp(-distances / temperature)  # temperature scaling
+            probs = probs / (np.sum(probs) + 1e-12)
+            # print("Domain probabilities before update:", probs)
+            entropy = -np.sum(probs * np.log(probs + 1e-12))
+            # print("Domain distribution entropy:", entropy)
+            max_entropy = jnp.log(len(probs) + 1e-12)
+            # print("Max entropy:", max_entropy)
+            normalized_entropy = entropy / (max_entropy + 1e-12)
+            # print("Normalized entropy:", normalized_entropy)
+
+            new_probs = (
+                1 - normalized_entropy
+            ) * probs + normalized_entropy * self.policy_params.domain_weights
+            self.policy_params = self.policy_params.replace(
+                domain_weights=jnp.array(new_probs)
+            )
+
+            self.get_logger().info(f"Step {self.ctr}: domain error: {distances} | updated weights: {new_probs}")
 
         # 5 — kinematics only (NOT mj_step)
         mujoco.mj_forward(self.debug_model, self.debug_data)
@@ -648,6 +666,7 @@ class SMPCPlannerNode(FrankaPandaServer):
                 "action": actions[0].tolist(),
                 "block_vel": block_vel.tolist(),
                 "distances": distances.tolist(),
+                "domain_weights": self.domain_weights.tolist(),
             }
         )
 
@@ -689,8 +708,8 @@ class SMPCPlannerNode(FrankaPandaServer):
         self.shutdown_flag.set()
         rclpy.shutdown()
 
-    def save_log(self, path, filename="fr3_pusht_planner_"):
-        log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}"
+    def save_log(self, path, filename="fr3_dr_real_"):
+        log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}_uniform"
         with open(str(log_file) + ".pkl", "wb") as f:
             pickle.dump(self.log, f)
 
@@ -717,19 +736,20 @@ if __name__ == "__main__":
     subparsers.add_parser("mtp")
     subparsers.add_parser("cem")
     subparsers.add_parser("ps")
+
     parser.add_argument(
         "--risk",
         choices=["average", "expectation", "var", "cvar", "ivar", "icvar"],
         help="Risk aggregation method for domain randomisation",
     )
+   
     args = parser.parse_args()
-    print(args)
 
     # ---- hyper-parameters ----
-    seed = 5555
-    num_samples = 1280
-    NUM_RANDOMIZATIONS = 1
-    planning_freq = 5  # Hz
+    seed = 12
+    num_samples = 128
+    NUM_RANDOMIZATIONS = 10
+    planning_freq = 6  # Hz
     max_speed = 0.3
 
     # ---- risk strategy ----
@@ -784,8 +804,8 @@ if __name__ == "__main__":
             sigma_min=0.15,
             sigma_max=0.55,
             sigma_start=0.3,
-            num_elites=72,
-            beta=0.25,
+            num_elites=32,
+            beta=0.3,
             alpha=0.1,
             interpolation="bspline",
             num_randomizations=NUM_RANDOMIZATIONS,
@@ -895,7 +915,7 @@ if __name__ == "__main__":
         finally:
             node.shutdown_flag.set()
             executor.shutdown()
-            path = get_data_path() / "dr-real"
+            path = get_data_path() / "dr_real"
             node.save_log(path)
             node.destroy_node()
             rclpy.shutdown()

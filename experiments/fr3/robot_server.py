@@ -44,14 +44,7 @@ class RobotServer(ABC, Node):
             group_name=self._moveit_group_name,
             callback_group=self._callback_group,
         )
-        self.servo = MoveIt2Servo(
-            node=self,
-            linear_speed=1.0,
-            angular_speed=1.0,
-            frame_id=robot.base_link_name(),
-            callback_group=self._callback_group,
-            enable_at_init=False,
-        )
+        
     
 
     @abstractmethod

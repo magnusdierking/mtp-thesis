@@ -188,7 +188,7 @@ class MoveIt2Servo:
         self,
         linear: Tuple[float, float, float] = (0.0, 0.0, 0.0),
         angular: Tuple[float, float, float] = (0.0, 0.0, 0.0),
-        enable_if_disabled: bool = True,
+        enable_if_disabled: bool = False,
     ):
         """
         Apply linear and angular twist using MoveIt 2 Servo.

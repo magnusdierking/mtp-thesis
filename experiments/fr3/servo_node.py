@@ -28,7 +28,9 @@ from pynput import keyboard
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
-
+from pymoveit2 import MoveIt2Servo
+from pymoveit2 import MoveIt2
+from pymoveit2.robots import panda as robot
 
 class ServoNode(Node):
     """
@@ -146,6 +148,10 @@ class ServoNode(Node):
         # Index into spline based on elapsed time since reception
         elapsed = time.time() - stamp
         idx = int(elapsed / dt)
+        if idx >= len(actions):
+            # Plan is exhausted — hold position
+            self._servo(linear=(0.0, 0.0, 0.0), angular=(0.0, 0.0, 0.0))
+            return
         idx = max(0, min(idx, len(actions) - 1))
 
         vx = float(actions[idx, 0])

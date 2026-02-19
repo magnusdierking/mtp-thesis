@@ -39,7 +39,9 @@ from tf2_geometry_msgs import do_transform_pose
 from control_msgs.msg import JointTrajectoryControllerState
 
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
-
+from pymoveit2 import MoveIt2Servo
+from pymoveit2 import MoveIt2
+from pymoveit2.robots import panda as robot
 from pynput import keyboard
 
 def np_yaw_from_quat(x, y, z, w):
@@ -108,6 +110,14 @@ class FR3_PushT(FrankaPandaServer):
             position=np.array([0.4, 0.475, 0.15]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0])
         )
+        self.servo = MoveIt2Servo(
+            node=self,
+            linear_speed=1.0,
+            angular_speed=1.0,
+            frame_id=robot.base_link_name(),
+            callback_group=self._callback_group,
+            enable_at_init=True,
+        )
         self.servo.use_twist()
         ####################################
         ##       Move to initial pose     ##    
@@ -131,7 +141,7 @@ class FR3_PushT(FrankaPandaServer):
         pose = np.eye(4)
         pose[:3, :3] = self.init_rot
         pose[:3, 3] = self.init_pos
-        self.plan_and_move_to_pose(pose)
+        # self.plan_and_move_to_pose(pose)
 
         ####################################
         ##            T Object            ##    
@@ -331,9 +341,9 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.03
-        t.transform.translation.y = 0.003
-        t.transform.translation.z = -0.031 
+        t.transform.translation.x = 0.026
+        t.transform.translation.y = 0.005
+        t.transform.translation.z = -0.035 
 
         quat = quaternion_from_euler(0.00, 0.0, -np.pi)
 
