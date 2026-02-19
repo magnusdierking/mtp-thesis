@@ -34,7 +34,7 @@ from hydrax.risk import (
 from hydrax.tasks.pusht_franka import PushTFranka
 from hydrax.utils.files import get_data_path, get_root_path
 
-NUM_SAMPLES = 32
+NUM_SAMPLES = 128
 NUM_RANDOMIZATIONS = 10
 MAX_SPEED = 0.35  # m/s
 
@@ -59,8 +59,8 @@ det_init = {
 
 task = PushTFranka(
     ik_type="pinv",
-    planning_horizon=10,
-    sim_steps_per_control_step=2,
+    planning_horizon=8,
+    sim_steps_per_control_step=3,
     ctrl_limits={
         "u_min": jnp.array([-MAX_SPEED, -MAX_SPEED]),
         "u_max": jnp.array([MAX_SPEED, MAX_SPEED]),
@@ -220,21 +220,18 @@ randomization_dict = {
         },
     }
 }
-# print(dir(ctrl.model))
-# sys.exit(0)
-#
-ctrl.model, randomized_axes = compute_randomizations(
-    ctrl.model,
-    mj_model,
-    randomization_dict,
-)
-ctrl.update_randomized_axes(randomized_axes)
+
+# ctrl.model, randomized_axes = compute_randomizations(
+#     ctrl.model,
+#     mj_model,
+#     randomization_dict,
+# )
+# ctrl.update_randomized_axes(randomized_axes)
 
 
-#
 # Define mass values for each geom
-top_masses = jnp.linspace(0.15, 0.15, NUM_RANDOMIZATIONS)
-bottom_masses = jnp.linspace(0.01, 0.55, NUM_RANDOMIZATIONS)
+top_masses = jnp.linspace(0.05, 3.0, NUM_RANDOMIZATIONS) # vertical
+bottom_masses = jnp.linspace(0.05, 3.1, NUM_RANDOMIZATIONS) # bottom
 
 body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
 
@@ -299,9 +296,8 @@ for field in derived_values:
 #     print(f"{field} (block body): {values[:, body_id]}")
 
 
-# ctrl.update_randomized_axes(randomized_axes)
-
-# ctrl.model = ctrl.model.replace(**derived_values)
+ctrl.update_randomized_axes(randomized_axes)
+ctrl.model = ctrl.model.replace(**derived_values)
 
 
 max_traces = 128

@@ -90,71 +90,27 @@
       <site name="block_site" pos="0.0 0 0" size="0.02" rgba="1 0 0 1" />
 
       <joint name="T" type="free" pos="0 0 0" />
-      <!-- <geom
+      <geom
                 class="tblock"
                 name="bottom"
                 type="box"
                 size=".05 0.025 0.025"
                 pos="0.0 0.000 0.0"
-
+                mass="0.04"
             />
           <site name="T_1" pos="-0.03 0 0" size="0.015" rgba="0 0 0 1" />
           <site name="T_2" pos="0.075 0.04 0" size="0.015" rgba="0 0 0 1" />
-          <site name="T_3" pos="0.075 -0.04 0" size="0.015" rgba="0 0 0 1" /> -->
-      <geom
-                class="tblock"
-                name="bottom"
-                type="box"
-                size=".075 0.025 0.025"
-                pos="0.0 0.000 0.0"
-                mass="0.2"
-            />
-          <site name="T_1" pos="-0.03 0 0" size="0.01" rgba="0 0 0 1" />
-          <site name="T_2" pos="0.075 0.04 0" size="0.01" rgba="0 0 0 1" />
-          <site name="T_3" pos="0.075 -0.04 0" size="0.01" rgba="0 0 0 1" />
+          <site name="T_3" pos="0.075 -0.04 0" size="0.015" rgba="0 0 0 1" />
+
       <!-- Upper part ot T -->
-      <!-- <geom
+      <geom
               class="tblock"
               name="top"
               type="box"
               size=".025 0.06 0.025"
               pos="0.075 0.0 0.0"
-              mass="0.27"
-          /> -->
-      <!-- <geom
-              class="tblock"
-              name="top_left"
-              type="box"
-              size=".025 0.03 0.025"
-              pos="0.075 0.03 0.0"
-
-              rgba="0.295 0.227 0.15 1.0"
+              mass="0.07"
           />
-      <geom
-              class="tblock"
-              name="top_right"
-              type="box"
-              size=".025 0.03 0.025"
-              pos="0.075 -0.03 0.0"
-
-          /> -->
-      <geom
-                class="tblock"
-                name="top_left"
-                type="box"
-                size=".025 0.05 0.025"
-                pos="0.1 0.05 0.0"
-                mass="0.15"
-                rgba="0.295 0.227 0.15 1.0"
-            />
-      <geom
-                class="tblock"
-                name="top_right"
-                type="box"
-                size=".025 0.05 0.025"
-                pos="0.1 -0.05 0.0"
-                mass="0.15"
-            />
     </body>
 
     <!-- Mocap bodies to visualize domain randomization -->

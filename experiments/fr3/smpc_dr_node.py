@@ -105,7 +105,7 @@ class SMPCPlannerNode(FrankaPandaServer):
         viewer,
         trace_idxs,
         planning_freq=10,
-        run_time_sec=60.0,
+        run_time_sec=30.0,
     ):
         super().__init__(robot_ip=robot_ip, gripper_type=None)
         self.get_logger().info("Initializing SMPC Planner Node …")
@@ -152,8 +152,8 @@ class SMPCPlannerNode(FrankaPandaServer):
         # ---- Move to initial pose ----
         self.init_pos = np.array(
             [
-                0.55 + np.random.uniform(-0.03, 0.03),
-                -0.1 + np.random.uniform(-0.03, 0.03),
+                0.6 + np.random.uniform(-0.03, 0.03),
+                -0.15 + np.random.uniform(-0.03, 0.03),
                 0.045,
             ]
         )
@@ -315,8 +315,8 @@ class SMPCPlannerNode(FrankaPandaServer):
     # ------------------------------------------------------------------
 
     def _domain_randomize_mjx_model(self):
-        top_masses = jnp.linspace(0.1, 0.11, self.ctrl.num_randomizations)
-        bottom_masses = jnp.linspace(0.01, 0.5, self.ctrl.num_randomizations)
+        top_masses = jnp.linspace(0.04, 0.04, self.ctrl.num_randomizations)
+        bottom_masses = jnp.linspace(0.07, 0.07, self.ctrl.num_randomizations)
 
         self.randomization_matrix = jnp.array([top_masses, bottom_masses])
 
@@ -377,13 +377,14 @@ class SMPCPlannerNode(FrankaPandaServer):
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = "fr3_link0"
         t.child_frame_id = "optitrack"
-        t.transform.translation.x = 1.11564
-        t.transform.translation.y = -1.26901
-        t.transform.translation.z = -0.0264
-        t.transform.rotation.x = -0.01411
-        t.transform.rotation.y = -0.00319
-        t.transform.rotation.z = 0.99984
-        t.transform.rotation.w = 0.01083
+        t.transform.translation.x = 1.11670  
+        t.transform.translation.y = -1.26868 
+        t.transform.translation.z = -0.0252  
+
+        t.transform.rotation.x = -0.01299     
+        t.transform.rotation.y = -0.00261    
+        t.transform.rotation.z = 0.99987     
+        t.transform.rotation.w = 0.00923     
         self.static_tf = t
         self.br.sendTransform(t)
         self.get_logger().info("Published static TF fr3_link0 → optitrack")
@@ -392,10 +393,10 @@ class SMPCPlannerNode(FrankaPandaServer):
         t2.header.stamp = self.get_clock().now().to_msg()
         t2.header.frame_id = "objectPushT"
         t2.child_frame_id = "objectPushT_MuJoCo"
-        t2.transform.translation.x = 0.034
-        t2.transform.translation.y = 0.007
-        t2.transform.translation.z = -0.031 
-        quat = quaternion_from_euler(0.0, 0.02, -np.pi)
+        t2.transform.translation.x = 0.03
+        t2.transform.translation.y = 0.003
+        t2.transform.translation.z = -0.035
+        quat = quaternion_from_euler(0.0, 0.0, -np.pi)
         t2.transform.rotation.x = quat[0]
         t2.transform.rotation.y = quat[1]
         t2.transform.rotation.z = quat[2]
@@ -590,20 +591,21 @@ class SMPCPlannerNode(FrankaPandaServer):
 
         # 4 — ghost mocap from previous predictions
         distances = np.zeros(self.ctrl.num_randomizations, dtype=np.float32)
+        weights = np.ones(self.ctrl.num_randomizations, dtype=np.float32) / self.ctrl.num_randomizations
         if self.predicted_states is not None:
-            ref_site = self.predicted_states[:, -1, ...]  # (domains, 7)
+            ref_site = self.predicted_states[:, -1, ...]  # (domains, 7), only for last sight
             mocap_bids = self.mocap_T_bids[: self.ctrl.num_randomizations]
             for idx, bid in enumerate(mocap_bids):
                 self.debug_data.mocap_pos[bid] = ref_site[idx, :3]
                 self.debug_data.mocap_quat[bid] = ref_site[idx, 3:]
-            if len(self.mocap_T_bids) < 24:
-                for bid in range(len(self.mocap_T_bids), 24):
+            if len(self.mocap_T_bids) < 10:
+                for bid in range(len(self.mocap_T_bids), 10):
                     self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
                     self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
 
             current_obs = np.array(self.debug_data.qpos[:7], dtype=np.float32)
             distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                self.predicted_states[..., 4, :],
+                self.predicted_states[:, -1, ...],
                 current_obs,
             )
             self.get_logger().info(f"Step {self.ctr}: domain error: {distances}")
@@ -725,8 +727,8 @@ if __name__ == "__main__":
 
     # ---- hyper-parameters ----
     seed = 5555
-    num_samples = 128
-    NUM_RANDOMIZATIONS = 10
+    num_samples = 1280
+    NUM_RANDOMIZATIONS = 1
     planning_freq = 5  # Hz
     max_speed = 0.3
 
@@ -737,7 +739,7 @@ if __name__ == "__main__":
     )
     if args.risk is None or args.risk == "average":
         args.risk = "average"
-        aggregation = AverageCost()
+        aggregation = ExpectedCost(weights=uniform_weights) #!
     elif args.risk == "expectation":
         aggregation = ExpectedCost(weights=uniform_weights)
     elif args.risk == "var":

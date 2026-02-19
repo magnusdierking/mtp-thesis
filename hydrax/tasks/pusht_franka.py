@@ -87,7 +87,7 @@ class PushTFranka(Task):
                         get_root_path()
                         / "models"
                         / "fr3_pushT_vel"
-                        / "scene_mjx_free_dr_L.xml"
+                        / "scene_mjx_free_dr.xml"
                     ).as_posix()
                 )
             elif block_type == "free":

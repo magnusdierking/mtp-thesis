@@ -659,9 +659,9 @@ class FR3_PushT(FrankaPandaServer):
                 self.debug_data.mocap_quat[bid] = ref_site[idx, 3:]
                 # print(f"Setting mocap bid {bid} to {ref_site[idx, :3]}, {ref_site[idx, 3:]}")
             # rest of mocap copies T
-            if len(self.mocap_T_bids) < 24:
+            if len(self.mocap_T_bids) < 10:
                 bid = mujoco.mj_name2id(self.debug_model, mujoco.mjtObj.mjOBJ_BODY, "block")
-                for bid in range(len(self.mocap_T_bids), 24):
+                for bid in range(len(self.mocap_T_bids), 10):
                     self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
                     self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
             
