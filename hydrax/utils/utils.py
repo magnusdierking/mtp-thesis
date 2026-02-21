@@ -88,21 +88,59 @@ def euler_to_quaternion(roll, pitch, yaw):
 
 
 # SE3 left invariant metric
-def se3_left_invariant_metric(p1, p2, rot_weight=1.0, trans_weight=10.0):
-    """Compute left-invariant metric between two SE(3) poses.
+# def se3_left_invariant_metric(p1, p2, rot_weight=1.0, trans_weight=10.0):
+#     """Compute left-invariant metric between two SE(3) poses.
 
-    Args:
-        p1: First pose, shape (..., 7) (x, y, z, qw, qx, qy, qz).
-        p2: Second pose, shape (..., 7) (x, y, z, qw, qx, qy, qz).
-        rot_weight: Weight for rotational component.
-        trans_weight: Weight for translational component.
-    Returns:
-        The left-invariant distance between p1 and p2, shape (...,).
+#     Args:
+#         p1: First pose, shape (..., 7) (x, y, z, qw, qx, qy, qz).
+#         p2: Second pose, shape (..., 7) (x, y, z, qw, qx, qy, qz).
+#         rot_weight: Weight for rotational component.
+#         trans_weight: Weight for translational component.
+#     Returns:
+#         The left-invariant distance between p1 and p2, shape (...,).
+#     """
+#     # jax.debug.print("se3_left_invariant_metric called with p1 shape: {}, p2 shape: {}", p1.shape, p2.shape)
+#     pos1, quat1 = p1[:3], p1[3:]
+#     pos2, quat2 = p2[:3], p2[3:]
+
+#     return rot_weight * jnp.linalg.norm(
+#         mjx._src.math.quat_sub(quat1, quat2)
+#     ) + trans_weight * jnp.linalg.norm(pos2 - pos1)
+
+
+
+def se3_left_invariant_metric(p1, p2, rot_weight=1.0, trans_weight=1.0):
     """
-    # jax.debug.print("se3_left_invariant_metric called with p1 shape: {}, p2 shape: {}", p1.shape, p2.shape)
-    pos1, quat1 = p1[:3], p1[3:]
-    pos2, quat2 = p2[:3], p2[3:]
-
-    return rot_weight * jnp.linalg.norm(
-        mjx._src.math.quat_sub(quat1, quat2)
-    ) + trans_weight * jnp.linalg.norm(pos2 - pos1)
+    Proper left-invariant geodesic distance on SE(3).
+    
+    Args:
+        p1, p2: Poses (..., 3 pos + 4 quat scalar-first).
+        rot_weight, trans_weight: Scales for rotation (rad) vs translation (m).
+    Returns:
+        Distance (...,).
+    """
+    pos1, quat1 = p1[..., :3], p1[..., 3:]
+    pos2, quat2 = p2[..., :3], p2[..., 3:]
+    
+    # Relative quaternion: quat1^{-1} * quat2 (MuJoCo: mjx._src.math.quat_mul(quat_conj(quat1), quat2))
+    quat_rel = quat_mul(quat_conj(quat1), quat2)
+    quat_rel = quat_rel / jnp.linalg.norm(quat_rel, axis=-1, keepdims=True)  # Renormalize
+    
+    # Rotation log: omega = theta * axis (vectorized axis-angle)
+    cos_half = jnp.clip(quat_rel[..., 0], -1.0, 1.0)
+    theta = 2 * jnp.arccos(cos_half)
+    sin_half = jnp.sin(theta / 2)
+    omega = jnp.where(
+        jnp.abs(sin_half) > 1e-8,
+        (theta / sin_half)[..., None] * quat_rel[..., 1:],
+        jnp.zeros_like(quat_rel[..., 1:])
+    )
+    
+    # Relative translation: R1^T (pos2 - pos1)  [true left-invariant]
+    R1 = quat2mat(quat1)  # (..., 3,3)
+    v = jnp.einsum('...ij,...j->...i', R1.transpose(-2, -1), pos2 - pos1)
+    
+    # Weighted se(3) norm
+    rot_norm = jnp.linalg.norm(omega, axis=-1) * rot_weight
+    trans_norm = jnp.linalg.norm(v, axis=-1) * trans_weight
+    return jnp.sqrt(rot_norm**2 + trans_norm**2)
