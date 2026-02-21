@@ -231,8 +231,8 @@ def main():
     parser.add_argument(
         "--freq",
         type=float,
-        default=30.0,
-        help="Servo command frequency in Hz (default: 30)",
+        default=50.0,
+        help="Servo command frequency in Hz (default: 50)",
     )
     parser.add_argument(
         "--teleop",

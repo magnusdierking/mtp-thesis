@@ -354,7 +354,7 @@ class MTP(SamplingBasedController):
         spline = rollouts.controls[next_idx]  # use the best elite as control
         new_elites = rollouts.controls[elite_indices[:self.keep_elites]]
         
-        predicted_state = rollouts.trace_sites[:, next_idx, (self.last_a_idx + 1), ...] 
+        predicted_state = rollouts.trace_sites[:, next_idx, (self.last_a_idx), ...] 
         # predicted_state = rollouts.trace_sites[:, next_idx, -1, ...] 
 
 

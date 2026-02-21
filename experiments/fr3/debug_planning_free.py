@@ -343,7 +343,7 @@ class FR3_PushT(FrankaPandaServer):
 
         t.transform.translation.x = 0.026
         t.transform.translation.y = 0.005
-        t.transform.translation.z = -0.035 
+        t.transform.translation.z = -0.034
 
         quat = quaternion_from_euler(0.00, 0.0, -np.pi)
 

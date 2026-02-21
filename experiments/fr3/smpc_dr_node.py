@@ -58,7 +58,50 @@ from hydrax.utils.files import get_root_path
 # ---------------------------------------------------------------------------
 #  Helpers
 # ---------------------------------------------------------------------------
+def compute_randomizations(
+    batched_model: mjx.Model,
+    mj_model: mujoco.MjModel,
+    randomization_specs: dict,
+) -> tuple[mjx.Model, list]:
+    spec = mujoco.MjSpec()
+    randomized_axes = []
+    for type, type_dict in randomization_specs.items():
+        
+        for name, param_dict in type_dict.items():
+            if type == 'joints':
+                id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            elif type == 'bodies':
+                id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, name)
+            elif type == 'geoms':
+                id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_GEOM, name)
+            else:
+                raise ValueError(f"Unknown type '{type}' in randomization specs")
+            for field_name in param_dict:
+                if hasattr(batched_model, field_name):
+                    local_idx, randomization_values = param_dict[field_name] 
+                    field_array = getattr(batched_model, field_name)
+                    nbr_randomizations = randomization_values.shape[0] 
+                    
+                    if field_array.shape[0] != nbr_randomizations:
+                        reps = (nbr_randomizations,) + (1,) * field_array.ndim
+                        field_array = jnp.tile(field_array, reps)
+                    if local_idx is None:
+                        field_array = field_array.at[:, [id]].set(jnp.expand_dims(randomization_values, axis=-1))
+                    else:
+                        field_array = field_array.at[:, id, [local_idx]].set(jnp.expand_dims(randomization_values, axis=-1))
 
+
+                    # randomizations[field_name] = field_array
+                    batched_model = batched_model.replace(**{field_name: field_array})
+                    print(f"Setting type  '{type}' field '{field_name}' for {name} index {id}")
+                    randomized_axes.append(field_name)
+                else:
+                    raise ValueError(f"{type.capitalize()} {name} has no attribute '{field_name}'")
+    
+
+    return batched_model, randomized_axes              
+                    
+                
 
 def np_yaw_from_quat(x, y, z, w):
     yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
@@ -152,7 +195,7 @@ class SMPCPlannerNode(FrankaPandaServer):
         # ---- Move to initial pose ----
         self.init_pos = np.array(
             [
-                0.6 + np.random.uniform(-0.03, 0.03),
+                0.5 + np.random.uniform(-0.03, 0.03),
                 -0.15 + np.random.uniform(-0.03, 0.03),
                 0.045,
             ]
@@ -315,58 +358,88 @@ class SMPCPlannerNode(FrankaPandaServer):
     # ------------------------------------------------------------------
 
     def _domain_randomize_mjx_model(self):
-        top_masses = jnp.linspace(0.01, 0.3, self.ctrl.num_randomizations)
-        bottom_masses = jnp.linspace(0.01, 0.4, self.ctrl.num_randomizations)
 
-        self.randomization_matrix = jnp.array([top_masses, bottom_masses])
+        randomization_dict = {
+            "geoms": {
+                # "ground": {
+                #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+                # },
+                # "bottom": {
+                #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+                # },
+                # "vertical": {
+                #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+                # },
+                "ee": {
+                    # "geom_margin": (None, jnp.linspace(-0.015, 0.015, NUM_RANDOMIZATIONS)),
+                    "geom_margin": (None, jnp.linspace(-0.0, 0.0, NUM_RANDOMIZATIONS)),
 
-        body_id = mujoco.mj_name2id(
+                },
+            }
+        }
+
+        ctrl.model, randomized_axes = compute_randomizations(
+            ctrl.model,
             self.debug_model,
-            mujoco.mjtObj.mjOBJ_BODY,
-            "block",
+            randomization_dict,
         )
+        ctrl.update_randomized_axes(randomized_axes)
+        print(ctrl.model.geom_margin)
+        # top_masses = jnp.array([0.03, 0.06, 0.15, 0.4, 0.5, 0.8, 1.3, 2.3, 2.5, 4.0])   
+        # bottom_masses = jnp.array([0.03, 0.09, 0.15, 0.5, 0.4, 1.0, 2.3, 1.3, 2.5, 6.0])
+        # top_masses = jnp.linspace(0.15, 0.15, self.ctrl.num_randomizations)
+        # bottom_masses = jnp.linspace(0.02, 0.8, self.ctrl.num_randomizations)
 
-        randomized_axes = [
-            "body_mass",
-            "body_inertia",
-            "body_ipos",
-            "body_invweight0",
-            "dof_invweight0",
-            "dof_M0",
-            "dof_armature",
-            "body_subtreemass",
-        ]
-        derived_values = {f: [] for f in randomized_axes}
 
-        xml_path = (
-            get_root_path()
-            / "hydrax"
-            / "models"
-            / "fr3_pushT_vel"
-            / "scene_mjx_free_dr.xml"
-        ).as_posix()
+        # self.randomization_matrix = jnp.array([top_masses, bottom_masses])
 
-        for top_mass, bottom_mass in zip(top_masses, bottom_masses):
-            spec = mujoco.MjSpec.from_file(xml_path)
-            body = spec.body("block")
-            for geom in body.geoms:
-                if geom.name == "top":
-                    geom.mass = float(top_mass)
-                elif geom.name == "bottom":
-                    geom.mass = float(bottom_mass)
-            compiled = spec.compile()
-            self.get_logger().info(
-                f"DR: top={float(top_mass):.3f}  bottom={float(bottom_mass):.3f}  "
-                f"total={compiled.body_mass[body_id]:.3f}"
-            )
-            for field in randomized_axes:
-                derived_values[field].append(getattr(compiled, field))
+        # body_id = mujoco.mj_name2id(
+        #     self.debug_model,
+        #     mujoco.mjtObj.mjOBJ_BODY,
+        #     "block",
+        # )
 
-        for field in derived_values:
-            derived_values[field] = jnp.array(derived_values[field])
+        # randomized_axes = [
+        #     "body_mass",
+        #     "body_inertia",
+        #     "body_ipos",
+        #     "body_invweight0",
+        #     "dof_invweight0",
+        #     "dof_M0",
+        #     "dof_armature",
+        #     "body_subtreemass",
+        # ]
+        # derived_values = {f: [] for f in randomized_axes}
 
-        self.ctrl.update_randomized_axes(randomized_axes)
-        self.ctrl.model = self.ctrl.model.replace(**derived_values)
+        # xml_path = (
+        #     get_root_path()
+        #     / "hydrax"
+        #     / "models"
+        #     / "fr3_pushT_vel"
+        #     / "scene_mjx_free_dr.xml"
+        # ).as_posix()
+
+        # for top_mass, bottom_mass in zip(top_masses, bottom_masses):
+        #     spec = mujoco.MjSpec.from_file(xml_path)
+        #     body = spec.body("block")
+        #     for geom in body.geoms:
+        #         if geom.name == "top":
+        #             geom.mass = float(top_mass)
+        #         elif geom.name == "bottom":
+        #             geom.mass = float(bottom_mass)
+        #     compiled = spec.compile()
+        #     self.get_logger().info(
+        #         f"DR: top={float(top_mass):.3f}  bottom={float(bottom_mass):.3f}  "
+        #         f"total={compiled.body_mass[body_id]:.3f}"
+        #     )
+        #     for field in randomized_axes:
+        #         derived_values[field].append(getattr(compiled, field))
+
+        # for field in derived_values:
+        #     derived_values[field] = jnp.array(derived_values[field])
+
+        # self.ctrl.update_randomized_axes(randomized_axes)
+        # self.ctrl.model = self.ctrl.model.replace(**derived_values)
 
     # ------------------------------------------------------------------
     #  Static transforms
@@ -393,9 +466,9 @@ class SMPCPlannerNode(FrankaPandaServer):
         t2.header.stamp = self.get_clock().now().to_msg()
         t2.header.frame_id = "objectPushT"
         t2.child_frame_id = "objectPushT_MuJoCo"
-        t2.transform.translation.x = 0.026
-        t2.transform.translation.y = 0.005
-        t2.transform.translation.z = -0.035
+        t2.transform.translation.x = 0.0255
+        t2.transform.translation.y = 0.00
+        t2.transform.translation.z = -0.034
         quat = quaternion_from_euler(0.0, 0.0, -np.pi)
         t2.transform.rotation.x = quat[0]
         t2.transform.rotation.y = quat[1]
@@ -490,7 +563,7 @@ class SMPCPlannerNode(FrankaPandaServer):
     # ------------------------------------------------------------------
 
     def _write_debug_state(
-        self, lin_t, quat_t, robot_q, robot_dq, block_vel, current_time
+        self, lin_t, quat_t, robot_q, robot_dq, block_vel = None, current_time = None
     ):
         """Set debug_data.qpos / qvel from real observations."""
         self.debug_data.qpos[0:7] = np.array(
@@ -505,7 +578,7 @@ class SMPCPlannerNode(FrankaPandaServer):
             ]
         )
         self.debug_data.qpos[7:14] = robot_q
-        self.debug_data.qvel[0:6] = block_vel
+        # self.debug_data.qvel[0:6] = block_vel
         self.debug_data.qvel[6:13] = robot_dq
         self.debug_data.time = current_time
 
@@ -582,11 +655,11 @@ class SMPCPlannerNode(FrankaPandaServer):
         current_time = self.get_clock().now().nanoseconds / 1e9
 
         # 2 — block velocity
-        block_vel = self._estimate_block_velocity(lin_t, quat_t, current_time)
+        # block_vel = self._estimate_block_velocity(lin_t, quat_t, current_time)
 
         # 3 — write into debug_data
         self._write_debug_state(
-            lin_t, quat_t, robot_q, robot_dq, block_vel, current_time
+            lin_t, quat_t, robot_q, robot_dq, block_vel=None, current_time=current_time
         )
 
         # 4 — ghost mocap from previous predictions
@@ -594,40 +667,43 @@ class SMPCPlannerNode(FrankaPandaServer):
         weights = np.ones(self.ctrl.num_randomizations, dtype=np.float32) / self.ctrl.num_randomizations
         if self.predicted_states is not None:
             ref_site = self.predicted_states[:, -1, ...]  # (domains, 7), only for last sight
-            # mocap_bids = self.mocap_T_bids[: self.ctrl.num_randomizations]
-            # for idx, bid in enumerate(mocap_bids):
-            #     self.debug_data.mocap_pos[bid] = ref_site[idx, :3]
-            #     self.debug_data.mocap_quat[bid] = ref_site[idx, 3:]
-            # if len(self.mocap_T_bids) < 10:
-            #     for bid in range(len(self.mocap_T_bids), 10):
-            #         self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
-            #         self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
+            mocap_bids = self.mocap_T_bids[: self.ctrl.num_randomizations]
+            for idx, bid in enumerate(mocap_bids):
+                self.debug_data.mocap_pos[bid] = ref_site[idx, :3]
+                self.debug_data.mocap_quat[bid] = ref_site[idx, 3:]
+            if len(self.mocap_T_bids) < 10:
+                for bid in range(len(self.mocap_T_bids), 10):
+                    self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
+                    self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
 
             current_obs = np.array(self.debug_data.qpos[:7], dtype=np.float32)
             distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
                 self.predicted_states[:, -1, ...],
                 current_obs,
             )
-            temperature = np.median(distances)
-            probs = np.exp(-distances / temperature)  # temperature scaling
-            probs = probs / (np.sum(probs) + 1e-12)
-            # print("Domain probabilities before update:", probs)
-            entropy = -np.sum(probs * np.log(probs + 1e-12))
-            # print("Domain distribution entropy:", entropy)
-            max_entropy = jnp.log(len(probs) + 1e-12)
-            # print("Max entropy:", max_entropy)
-            normalized_entropy = entropy / (max_entropy + 1e-12)
-            # print("Normalized entropy:", normalized_entropy)
+            if not jnp.allclose(distances, distances[0],rtol=0.01):
+                temperature = 0.05 #np.median(distances)/6
+                probs = jnp.exp(-distances / temperature)  # temperature scaling
+                probs = probs / (jnp.sum(probs) + 1e-12)
+                # print("Domain probabilities before update:", probs)
+                entropy = -jnp.sum(probs * jnp.log(probs + 1e-12))
+                # print("Domain distribution entropy:", entropy)
+                max_entropy = jnp.log(len(probs) + 1e-12)
+                # print("Max entropy:", max_entropy)
+                normalized_entropy = entropy / (max_entropy + 1e-12)
+                # print("Normalized entropy:", normalized_entropy)
 
-            new_probs = (
-                1 - normalized_entropy
-            ) * probs + normalized_entropy * self.policy_params.domain_weights
-            self.policy_params = self.policy_params.replace(
-                domain_weights=jnp.array(new_probs)
-            )
+                new_probs = (
+                    1 - normalized_entropy
+                ) * probs + normalized_entropy * self.policy_params.domain_weights
+                # self.policy_params = self.policy_params.replace(
+                #     domain_weights=jnp.array(new_probs)
+                # )
 
-            self.get_logger().info(f"Step {self.ctr}: domain error: {distances} | updated weights: {new_probs}")
-
+                self.get_logger().info(f"Step {self.ctr}: domain error: {distances} | updated weights: {new_probs} | sum of weights: {jnp.sum(new_probs):.4f} ")
+            else:
+                self.get_logger().info(f"Step {self.ctr}: weights unchanged.")
+        
         # 5 — kinematics only (NOT mj_step)
         mujoco.mj_forward(self.debug_model, self.debug_data)
 
@@ -664,7 +740,7 @@ class SMPCPlannerNode(FrankaPandaServer):
                 "ee_pos": ee_position.tolist(),
                 "terminal_error": float(terminal_error),
                 "action": actions[0].tolist(),
-                "block_vel": block_vel.tolist(),
+                # "block_vel": block_vel.tolist(),
                 "distances": distances.tolist(),
                 "domain_weights": self.domain_weights.tolist(),
             }
@@ -709,7 +785,7 @@ class SMPCPlannerNode(FrankaPandaServer):
         rclpy.shutdown()
 
     def save_log(self, path, filename="fr3_dr_real_"):
-        log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}_uniform"
+        log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}_bad2"
         with open(str(log_file) + ".pkl", "wb") as f:
             pickle.dump(self.log, f)
 
@@ -746,10 +822,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # ---- hyper-parameters ----
-    seed = 12
-    num_samples = 128
+    seed = 10
+    num_samples = 150
     NUM_RANDOMIZATIONS = 10
-    planning_freq = 6  # Hz
+    planning_freq = 5  # Hz
     max_speed = 0.3
 
     # ---- risk strategy ----
@@ -779,7 +855,7 @@ if __name__ == "__main__":
     # ---- task ----
     task = PushTFranka(
         ik_type="pinv",
-        planning_horizon=10,
+        planning_horizon=14, # was 9
         sim_steps_per_control_step=2,
         ctrl_limits={
             "u_min": jnp.array([-max_speed, -max_speed]),
@@ -800,12 +876,12 @@ if __name__ == "__main__":
             num_samples=num_samples,
             temperature=0.1,
             M=3,
-            N=64,
+            N=32,
             sigma_min=0.15,
             sigma_max=0.55,
-            sigma_start=0.3,
-            num_elites=32,
-            beta=0.3,
+            sigma_start=0.2,
+            num_elites=24,
+            beta=0.25,
             alpha=0.1,
             interpolation="bspline",
             num_randomizations=NUM_RANDOMIZATIONS,
@@ -824,7 +900,6 @@ if __name__ == "__main__":
             task,
             num_samples=num_samples,
             alpha=0.1,
-            temperature=0.1,
             noise_level=0.3,
             num_randomizations=NUM_RANDOMIZATIONS,
             savgol_filter=True,
@@ -903,8 +978,6 @@ if __name__ == "__main__":
             trace_idxs=trace_idxs,
         )
 
-        # Single-threaded executor: only ROS subscriptions + timeout timer.
-        # Heavy planning runs on its own thread and publishes via the node.
         executor = rclpy.executors.SingleThreadedExecutor()
         executor.add_node(node)
 

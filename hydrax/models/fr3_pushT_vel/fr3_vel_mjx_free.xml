@@ -163,8 +163,8 @@
                                 pos="0 0 0"
                                 rgba="0 0 0 1"
                                 friction="0.1"
-                                solref="0.05 1.1" 
-                                solimp="0.75 0.95 0.002 0.5 2"
+                                solref="0.03 1.1" 
+                                solimp="0.15 0.95 0.002 0.5 2"
                                 condim="3"/> 
                           <site name="ee_site" pos="0 0 0.0" size="0.015" rgba="0 0 0 1"/>
                         </body>

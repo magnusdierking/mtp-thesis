@@ -59,7 +59,7 @@ det_init = {
 
 task = PushTFranka(
     ik_type="pinv",
-    planning_horizon=8,
+    planning_horizon=9,
     sim_steps_per_control_step=3,
     ctrl_limits={
         "u_min": jnp.array([-MAX_SPEED, -MAX_SPEED]),
@@ -209,24 +209,31 @@ path = path / f"seed_{seed}_{args.algorithm}_{args.risk}.pkl"
 
 randomization_dict = {
     "geoms": {
-        "ground": {
-            "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
-        },
-        "bottom": {
-            "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
-        },
-        "vertical": {
-            "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+        # "ground": {
+        #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+        # },
+        # "bottom": {
+        #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+        # },
+        # "vertical": {
+        #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+        # },
+        # "ee": {
+        #     "geom_margin": (None, jnp.linspace(-0.1, 0.1, NUM_RANDOMIZATIONS)),
+        # },
+        "ee": {
+            "geom_solimp": (2, jnp.linspace(0.001, 0.01, NUM_RANDOMIZATIONS)),
         },
     }
 }
 
-# ctrl.model, randomized_axes = compute_randomizations(
-#     ctrl.model,
-#     mj_model,
-#     randomization_dict,
-# )
-# ctrl.update_randomized_axes(randomized_axes)
+ctrl.model, randomized_axes = compute_randomizations(
+    ctrl.model,
+    mj_model,
+    randomization_dict,
+)
+ctrl.update_randomized_axes(randomized_axes)
+print(ctrl.model.geom_margin)
 
 
 # Define mass values for each geom
@@ -296,11 +303,11 @@ for field in derived_values:
 #     print(f"{field} (block body): {values[:, body_id]}")
 
 
-ctrl.update_randomized_axes(randomized_axes)
-ctrl.model = ctrl.model.replace(**derived_values)
+# ctrl.update_randomized_axes(randomized_axes)
+# ctrl.model = ctrl.model.replace(**derived_values)
 
 
-max_traces = 128
+max_traces = 30
 trace_idxs = (
     [i * max_traces for i in range(NUM_SAMPLES // max_traces)] if max_traces > 0 else []
 )
