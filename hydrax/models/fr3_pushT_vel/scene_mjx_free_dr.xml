@@ -1,7 +1,7 @@
 <mujoco model="fr3 scene">
 
   <!-- NUmerical Stuff -->
-  <option
+  <!-- <option
         impratio="1.5"
         solver="Newton"
         jacobian="dense"
@@ -12,8 +12,8 @@
         ls_iterations="10"
     >
     <flag eulerdamp="disable" warmstart="enable" />
-  </option>
-  <!-- <option
+  </option> -->
+  <option
         impratio="1.5"
         solver="Newton"
         jacobian="dense"
@@ -24,7 +24,7 @@
         ls_iterations="7"
     >
     <flag eulerdamp="disable" warmstart="enable" />
-  </option> -->
+  </option>
   <custom>
     <numeric data="32" name="max_contact_points" />
     <numeric name="maxhullverts" data="32" />

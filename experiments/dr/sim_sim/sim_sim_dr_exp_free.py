@@ -34,8 +34,8 @@ from hydrax.risk import (
 from hydrax.tasks.pusht_franka import PushTFranka
 from hydrax.utils.files import get_data_path, get_root_path
 
-NUM_SAMPLES = 64
-NUM_RANDOMIZATIONS = 4
+NUM_SAMPLES = 150
+NUM_RANDOMIZATIONS = 10
 MAX_SPEED = 0.35  # m/s
 PLANNING_FREQUENCY = 2
 
@@ -60,7 +60,7 @@ det_init = {
 
 task = PushTFranka(
     ik_type="pinv",
-    planning_horizon=9,
+    planning_horizon=15,
     sim_steps_per_control_step=3,
     ctrl_limits={
         "u_min": jnp.array([-MAX_SPEED, -MAX_SPEED]),
@@ -205,13 +205,13 @@ mj_model, mj_data = task.reset(seed=seed)
 path = get_data_path() / "dr_sim_sim"
 if not path.exists():
     path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{seed}_{args.algorithm}_{args.risk}.pkl"
+path = path / f"seed_{seed}_{args.algorithm}_{args.risk}_{PLANNING_FREQUENCY}_friction.pkl"
 
 
 randomization_dict = {
     "geoms": {
         "ground": {
-            "geom_friction": (0, jnp.linspace(0.01, 4.0, NUM_RANDOMIZATIONS)),
+            "geom_friction": (0, jnp.linspace(0.001, 3.0, NUM_RANDOMIZATIONS)),
         },
         # "bottom": {
         #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
@@ -231,7 +231,9 @@ ctrl.model, randomized_axes = compute_randomizations(
     randomization_dict,
 )
 ctrl.update_randomized_axes(randomized_axes)
-# print(ctrl.model.geom_margin)
+print(ctrl.model.geom_friction.shape)
+
+print(ctrl.model.geom_friction[:, mj_model.geom("ground").id, ...])
 
 
 # Define mass values for each geom
@@ -305,7 +307,7 @@ for field in derived_values:
 # ctrl.model = ctrl.model.replace(**derived_values)
 
 
-max_traces = 30
+max_traces = 60
 trace_idxs = (
     [i * max_traces for i in range(NUM_SAMPLES // max_traces)] if max_traces > 0 else []
 )
@@ -322,7 +324,7 @@ run_interactive(
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,
-    max_step=500,
+    max_step=100,
     seed=seed,
     log_file=path.as_posix(),
     trace_idxs=trace_idxs,

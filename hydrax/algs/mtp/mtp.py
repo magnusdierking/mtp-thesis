@@ -433,7 +433,7 @@ class MTP(SamplingBasedController):
         """Get the control action for the current time step, zero order hold."""
         idx_float = t / self.task.dt
         idx = jnp.floor(idx_float).astype(jnp.int32)
-        print(f"Index: {idx}")
+        # print(f"Index: {idx}")
         action = params.spline[idx]
         return action
 

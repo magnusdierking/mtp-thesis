@@ -397,12 +397,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
             # check if any change in observation
             if (
-                np.allclose(np.array(new_observation5), old_observation5, atol=1e-2)
+                np.allclose(np.array(new_observation5), old_observation5, atol=0.0, rtol=0.1)
                 or len(observation_queue) < controller.last_a_idx
             ):
                 # no change, skip update
                 print("No change in T observation, skipping DR update.")
-
+                distances = np.zeros(sites_of_interest.shape[0])
             else:
                 old_observation1 = new_observation1
                 old_observation2 = new_observation2
@@ -425,15 +425,20 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                         10,
                     )  # (domains,)
                     chunk_distances[:, i] = distances
-                    print("Distances:", np.array(distances))
+                    # print("Distances:", np.array(distances))
                 # sum over horizons
                 distances = np.sum(chunk_distances, axis=1)
-                # scale to
-                shifted = np.array(distances) - np.mean(distances)
-                sigmoids = 1 / (1 + np.exp(-shifted))
+                print("Distances:", distances)
+                distances = distances - np.min(distances)  # shift to make min 0
 
-                probs = np.exp(-distances)
+                # scale to
+                # shifted = np.array(distances) - np.mean(distances)
+                # sigmoids = 1 / (1 + np.exp(-shifted))
+
+                temperature = 1.0
+                probs = np.exp(-distances / temperature )
                 probs = probs / (np.sum(probs) + 1e-12)
+                print("Domain probabilities before update:", probs)
 
                 # print("Domain probabilities before update:", probs)
                 entropy = -np.sum(probs * np.log(probs + 1e-12))
@@ -452,7 +457,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     domain_weights=jnp.array(new_probs)
                 )
                 print("Updated domain weights:", policy_params.domain_weights)
-
+                print("=" * 10)
                 # !-------------------------------------------
 
             # Visualize the rollouts
@@ -482,7 +487,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # Step the simulation
             for i in range(sim_steps_per_replan):
                 t = i * mj_model.opt.timestep
-                print(f"Step {i}: Time {t}")
+                # print(f"Step {i}: Time {t}")
                 u = controller.get_action(policy_params, t)
 
                 if delay_ctrl_start > 0:
@@ -551,6 +556,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     "control": np.array(u).tolist(),
                     "state_cost": float(rollouts.costs[0, 0]),
                     "success": task_success,
+                    "distances": np.array(distances).tolist(),
                     "domain_weights": np.array(policy_params.domain_weights).tolist()
                     if hasattr(controller, "domain_weights")
                     else None,
@@ -574,7 +580,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
     # Save logs to a CSV file if specified
     if log_file:
-        log_dir = Path(log_file)
+        log_dir = Path(log_file).parent
         log_dir.mkdir(parents=True, exist_ok=True)  # create directory if missing
 
         with open(log_file, "wb") as f:
