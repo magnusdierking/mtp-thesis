@@ -115,13 +115,13 @@
 
       <!-- Upper part ot T -->
       <geom
-              class="tblock"
-              name="top"
-              type="box"
-              size=".025 0.06 0.025"
-              pos="0.075 0.0 0.0"
-              mass="0.17"
-          />
+                class="tblock"
+                name="top"
+                type="box"
+                size=".025 0.06 0.025"
+                pos="0.075 0.0 0.0"
+                mass="0.17"
+            />
     </body>
 
     <!-- Mocap bodies to visualize domain randomization -->
@@ -134,7 +134,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="1.0 0.0 0.0 0.05"
             />
       <geom
                 class="tblock"
@@ -144,7 +144,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="1.0 0.0 0.0 0.05"
             />
     </body>
 
@@ -157,7 +157,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.0 0.0 1.0 0.05"
             />
       <geom
                 class="tblock"
@@ -167,7 +167,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.0 0.0 1.0 0.05"
             />
     </body>
 
@@ -180,7 +180,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.0 0.8 0.0 0.05"
             />
       <geom
                 class="tblock"
@@ -190,7 +190,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.0 0.8 0.0 0.05"
             />
     </body>
 
@@ -203,7 +203,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="1.0 0.5 0.0 0.05"
             />
       <geom
                 class="tblock"
@@ -213,7 +213,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="1.0 0.5 0.0 0.05"
             />
     </body>
 
@@ -226,7 +226,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.6 0.0 0.8 0.05"
             />
       <geom
                 class="tblock"
@@ -236,7 +236,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.6 0.0 0.8 0.05"
             />
     </body>
 
@@ -249,7 +249,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.0 0.8 0.8 0.05"
             />
       <geom
                 class="tblock"
@@ -259,7 +259,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.0 0.8 0.8 0.05"
             />
     </body>
 
@@ -272,7 +272,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="1.0 0.0 0.6 0.05"
             />
       <geom
                 class="tblock"
@@ -282,7 +282,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="1.0 0.0 0.6 0.05"
             />
     </body>
 
@@ -295,7 +295,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.6 0.4 0.0 0.05"
             />
       <geom
                 class="tblock"
@@ -305,7 +305,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.6 0.4 0.0 0.05"
             />
     </body>
 
@@ -318,7 +318,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.0 0.4 0.0 0.05"
             />
       <geom
                 class="tblock"
@@ -328,7 +328,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.0 0.4 0.0 0.05"
             />
     </body>
 
@@ -341,7 +341,7 @@
                 pos="0.0 0.000 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.4 0.4 0.4 0.05"
             />
       <geom
                 class="tblock"
@@ -351,7 +351,7 @@
                 pos="0.075 0.0 0.0"
                 contype="0"
                 conaffinity="0"
-                rgba="0.1 0.1 0.1 0.05"
+                rgba="0.4 0.4 0.4 0.05"
             />
     </body>
 

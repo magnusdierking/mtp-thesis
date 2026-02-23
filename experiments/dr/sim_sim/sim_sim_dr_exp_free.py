@@ -34,9 +34,10 @@ from hydrax.risk import (
 from hydrax.tasks.pusht_franka import PushTFranka
 from hydrax.utils.files import get_data_path, get_root_path
 
-NUM_SAMPLES = 128
-NUM_RANDOMIZATIONS = 10
+NUM_SAMPLES = 64
+NUM_RANDOMIZATIONS = 4
 MAX_SPEED = 0.35  # m/s
+PLANNING_FREQUENCY = 2
 
 seed = 42
 update_cov = False
@@ -176,7 +177,7 @@ elif args.algorithm == "mtp":
         num_randomizations=NUM_RANDOMIZATIONS,
         seed=seed,
         update_cov=update_cov,
-        planning_freq=5,
+        planning_freq=PLANNING_FREQUENCY,
     )
     error_log = f"./../data/error_log_pushT/mtp_{seed}.npy"
 
@@ -188,7 +189,7 @@ elif args.algorithm == "ps":
         noise_level=0.2,
         num_randomizations=NUM_RANDOMIZATIONS,
         shift=True,
-        planning_freq=5,
+        planning_freq=PLANNING_FREQUENCY,
         risk_strategy=aggregation,
         savgol_filter=True,
         seed=seed,
@@ -209,9 +210,9 @@ path = path / f"seed_{seed}_{args.algorithm}_{args.risk}.pkl"
 
 randomization_dict = {
     "geoms": {
-        # "ground": {
-        #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
-        # },
+        "ground": {
+            "geom_friction": (0, jnp.linspace(0.01, 4.0, NUM_RANDOMIZATIONS)),
+        },
         # "bottom": {
         #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
         # },
@@ -219,11 +220,8 @@ randomization_dict = {
         #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
         # },
         # "ee": {
-        #     "geom_margin": (None, jnp.linspace(-0.1, 0.1, NUM_RANDOMIZATIONS)),
+        #     "geom_margin": (None, jnp.linspace(-0.01, 0.01, NUM_RANDOMIZATIONS)),
         # },
-        "ee": {
-            "geom_solimp": (2, jnp.linspace(0.001, 0.01, NUM_RANDOMIZATIONS)),
-        },
     }
 }
 
@@ -233,12 +231,12 @@ ctrl.model, randomized_axes = compute_randomizations(
     randomization_dict,
 )
 ctrl.update_randomized_axes(randomized_axes)
-print(ctrl.model.geom_margin)
+# print(ctrl.model.geom_margin)
 
 
 # Define mass values for each geom
-top_masses = jnp.linspace(0.05, 3.0, NUM_RANDOMIZATIONS) # vertical
-bottom_masses = jnp.linspace(0.05, 3.1, NUM_RANDOMIZATIONS) # bottom
+top_masses = jnp.linspace(0.05, 3.0, NUM_RANDOMIZATIONS)  # vertical
+bottom_masses = jnp.linspace(0.05, 3.1, NUM_RANDOMIZATIONS)  # bottom
 
 body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
 
@@ -317,7 +315,7 @@ run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=5,
+    frequency=PLANNING_FREQUENCY,
     show_traces=True,
     trace_width=0.55,
     max_traces=max_traces,

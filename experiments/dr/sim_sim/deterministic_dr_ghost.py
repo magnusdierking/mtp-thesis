@@ -1,5 +1,6 @@
 import pickle
 import time
+from collections import deque
 from pathlib import Path
 from string import printable
 from typing import Sequence
@@ -274,6 +275,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         )
     )
 
+    observation_queue = deque(maxlen=50)
+    observation_queue.append(old_observation5)
+
     sites_of_interest = policy_params.predicted_state
 
     # Start the simulation
@@ -338,9 +342,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # ! get error signal
             # print("Sites in rollouts:", rollouts.trace_sites.shape) # (domains, samples, steps, sites, 7)
             sites_of_interest = policy_params.predicted_state  # (domains, sites, 7)
-            ref_site = sites_of_interest[:, -1, ...]  # (domains, 7)
-            # print("Predicted sites shape:", sites_of_interest.shape)
-            # print("Sites of interest shape:", sites_of_interest.shape)
+            print("Shape:", sites_of_interest.shape)
+            ref_site = sites_of_interest[:, -1, 4, ...]  # (domains, replanning_step, 7)
+
             for bid, idx in zip(mocap_T_bids, range(len(mocap_T_bids)), strict=True):
                 mj_data.mocap_pos[bid] = ref_site[idx, :3]
                 mj_data.mocap_quat[bid] = ref_site[idx, 3:]
@@ -392,7 +396,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             )
 
             # check if any change in observation
-            if np.allclose(np.array(new_observation5), old_observation5, atol=1e-2):
+            if (
+                np.allclose(np.array(new_observation5), old_observation5, atol=1e-2)
+                or len(observation_queue) < controller.last_a_idx
+            ):
                 # no change, skip update
                 print("No change in T observation, skipping DR update.")
 
@@ -403,28 +410,31 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 old_observation4 = new_observation4
                 old_observation5 = new_observation5
 
-                # distance_1 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                #     sites_of_interest[..., 0, :], new_observation1
-                # )
-                # distance_2 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                #     sites_of_interest[..., 1, :], new_observation2
-                # )
-                # # ee
-                # distance_3 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                #     sites_of_interest[..., 2, :], new_observation3
-                # )
-                # distance_4 = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                #     sites_of_interest[..., 3, :], new_observation4
-                # )
-                # distances = distance_1 + distance_2 + distance_4
-                distances = jax.vmap(
-                    se3_left_invariant_metric, in_axes=(0, None, None, None)
-                )(sites_of_interest[..., 4, :], new_observation5, 2, 10)  # (domains,)
+                chunk_distances = np.empty(
+                    (sites_of_interest.shape[0], sites_of_interest.shape[1])
+                )
+                for i in range(sites_of_interest.shape[1]):
+                    distances = jax.vmap(
+                        se3_left_invariant_metric, in_axes=(0, None, None, None)
+                    )(
+                        sites_of_interest[:, -(i + 1), 4, ...],
+                        observation_queue[
+                            -(i * controller.task.sim_steps_per_control_step + 1)
+                        ],
+                        2,
+                        10,
+                    )  # (domains,)
+                    chunk_distances[:, i] = distances
+                    print("Distances:", np.array(distances))
+                # sum over horizons
+                distances = np.sum(chunk_distances, axis=1)
+                # scale to
+                shifted = np.array(distances) - np.mean(distances)
+                sigmoids = 1 / (1 + np.exp(-shifted))
 
-                # probabilities via softmax
-                temperature = np.median(distances)
-                probs = np.exp(-distances / temperature)  # temperature scaling
+                probs = np.exp(-distances)
                 probs = probs / (np.sum(probs) + 1e-12)
+
                 # print("Domain probabilities before update:", probs)
                 entropy = -np.sum(probs * np.log(probs + 1e-12))
                 # print("Domain distribution entropy:", entropy)
@@ -472,6 +482,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # Step the simulation
             for i in range(sim_steps_per_replan):
                 t = i * mj_model.opt.timestep
+                print(f"Step {i}: Time {t}")
                 u = controller.get_action(policy_params, t)
 
                 if delay_ctrl_start > 0:
@@ -489,6 +500,15 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                         )
                     mj_data.ctrl[:] = np.array(u)
                 mujoco.mj_step(mj_model, mj_data)
+
+                new_observation5 = jnp.concatenate(
+                    (
+                        jnp.array(mj_data.site_xpos[site_id5]),
+                        jnp.array(mat2quat(mj_data.site_xmat[site_id5])),
+                    ),
+                    axis=-1,
+                )
+                observation_queue.append(new_observation5)
                 viewer.sync()
 
             # Capture frame if recording
