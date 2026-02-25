@@ -193,13 +193,65 @@ class SMPCPlannerNode(FrankaPandaServer):
         )
 
         # ---- Move to initial pose ----
-        self.init_pos = np.array(
-            [
-                0.5 + np.random.uniform(-0.03, 0.03),
-                -0.15 + np.random.uniform(-0.03, 0.03),
-                0.045,
-            ]
-        )
+        if seed in [10, 11, 12]:
+            self.init_pos = np.array(
+                [
+                    0.5 + np.random.uniform(-0.03, 0.03),
+                    -0.15 + np.random.uniform(-0.03, 0.03),
+                    0.045,
+                ]
+            )
+        elif seed in [20, 21, 22]:
+            self.init_pos = np.array(
+                [
+                    0.6 + np.random.uniform(-0.03, 0.03),
+                    0.05 + np.random.uniform(-0.03, 0.03),
+                    0.045,
+                ]
+            )
+        # Robustness sweep
+        elif seed == 100: # goal default 0.45 0.0
+            self.init_pos = np.array(
+                [
+                    0.5,
+                    -0.15,
+                    0.045,
+                ]
+            )
+        elif seed == 200:# goal 0.5 0.1
+            self.init_pos = np.array(
+                [
+                    0.6,
+                    0.1,
+                    0.045,
+                ]
+            )
+        elif seed in [300, 400]:
+            self.init_pos = np.array(
+                [
+                    0.7,
+                    -0.1,
+                    0.045,
+                ]
+            )
+        elif seed in [500]: # goal default 0.45 0.0
+            self.init_pos = np.array(
+                [
+                    0.4,
+                    0.0,
+                    0.045,
+                ]
+            )
+        elif seed in [600]: # goal 0.55 -0.05
+            self.init_pos = np.array(
+                [
+                    0.5,
+                    0.0,
+                    0.045,
+                ]
+            )   
+        else:
+            raise ValueError(f"Unknown seed {seed} for initial pose randomization")
         self.init_quat = np.array([1.0, 0.0, 0.0, 0.0])
         self.init_rot = R.from_quat(self.init_quat).as_matrix()
         pose = np.eye(4)
@@ -362,7 +414,9 @@ class SMPCPlannerNode(FrankaPandaServer):
         randomization_dict = {
             "geoms": {
                 # "ground": {
-                #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+                    # "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
+                    # "geom_friction": (0, jnp.linspace(5.0, 5.0, NUM_RANDOMIZATIONS)),
+                    # "geom_friction": (0, jnp.linspace(0.01, 0.01, NUM_RANDOMIZATIONS)),
                 # },
                 # "bottom": {
                 #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
@@ -371,9 +425,8 @@ class SMPCPlannerNode(FrankaPandaServer):
                 #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
                 # },
                 "ee": {
-                    # "geom_margin": (None, jnp.linspace(-0.015, 0.015, NUM_RANDOMIZATIONS)),
-                    "geom_margin": (None, jnp.linspace(-0.0, 0.0, NUM_RANDOMIZATIONS)),
-
+                    # "geom_margin": (None, jnp.linspace(-0.02, 0.02, NUM_RANDOMIZATIONS)),
+                    "geom_margin": (None, jnp.linspace(-0.00, -0.00, NUM_RANDOMIZATIONS)),
                 },
             }
         }
@@ -384,7 +437,7 @@ class SMPCPlannerNode(FrankaPandaServer):
             randomization_dict,
         )
         ctrl.update_randomized_axes(randomized_axes)
-        print(ctrl.model.geom_margin)
+        # print(ctrl.model.geom_margin)
         # top_masses = jnp.array([0.03, 0.06, 0.15, 0.4, 0.5, 0.8, 1.3, 2.3, 2.5, 4.0])   
         # bottom_masses = jnp.array([0.03, 0.09, 0.15, 0.5, 0.4, 1.0, 2.3, 1.3, 2.5, 6.0])
         # top_masses = jnp.linspace(0.15, 0.15, self.ctrl.num_randomizations)
@@ -466,7 +519,7 @@ class SMPCPlannerNode(FrankaPandaServer):
         t2.header.stamp = self.get_clock().now().to_msg()
         t2.header.frame_id = "objectPushT"
         t2.child_frame_id = "objectPushT_MuJoCo"
-        t2.transform.translation.x = 0.0255
+        t2.transform.translation.x = 0.035
         t2.transform.translation.y = 0.00
         t2.transform.translation.z = -0.034
         quat = quaternion_from_euler(0.0, 0.0, -np.pi)
@@ -666,22 +719,24 @@ class SMPCPlannerNode(FrankaPandaServer):
         distances = np.zeros(self.ctrl.num_randomizations, dtype=np.float32)
         weights = np.ones(self.ctrl.num_randomizations, dtype=np.float32) / self.ctrl.num_randomizations
         if self.predicted_states is not None:
-            ref_site = self.predicted_states[:, -1, ...]  # (domains, 7), only for last sight
+            ref_sites = self.predicted_states[:, -1, -1, ...]  # (domains, 7), only for last sight
             mocap_bids = self.mocap_T_bids[: self.ctrl.num_randomizations]
             for idx, bid in enumerate(mocap_bids):
-                self.debug_data.mocap_pos[bid] = ref_site[idx, :3]
-                self.debug_data.mocap_quat[bid] = ref_site[idx, 3:]
+                self.debug_data.mocap_pos[bid] = ref_sites[idx, :3]
+                self.debug_data.mocap_quat[bid] = ref_sites[idx, 3:]
             if len(self.mocap_T_bids) < 10:
+                # rest of the mocap bodies covers T
                 for bid in range(len(self.mocap_T_bids), 10):
                     self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
                     self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
 
             current_obs = np.array(self.debug_data.qpos[:7], dtype=np.float32)
             distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
-                self.predicted_states[:, -1, ...],
-                current_obs,
+                ref_sites,   # x,y,z,qw,qx,qy,qz
+                current_obs, # x,y,z,qw,qx,qy,qz
             )
-            if not jnp.allclose(distances, distances[0],rtol=0.01):
+            if not jnp.allclose(distances, distances[0], atol=0.0, rtol=0.05):
+                distances = distances - jnp.min(distances)
                 temperature = 0.05 #np.median(distances)/6
                 probs = jnp.exp(-distances / temperature)  # temperature scaling
                 probs = probs / (jnp.sum(probs) + 1e-12)
@@ -693,9 +748,12 @@ class SMPCPlannerNode(FrankaPandaServer):
                 normalized_entropy = entropy / (max_entropy + 1e-12)
                 # print("Normalized entropy:", normalized_entropy)
 
-                new_probs = (
-                    1 - normalized_entropy
-                ) * probs + normalized_entropy * self.policy_params.domain_weights
+                # moving average
+                gamma = 0.5
+                new_probs = (1 - gamma) * probs + gamma * self.domain_weights
+                # new_probs = (
+                #     1 - normalized_entropy
+                # ) * probs + normalized_entropy * self.policy_params.domain_weights
                 # self.policy_params = self.policy_params.replace(
                 #     domain_weights=jnp.array(new_probs)
                 # )
@@ -782,12 +840,15 @@ class SMPCPlannerNode(FrankaPandaServer):
     def _timeout_callback(self):
         self.get_logger().info("Timeout reached, shutting down …")
         self.shutdown_flag.set()
+        path = get_data_path() / "dr_real_margin_sweep"
+        node.save_log(path)
         rclpy.shutdown()
 
     def save_log(self, path, filename="fr3_dr_real_"):
-        log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}_bad2"
+        log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}_single"
         with open(str(log_file) + ".pkl", "wb") as f:
             pickle.dump(self.log, f)
+        self.get_logger().info(f"Saved log to {log_file}.pkl")
 
     def signal_handler(self, sig, frame):
         self.get_logger().info("SIGINT received")
@@ -822,11 +883,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # ---- hyper-parameters ----
-    seed = 10
-    num_samples = 150
-    NUM_RANDOMIZATIONS = 10
+    seed = 600
+    num_samples = 160
+    NUM_RANDOMIZATIONS = 5
     planning_freq = 5  # Hz
-    max_speed = 0.3
+    max_speed = 0.2
 
     # ---- risk strategy ----
     risk_alpha = 0.5
@@ -835,7 +896,7 @@ if __name__ == "__main__":
     )
     if args.risk is None or args.risk == "average":
         args.risk = "average"
-        aggregation = ExpectedCost(weights=uniform_weights) #!
+        aggregation = AverageCost(weights=uniform_weights) #!
     elif args.risk == "expectation":
         aggregation = ExpectedCost(weights=uniform_weights)
     elif args.risk == "var":
@@ -855,7 +916,7 @@ if __name__ == "__main__":
     # ---- task ----
     task = PushTFranka(
         ik_type="pinv",
-        planning_horizon=14, # was 9
+        planning_horizon=15, # was 9
         sim_steps_per_control_step=2,
         ctrl_limits={
             "u_min": jnp.array([-max_speed, -max_speed]),
@@ -879,7 +940,7 @@ if __name__ == "__main__":
             N=32,
             sigma_min=0.15,
             sigma_max=0.55,
-            sigma_start=0.2,
+            sigma_start=0.35,
             num_elites=24,
             beta=0.25,
             alpha=0.1,
@@ -891,38 +952,6 @@ if __name__ == "__main__":
             planning_freq=planning_freq,
             keep_elites=1,
             default_zero_controls=False,
-            update_cov=False,
-            risk_strategy=aggregation,
-        )
-    elif args.algorithm == "mppi":
-        print("Running MPPI")
-        ctrl = MPPI(
-            task,
-            num_samples=num_samples,
-            alpha=0.1,
-            noise_level=0.3,
-            num_randomizations=NUM_RANDOMIZATIONS,
-            savgol_filter=True,
-            shift=True,
-            planning_freq=planning_freq,
-            seed=seed,
-            update_cov=False,
-            risk_strategy=aggregation,
-        )
-    elif args.algorithm == "cem":
-        print("Running CEM")
-        ctrl = CEM(
-            task,
-            alpha=0.1,
-            num_samples=num_samples,
-            sigma_start=0.3,
-            sigma_min=0.05,
-            num_elites=72,
-            num_randomizations=NUM_RANDOMIZATIONS,
-            savgol_filter=True,
-            shift=True,
-            planning_freq=planning_freq,
-            seed=seed,
             update_cov=False,
             risk_strategy=aggregation,
         )
@@ -988,7 +1017,5 @@ if __name__ == "__main__":
         finally:
             node.shutdown_flag.set()
             executor.shutdown()
-            path = get_data_path() / "dr_real"
-            node.save_log(path)
             node.destroy_node()
             rclpy.shutdown()

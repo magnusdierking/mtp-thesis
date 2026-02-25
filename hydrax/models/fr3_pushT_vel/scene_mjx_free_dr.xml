@@ -56,7 +56,7 @@
 
     <default class="wood">
       <geom
-                friction="1.0"
+                friction="0.3"
                 solref="0.03 1.2"
                 solimp="0.5 0.85 0.002 0.5 2"
                 rgba="0.295 0.227 0.15 1.0"
@@ -81,7 +81,7 @@
             xyaxes="0.178 0.984 -0.000 -0.466 0.084 0.881"
         />
 
-    <body name="goal" mocap="true" pos="0.45 0.0 0.04" quat="1 0 0 0">
+    <body name="goal" mocap="true" pos="0.45 -0.05 0.04" quat="1 0 0 0">
       <geom class="goal" name="goal_bottom" type="box" size=".05 0.025 0.025" />
       <geom
                 class="goal"
@@ -125,7 +125,7 @@
     </body>
 
     <!-- Mocap bodies to visualize domain randomization -->
-    <body name="ghost_block_0" mocap="true" pos="0.5 0.0 0.04" quat="1 0 0 0">
+    <!-- <body name="ghost_block_0" mocap="true" pos="0.5 0.0 0.04" quat="1 0 0 0">
       <geom
                 class="tblock"
                 name="ghost_bottom_0"
@@ -353,7 +353,7 @@
                 conaffinity="0"
                 rgba="0.4 0.4 0.4 0.05"
             />
-    </body>
+    </body> -->
 
 
 

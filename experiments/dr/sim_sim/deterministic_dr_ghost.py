@@ -348,7 +348,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             for bid, idx in zip(mocap_T_bids, range(len(mocap_T_bids)), strict=True):
                 mj_data.mocap_pos[bid] = ref_site[idx, :3]
                 mj_data.mocap_quat[bid] = ref_site[idx, 3:]
-                # print(f"Setting mocap bid {bid} to {ref_site[idx, :3]}, {ref_site[idx, 3:]}")
             # rest of mocap copies T
             if len(mocap_T_bids) < 10:
                 bid = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")

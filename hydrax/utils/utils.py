@@ -114,7 +114,7 @@ def se3_left_invariant_metric(p1, p2, rot_weight=1.0, trans_weight=1.0):
     Proper left-invariant geodesic distance on SE(3).
     
     Args:
-        p1, p2: Poses (..., 3 pos + 4 quat scalar-first).
+        p1, p2: Poses (..., 3 pos + 4 quat scalar-first). (x, y, z, qw, qx, qy, qz).
         rot_weight, trans_weight: Scales for rotation (rad) vs translation (m).
     Returns:
         Distance (...,).

@@ -400,7 +400,7 @@ class PushTFranka(Task):
         distance = state.sensordata[sensor_adr : sensor_adr + 3]
 
         distance = jnp.linalg.norm(distance)
-        cost = jnp.where(distance > 0.4, 1.0, 0.0)
+        cost = jnp.where(distance > 0.45, 1.0, 0.0)
 
         # ee z pos
         # sensor_adr_ee = self.model.sensor_adr[self.ee_position_sensor]
@@ -427,9 +427,11 @@ class PushTFranka(Task):
             total_goal_err = 30 * position_cost + 3 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost
         elif self.block_type == "free" or self.block_type == "dr-free":
-            # Jitter
             total_goal_err = 30 * position_cost + 3 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost
+        elif self.block_type == "dr-free":
+            total_goal_err = 30 * position_cost + 3 * orientation_cost
+            error = total_goal_err + 0.005 * ee_block_distance_cost + 2 * safety_cost
         return error  # safety_cost
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
