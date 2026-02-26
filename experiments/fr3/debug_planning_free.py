@@ -341,9 +341,9 @@ class FR3_PushT(FrankaPandaServer):
         t.header.frame_id = 'objectPushT'
         t.child_frame_id = 'objectPushT_MuJoCo'
 
-        t.transform.translation.x = 0.03
-        t.transform.translation.y = 0.005
-        t.transform.translation.z = -0.030
+        t.transform.translation.x = 0.035
+        t.transform.translation.y = 0.00
+        t.transform.translation.z = -0.036
 
         quat = quaternion_from_euler(0.00, 0.0, -np.pi)
 

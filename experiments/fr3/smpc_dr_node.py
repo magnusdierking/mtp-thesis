@@ -210,7 +210,7 @@ class SMPCPlannerNode(FrankaPandaServer):
                 ]
             )
         # Robustness sweep
-        elif seed == 100: # goal default 0.45 0.0
+        elif seed in [100, 101, 102]: # goal default 0.45 0.0
             self.init_pos = np.array(
                 [
                     0.5,
@@ -425,8 +425,8 @@ class SMPCPlannerNode(FrankaPandaServer):
                 #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
                 # },
                 "ee": {
-                    # "geom_margin": (None, jnp.linspace(-0.02, 0.02, NUM_RANDOMIZATIONS)),
-                    "geom_margin": (None, jnp.linspace(-0.00, -0.00, NUM_RANDOMIZATIONS)),
+                    "geom_margin": (None, jnp.linspace(-0.02, 0.02, NUM_RANDOMIZATIONS)),
+                    # "geom_margin": (None, jnp.linspace(-0.00, -0.00, NUM_RANDOMIZATIONS)),
                 },
             }
         }
@@ -521,7 +521,7 @@ class SMPCPlannerNode(FrankaPandaServer):
         t2.child_frame_id = "objectPushT_MuJoCo"
         t2.transform.translation.x = 0.035
         t2.transform.translation.y = 0.00
-        t2.transform.translation.z = -0.034
+        t2.transform.translation.z = -0.036
         quat = quaternion_from_euler(0.0, 0.0, -np.pi)
         t2.transform.rotation.x = quat[0]
         t2.transform.rotation.y = quat[1]
@@ -721,14 +721,14 @@ class SMPCPlannerNode(FrankaPandaServer):
         if self.predicted_states is not None:
             ref_sites = self.predicted_states[:, -1, -1, ...]  # (domains, 7), only for last sight
             mocap_bids = self.mocap_T_bids[: self.ctrl.num_randomizations]
-            for idx, bid in enumerate(mocap_bids):
-                self.debug_data.mocap_pos[bid] = ref_sites[idx, :3]
-                self.debug_data.mocap_quat[bid] = ref_sites[idx, 3:]
-            if len(self.mocap_T_bids) < 10:
-                # rest of the mocap bodies covers T
-                for bid in range(len(self.mocap_T_bids), 10):
-                    self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
-                    self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
+            # for idx, bid in enumerate(mocap_bids):
+            #     self.debug_data.mocap_pos[bid] = ref_sites[idx, :3]
+            #     self.debug_data.mocap_quat[bid] = ref_sites[idx, 3:]
+            # if len(self.mocap_T_bids) < 10:
+            #     # rest of the mocap bodies covers T
+            #     for bid in range(len(self.mocap_T_bids), 10):
+            #         self.debug_data.mocap_pos[bid] = self.debug_data.xpos[bid]
+            #         self.debug_data.mocap_quat[bid] = self.debug_data.xquat[bid]
 
             current_obs = np.array(self.debug_data.qpos[:7], dtype=np.float32)
             distances = jax.vmap(se3_left_invariant_metric, in_axes=(0, None))(
@@ -754,9 +754,9 @@ class SMPCPlannerNode(FrankaPandaServer):
                 # new_probs = (
                 #     1 - normalized_entropy
                 # ) * probs + normalized_entropy * self.policy_params.domain_weights
-                # self.policy_params = self.policy_params.replace(
-                #     domain_weights=jnp.array(new_probs)
-                # )
+                self.policy_params = self.policy_params.replace(
+                    domain_weights=jnp.array(new_probs)
+                )
 
                 self.get_logger().info(f"Step {self.ctr}: domain error: {distances} | updated weights: {new_probs} | sum of weights: {jnp.sum(new_probs):.4f} ")
             else:
@@ -793,8 +793,8 @@ class SMPCPlannerNode(FrankaPandaServer):
             {
                 "time": current_time - self.start_time,
                 "planning_time": t2 - t1,
-                "object_pos": lin_t.tolist(),
-                "object_quat": quat_t.tolist(),
+                "object_pos": self.debug_data.qpos[:3].tolist(),
+                "object_quat": self.debug_data.qpos[3:7].tolist(),
                 "ee_pos": ee_position.tolist(),
                 "terminal_error": float(terminal_error),
                 "action": actions[0].tolist(),
@@ -840,12 +840,12 @@ class SMPCPlannerNode(FrankaPandaServer):
     def _timeout_callback(self):
         self.get_logger().info("Timeout reached, shutting down …")
         self.shutdown_flag.set()
-        path = get_data_path() / "dr_real_margin_sweep"
+        path = get_data_path() / "dr_real_margin_shifting"
         node.save_log(path)
         rclpy.shutdown()
 
     def save_log(self, path, filename="fr3_dr_real_"):
-        log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}_single"
+        log_file = path / f"{filename}{self.ctrl.__class__.__name__}_seed{self.seed}_exp"
         with open(str(log_file) + ".pkl", "wb") as f:
             pickle.dump(self.log, f)
         self.get_logger().info(f"Saved log to {log_file}.pkl")
@@ -883,7 +883,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # ---- hyper-parameters ----
-    seed = 600
+    seed = 102
     num_samples = 160
     NUM_RANDOMIZATIONS = 5
     planning_freq = 5  # Hz

@@ -1,0 +1,113 @@
+<mujoco model="fr3">
+  <default>
+    <joint limited="true" damping="0.01" armature="0.01" frictionloss="0.01" />
+    <geom condim="4" contype="1" conaffinity="15" friction="0.9 0.2 0.2" solref="0.001 2" />
+    <motor ctrllimited="true" />
+    <equality solref="0.001 2" />
+    <default class="visualgeom">
+      <geom material="visualgeom" condim="1" contype="0" conaffinity="0" />
+    </default>
+  </default>
+
+  <compiler angle="radian" meshdir="meshes" eulerseq="zyx" autolimits="true" />
+
+  <asset>
+    <texture name="texplane" type="2d" builtin="checker" rgb1=".0 .0 .0" rgb2=".8 .8 .8" width="100" height="100" />
+    <material name="matplane" reflectance="0." texture="texplane" texrepeat="1 1" texuniform="true" />
+    <material name="default_material" rgba="0.7 0.7 0.7 1" />
+    <mesh name="link0.stl" file="link0.stl" />
+    <mesh name="link0.dae" file="link0.dae" />
+    <mesh name="link1.stl" file="link1.stl" />
+    <mesh name="link1.dae" file="link1.dae" />
+    <mesh name="link2.stl" file="link2.stl" />
+    <mesh name="link2.dae" file="link2.dae" />
+    <mesh name="link3.stl" file="link3.stl" />
+    <mesh name="link3.dae" file="link3.dae" />
+    <mesh name="link4.stl" file="link4.stl" />
+    <mesh name="link4.dae" file="link4.dae" />
+    <mesh name="link5.stl" file="link5.stl" />
+    <mesh name="link5.dae" file="link5.dae" />
+    <mesh name="link6.stl" file="link6.stl" />
+    <mesh name="link6.dae" file="link6.dae" />
+    <mesh name="link7.stl" file="link7.stl" />
+    <mesh name="link7.dae" file="link7.dae" />
+  </asset>
+
+
+  <worldbody>
+    <light directional="true" diffuse="0.4 0.4 0.4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false" />
+    <light directional="true" diffuse="0.6 0.6 0.6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1" />
+    <geom name="ground" type="plane" pos="0 0 0" size="10 10 0.001" quat="1 0 0 0" material="matplane" condim="3" conaffinity="15" />
+    <body name="root" pos="0 0 -0.0" quat="1 0 0 0">
+      <freejoint name="root" />
+      <site name="root_site" pos="0 0 0" quat="1 0 0 0" />
+      <body name="base" pos="0 0 0" quat="1 0 0 0">
+        <body name="fr3_link0" pos="0 0 0" quat="1.0 0.0 0.0 0.0">
+          <inertial pos="-0.0172 0.0004 0.0745" quat="1.0 0.0 0.0 0.0" mass="2.3966" diaginertia="0.009 0.0115 0.0085" />
+          <geom name="fr3_link0_collision_0" pos="0 0 0" quat="1 0 0 0" type="mesh" mesh="link0.stl" rgba="0 0 0 0" />
+          <geom name="fr3_link0_visual_0" pos="0 0 0" quat="1 0 0 0" material="default_material" type="mesh" mesh="link0.dae" />
+          <body name="fr3_link1" pos="0 0 0.333" quat="1.0 0.0 0.0 0.0">
+            <joint name="fr3_joint1" type="hinge" range="-2.7437 2.7437" axis="0 0 1" />
+            <inertial pos="0.0000004128 -0.0181251324 -0.0386035970" quat="1.0 0.0 0.0 0.0" mass="2.9274653454" diaginertia="0.023927316485107913 0.0224821613275756 0.006350098258530016" />
+            <geom name="fr3_link1_collision_0" pos="0 0 0" quat="1 0 0 0" type="mesh" mesh="link1.stl" rgba="0 0 0 0" />
+            <geom name="fr3_link1_visual_0" pos="0 0 0" quat="1 0 0 0" material="default_material" type="mesh" mesh="link1.dae" />
+            <body name="fr3_link2" pos="0 0 0" quat="0.7071067811865474 -0.7071067811865477 0.0 0.0">
+              <joint name="fr3_joint2" type="hinge" range="-1.7837 1.7837" axis="0 0 1" />
+              <inertial pos="0.0031828864 -0.0743221644 0.0088146084" quat="1.0 0.0 0.0 0.0" mass="2.9355370338" diaginertia="0.041938946257609425 0.02514514885014724 0.06170214472888839" />
+              <geom name="fr3_link2_collision_0" pos="0 0 0" quat="1 0 0 0" type="mesh" mesh="link2.stl" rgba="0 0 0 0" />
+              <geom name="fr3_link2_visual_0" pos="0 0 0" quat="1 0 0 0" material="default_material" type="mesh" mesh="link2.dae" />
+              <body name="fr3_link3" pos="0 -0.316 0" quat="0.7071067811865474 0.7071067811865477 0.0 0.0">
+                <joint name="fr3_joint3" type="hinge" range="-2.9007 2.9007" axis="0 0 1" />
+                <inertial pos="0.0407015686 -0.0048200565 -0.0289730823" quat="1.0 0.0 0.0 0.0" mass="2.2449013699" diaginertia="0.02410142547240885 0.01974053266708178 0.019044494482244823" />
+                <geom name="fr3_link3_collision_0" pos="0 0 0" quat="1 0 0 0" type="mesh" mesh="link3.stl" rgba="0 0 0 0" />
+                <geom name="fr3_link3_visual_0" pos="0 0 0" quat="1 0 0 0" material="default_material" type="mesh" mesh="link3.dae" />
+                <body name="fr3_link4" pos="0.0825 0 0" quat="0.7071067811865474 0.7071067811865477 0.0 0.0">
+                  <joint name="fr3_joint4" type="hinge" range="-3.0421 -0.1518" axis="0 0 1" />
+                  <inertial pos="-0.0459100965 0.0630492960 -0.0085187868" quat="1.0 0.0 0.0 0.0" mass="2.6155955791" diaginertia="0.03452998321913202 0.028881621933049058 0.04125471171146641" />
+                  <geom name="fr3_link4_collision_0" pos="0 0 0" quat="1 0 0 0" type="mesh" mesh="link4.stl" rgba="0 0 0 0" />
+                  <geom name="fr3_link4_visual_0" pos="0 0 0" quat="1 0 0 0" material="default_material" type="mesh" mesh="link4.dae" />
+                  <body name="fr3_link5" pos="-0.0825 0.384 0" quat="0.7071067811865474 -0.7071067811865477 0.0 0.0">
+                    <joint name="fr3_joint5" type="hinge" range="-2.8065 2.8065" axis="0 0 1" />
+                    <inertial pos="-0.0016039605 0.0292536262 -0.0972965990" quat="1.0 0.0 0.0 0.0" mass="2.3271207594" diaginertia="0.051610278463662895 0.04787729713371481 0.016423625579357254" />
+                    <geom name="fr3_link5_collision_0" pos="0 0 0" quat="1 0 0 0" type="mesh" mesh="link5.stl" rgba="0 0 0 0" />
+                    <geom name="fr3_link5_visual_0" pos="0 0 0" quat="1 0 0 0" material="default_material" type="mesh" mesh="link5.dae" />
+                    <body name="fr3_link6" pos="0 0 0" quat="0.7071067811865474 0.7071067811865477 0.0 0.0">
+                      <joint name="fr3_joint6" type="hinge" range="0.5445 4.5169" axis="0 0 1" />
+                      <inertial pos="0.0597131221 -0.0410294666 -0.0101692726" quat="1.0 0.0 0.0 0.0" mass="1.8170376524" diaginertia="0.005412333594383447 0.014058329545509979 0.016080817924212554" />
+                      <geom name="fr3_link6_collision_0" pos="0 0 0" quat="1 0 0 0" type="mesh" mesh="link6.stl" rgba="0 0 0 0" />
+                      <geom name="fr3_link6_visual_0" pos="0 0 0" quat="1 0 0 0" material="default_material" type="mesh" mesh="link6.dae" />
+                      <body name="fr3_link7" pos="0.088 0 0" quat="0.7071067811865474 0.7071067811865477 0.0 0.0">
+                        <joint name="fr3_joint7" type="hinge" range="-3.0159 3.0159" axis="0 0 1" />
+                        <inertial pos="0.0045225817 0.0086261921 -0.0161633251" quat="1.0 0.0 0.0 0.0" mass="0.6271432862" diaginertia="0.00021092389150104718 0.00017718568002411474 5.993190599659971e-05" />
+                        <geom name="fr3_link7_collision_0" pos="0 0 0" quat="1 0 0 0" type="mesh" mesh="link7.stl" rgba="0 0 0 0" />
+                        <geom name="fr3_link7_visual_0" pos="0 0 0" quat="1 0 0 0" material="default_material" type="mesh" mesh="link7.dae" />
+                        <body name="fr3_link8" pos="0 0 0.107" quat="1.0 0.0 0.0 0.0" />
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="fr3_joint1_ctrl" joint="fr3_joint1" forcerange="-87.00000000 87.00000000" forcelimited="true" ctrlrange="-2.7437 2.7437" ctrllimited="true" />
+    <position name="fr3_joint2_ctrl" joint="fr3_joint2" forcerange="-87.00000000 87.00000000" forcelimited="true" ctrlrange="-1.7837 1.7837" ctrllimited="true" />
+    <position name="fr3_joint3_ctrl" joint="fr3_joint3" forcerange="-87.00000000 87.00000000" forcelimited="true" ctrlrange="-2.9007 2.9007" ctrllimited="true" />
+    <position name="fr3_joint4_ctrl" joint="fr3_joint4" forcerange="-87.00000000 87.00000000" forcelimited="true" ctrlrange="-3.0421 -0.1518" ctrllimited="true" />
+    <position name="fr3_joint5_ctrl" joint="fr3_joint5" forcerange="-12.00000000 12.00000000" forcelimited="true" ctrlrange="-2.8065 2.8065" ctrllimited="true" />
+    <position name="fr3_joint6_ctrl" joint="fr3_joint6" forcerange="-12.00000000 12.00000000" forcelimited="true" ctrlrange="0.5445 4.5169" ctrllimited="true" />
+    <position name="fr3_joint7_ctrl" joint="fr3_joint7" forcerange="-12.00000000 12.00000000" forcelimited="true" ctrlrange="-3.0159 3.0159" ctrllimited="true" />
+  </actuator>
+
+  <sensor>
+    <framepos name="base_link_pos" objtype="site" objname="root_site" />
+    <framequat name="base_link_quat" objtype="site" objname="root_site" />
+    <framelinvel name="base_link_vel" objtype="site" objname="root_site" />
+    <frameangvel name="base_link_ang_vel" objtype="site" objname="root_site" />
+  </sensor>
+</mujoco>
