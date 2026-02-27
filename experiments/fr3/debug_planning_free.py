@@ -474,7 +474,7 @@ class FR3_PushT(FrankaPandaServer):
         self.debug_data.qpos[7:14] = self.robot_q
         self.debug_data.qvel[6:13] = self.robot_dq
         self.debug_data.time = current_time
-        
+        self.get_logger().info(f"pose {self.debug_data.qpos[0:7]}")
         # update sites etc.
         # mujoco.mj_forward(self.debug_model, self.debug_data)
         mujoco.mj_step(self.debug_model, self.debug_data)

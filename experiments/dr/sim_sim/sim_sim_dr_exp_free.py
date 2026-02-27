@@ -202,7 +202,7 @@ elif args.algorithm == "ps":
 mj_model, mj_data = task.reset(seed=seed)
 
 
-path = get_data_path() / "dr_sim_sim"
+path = get_data_path() / "sim_sim_free"
 if not path.exists():
     path.mkdir(parents=True, exist_ok=True)
 path = path / f"seed_{seed}_{args.algorithm}_{args.risk}_{PLANNING_FREQUENCY}_friction.pkl"

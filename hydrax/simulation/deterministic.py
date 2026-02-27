@@ -400,15 +400,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                                 # controller.task.ee_body_id,
                                 world_site_vel_desired=u,  # Exclude base DOF
                             )
-                        elif controller.task.actuation_type == 'position':
-                            # u = ik(
-                            #     model=mj_model,
-                            #     data=mj_data,
-                            #     body_id=controller.task.ee_body_id,
-                            #     desired_xy=u,
-                            # )
-                            pass
-                        # print(f"Remapped control action: {u}")
+
                     
                     if controller.gravity_compensator:
                         # Gravity compensation for the robot only
@@ -516,9 +508,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     if record_video and recorder is not None:
         recorder.stop()
 
-    # Save logs to a CSV file if specified
     if log_file:
-        log_file = Path(log_file)
+        log_dir = Path(log_file).parent
+        log_dir.mkdir(parents=True, exist_ok=True)  # create directory if missing
+
         with open(log_file, "wb") as f:
             pickle.dump(logs, f, protocol=pickle.HIGHEST_PROTOCOL)
-        print(f"Logs saved to {log_file}")
+        print(f"State bins saved to {log_file}")

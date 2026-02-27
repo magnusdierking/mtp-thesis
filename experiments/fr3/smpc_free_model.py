@@ -533,7 +533,6 @@ class FR3_PushT(FrankaPandaServer):
         )
         # self.action = self.ctrl.get_action(self.policy_params, 0.0)   
         self.actions = np.array(self.policy_params.spline) 
-        
         self.action = self.actions[0]
         t2 = time.time()
 

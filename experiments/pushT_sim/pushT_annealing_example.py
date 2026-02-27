@@ -9,68 +9,68 @@ from hydrax.algs.mtp.an_mtp_dr import AnMTP
 from deterministic_headless_pushT_sweep import run_headless_simulation
 from hydrax.tasks.pusht_franka_old import PushTFranka
 
-"""
-Run an interactive simulation of the push-T task with predictive sampling.
-"""
+# --------------------------------------------------- #
+UPDATE_COV = False
+NUM_SAMPLES = 512
+NUM_RANDOMIZATIONS = 1
+PLANNING_FREQUENCY = 20
+PLANNING_HORIZON = 10
+SIM_STEPS_PER_CONTROL_STEP = 2
+MAX_SPEED = 0.35  # m/s
 
-# Define the task (cost and dynamics)
+SIGMA = 0.2
+ALPHA = 0.1
+TEMPERATURE = 0.1
+NUM_ELITES = 36
+
+# ------------------------------------------------- #
+
+# End effector init close to T
+
+# T init further away with rotation
+
+
 task = PushTFranka(ik_type = 'pinv',
-                   planning_horizon=12,
-                   sim_steps_per_control_step=6,
-                   ctrl_limits={"u_min": jnp.array([-0.45, -0.45]), "u_max": jnp.array([0.45, 0.45])},
-                #    trace_sites=["ee_site", "T_1", "T_2"],
-                   actuation_type='velocity',
-                   )
+                    planning_horizon=10,
+                    sim_steps_per_control_step=2,
+                    ctrl_limits={"u_min": jnp.array([-MAX_SPEED, -MAX_SPEED]), 
+                                 "u_max": jnp.array([MAX_SPEED, MAX_SPEED])},
+                    trace_sites=["ee_site"],
+                    actuation_type='velocity',
+                    sampling_space="velocity",
+                    det_init=det_init,
+                    block_type = 'free',
+                )
 
-data = {}
-path = get_data_path() / "pushT_sim"
-path.mkdir(parents=True, exist_ok=True)
+path = get_data_path() / "pushT_sim_sweep" / "free"
+if not path.exists():       
+    path.mkdir(parents=True, exist_ok=True)
 
-num_samples = 256
 
-# for controller in ["mppi", "cem", "mtp", "anmtp"]:
-for controller in ["anmtp"]:
+
+for controller in ["mppi", "cem", "mtp"]:
     
-    if controller == "mppi":
-        ctrl = MPPI(
-            task,
-            num_samples=num_samples,
-            noise_level=0.3,
-            temperature=0.1,
-            num_randomizations=1,
-            colorize_noise=False,   # !experimental
-            alpha=0.1,
-        )
-        print("Running MPPI")
-    elif controller == "cem":
-        ctrl = CEM(
-            task,
-            num_samples=num_samples,
-            num_elites=12,
-            sigma_start=0.2,
-            sigma_min=0.05,
-            alpha=0.1,
-        )
-        print("Running CEM")
-    elif controller == "mtp":
+    if controller == "mtp":
         ctrl = MTP(
             task,
-            num_samples=num_samples,
+            num_samples=NUM_SAMPLES,
             M=3, # horizon via control points
             N=32, # samples 
-            sigma_min=0.1,
-            sigma_start=0.2,
-            num_elites=12,
+            sigma_min=SIGMA,
+            sigma_start=SIGMA,
+            num_elites=NUM_ELITES,
             beta=0.35,
-            alpha=0.1,
+            alpha=ALPHA,
             interpolation='bspline',
-            num_randomizations=1,
+            num_randomizations=NUM_RANDOMIZATIONS,
+            planning_freq=PLANNING_FREQUENCY,
+            update_cov=UPDATE_COV,
         )
         print("Running MTP")
     elif controller == "anmtp":
         ctrl = AnMTP(
             task,
-            num_samples=num_samples,
+            num_samples=NUM_SAMPLES,
             M=3, # horizon via control points
             N=32, # samples 
             sigma_min=0.05,
@@ -95,10 +95,11 @@ for controller in ["anmtp"]:
 
     for seed in [0, 1, 2, 3, 5, 6]:
         
+        filename = f"pusht_franka_{controller}_{seed}.pkl"
         run_headless_simulation(
             task,
             ctrl,
-            frequency=25,
+            frequency=PLANNING_FREQUENCY,
             seeds=[seed],
             max_step=500,
             log_file_prefix="pusht_franka_" + controller, 

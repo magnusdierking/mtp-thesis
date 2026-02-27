@@ -425,7 +425,7 @@ class SMPCPlannerNode(FrankaPandaServer):
                 #     "geom_friction": (0, jnp.linspace(0.01, 5.0, NUM_RANDOMIZATIONS)),
                 # },
                 "ee": {
-                    "geom_margin": (None, jnp.linspace(-0.02, 0.02, NUM_RANDOMIZATIONS)),
+                    "geom_margin": (None, jnp.linspace(-0.01, 0.01, NUM_RANDOMIZATIONS)),
                     # "geom_margin": (None, jnp.linspace(-0.00, -0.00, NUM_RANDOMIZATIONS)),
                 },
             }
@@ -883,9 +883,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # ---- hyper-parameters ----
-    seed = 102
+    seed = 100
     num_samples = 160
-    NUM_RANDOMIZATIONS = 5
+    NUM_RANDOMIZATIONS = 8 #5
     planning_freq = 5  # Hz
     max_speed = 0.2
 
@@ -916,7 +916,7 @@ if __name__ == "__main__":
     # ---- task ----
     task = PushTFranka(
         ik_type="pinv",
-        planning_horizon=15, # was 9
+        planning_horizon=15, # was 15
         sim_steps_per_control_step=2,
         ctrl_limits={
             "u_min": jnp.array([-max_speed, -max_speed]),
@@ -941,8 +941,8 @@ if __name__ == "__main__":
             sigma_min=0.15,
             sigma_max=0.55,
             sigma_start=0.35,
-            num_elites=24,
-            beta=0.25,
+            num_elites=12,
+            beta=0.35,
             alpha=0.1,
             interpolation="bspline",
             num_randomizations=NUM_RANDOMIZATIONS,

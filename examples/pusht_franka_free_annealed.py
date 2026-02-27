@@ -1,5 +1,4 @@
 import argparse
-from random import seed
 
 from hydrax.algs import MPPI, MTP, CEM
 from hydrax.algs.mtp.an_mtp_opt import AnMTP
@@ -22,26 +21,18 @@ UPDATE_COV = False
 NUM_SAMPLES = 512
 NUM_RANDOMIZATIONS = 1
 PLANNING_FREQUENCY = 20
-PLANNING_HORIZON = 12
+PLANNING_HORIZON = 10
 SIM_STEPS_PER_CONTROL_STEP = 2
 MAX_SPEED = 0.35  # m/s
 
 SIGMA = 0.2
 ALPHA = 0.1
 TEMPERATURE = 0.1
-NUM_ELITES = 48
+NUM_ELITES = 36
 
 SEED = 42
 # ------------------------------------------------- #
 
-
-if SEED == 42:
-    det_init = {
-        "block_pos_x": 0.6,
-        "block_pos_y": -0.1,
-        "block_angle": np.pi/8,
-        "ee_goal_pos": [0.45, 0.1, 0.035]
-    }
 
 
 # seed = 100
@@ -77,6 +68,12 @@ if SEED == 42:
 # }
 
 
+det_init = {
+    "block_pos_x": 0.6,
+    "block_pos_y": -0.1,
+    "block_angle": np.pi/4,
+    "ee_goal_pos": [0.45, 0.1, 0.035]
+}
 
 
 # det_init = {
@@ -112,84 +109,103 @@ subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
 
+path = get_data_path() / "pushT_sim_sweep" / "free"
+if not path.exists():       
+    path.mkdir(parents=True, exist_ok=True)
+path = path / f"seed_{SEED}_update_cov_{UPDATE_COV}.csv"
 
+
+# Set the controller based on command-line arguments
 if args.algorithm is None: 
     args.algorithm = "mtp"  # Default to MTP
-elif args.algorithm == "mppi":
-    print("Running MPPI")
-    ctrl = MPPI(
-        task,
-        num_samples=NUM_SAMPLES,
-        noise_level=SIGMA,
-        temperature=TEMPERATURE,
-        num_randomizations=NUM_RANDOMIZATIONS,
-        alpha=ALPHA,
-        seed=SEED,
-        update_cov=UPDATE_COV,
-    )
-elif args.algorithm == "cem":
-    print("Running CEM")
-    ctrl = CEM(
-        task,
-        num_samples=NUM_SAMPLES,
-        num_elites=NUM_ELITES,
-        sigma_start=SIGMA,
-        sigma_min=SIGMA,
-        sigma_max=SIGMA,
-        alpha=ALPHA,
-        num_randomizations=NUM_RANDOMIZATIONS,
-        seed=SEED,
-        planning_freq=PLANNING_FREQUENCY,
-        update_cov=UPDATE_COV,
-    )
+
 elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
         task,
-        temperature=TEMPERATURE,
+        temperature=0.1,
         num_samples=NUM_SAMPLES,
-        M=3,
-        N=48,
-        sigma_min=SIGMA,
-        sigma_max=SIGMA,
-        sigma_start=SIGMA,
-        num_elites=NUM_ELITES,
-        keep_elites=1,   
-        beta=0.25,
-        alpha=ALPHA,
+        M=4, # horizon via control points
+        N=32, # samples
+        sigma_min=sigma_min,
+        sigma_max=sigma_max,
+        sigma_start=sigma_start,
+        num_elites=36,
+        keep_elites=1,   # !experimental
+        beta=0.3,
+        alpha=0.1,
         interpolation='bspline',
         num_randomizations=NUM_RANDOMIZATIONS,
-        seed=SEED,
-        update_cov=UPDATE_COV,
-        planning_freq=PLANNING_FREQUENCY,
+        seed=seed,
+        update_cov=update_cov,
+        planning_freq=20,
+        savgol_filter=True,  # !experimental
+        default_zero_controls=False,
     )
+    error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
+    
+elif args.algorithm == "anmtp":
+    print("Running AnMTP")
+    ctrl = AnMTP(
+            task,
+            num_samples=NUM_SAMPLES,
+            M=3, # horizon via control points
+            N=64, # samples
+            sigma_min=sigma_min,
+            sigma_max=sigma_max,
+            sigma_start=sigma_start,
+            num_elites=24,
+            keep_elites=3,   # !experimental
+            beta = 0.25,
+            beta_lr = 0.1,        # adaptation step size
+            beta_min = 0.0,
+            beta_max = 0.35,
+            alpha=0.0,
+            interpolation='bspline',
+            shift = True,
+            num_randomizations=NUM_RANDOMIZATIONS,
+            seed=seed,
+            update_cov=update_cov,
+        )
+    error_log = "./../data/error_log_pushT/anmtp_{seed}.npy".format(seed=seed)
     
 
 
-mj_model, mj_data = task.reset(seed=SEED)
 
-path = get_data_path() / "pushT_sim_sweep" / "free"
-if not path.exists():       
-    path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{SEED}_{args.algorithm}.pkl"
+
+
+
+
+mj_model, mj_data = task.reset(seed=seed)
 
 # Run the interactive simulation
-max_traces = 30
+max_traces = 20
 trace_idxs = [i * max_traces for i in range(NUM_SAMPLES // max_traces)]
 print("Tracing indices:", trace_idxs)
 run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=PLANNING_FREQUENCY,
+    frequency=20,
     show_traces=True,
     trace_width=0.25,
     max_traces=max_traces,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,
-    max_step=100,
-    seed=SEED,
+    max_step=300,
+    seed=seed,
     trace_idxs=trace_idxs,
-    log_file=path.as_posix(),
+    # log_file=path.as_posix(),
     )
+
+
+# run_headless_simulation(
+#     task,
+#     ctrl,
+#     frequency=50,
+#     seeds=[seed],
+#     max_step=500,
+#     log_file_prefix="pusht_franka_" + args.algorithm,
+#     save_path="./results"
+#     )

@@ -577,7 +577,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     if record_video and recorder is not None:
         recorder.stop()
 
-    # Save logs to a CSV file if specified
     if log_file:
         log_dir = Path(log_file).parent
         log_dir.mkdir(parents=True, exist_ok=True)  # create directory if missing
