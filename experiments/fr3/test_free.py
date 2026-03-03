@@ -100,11 +100,20 @@ def differential_IK(
 
     return dq
 
+# ------------------------------ #
 
-# xml_path = "./../hydrax/models/g1/scene.xml"
-xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx_free_dr_L.xml"
-# xml_path = "./../hydrax/models/fr3_pushT_vel/scene_mjx_sim_real.xml"
+det_init = {
+        "block_pos_x": 0.65,
+        "block_pos_y": 0.0,
+        "block_angle": np.pi,
+        "ee_goal_pos": [0.5, 0.0, 0.035]
+    }
+
+
+
+xml_path = "./../../hydrax/models/fr3_pushT_vel/scene_mjx_free.xml"
 xml_dir = os.path.dirname(xml_path)
+
 
 # Change working directory temporarily
 os.chdir(xml_dir)
@@ -155,7 +164,9 @@ dof_adr = model.jnt_dofadr[actuator_joint_idxs]
 
 ee_body_id = model.body("ee_frame").id
 goal_quat_ee = np.array([0.0, 0.7071, 0.7071, 0.0])  # [w, x, y, z]
-goal_pos_ee = np.array([0.42, 0.2, 0.045])  # np.array([0.3, 0.0, 0.05])
+goal_pos_ee = np.array([det_init["ee_goal_pos"][0],
+                        det_init["ee_goal_pos"][1],
+                        0.045])  # np.array([0.3, 0.0, 0.05])
 joint_limits = model.jnt_range[actuator_joint_idxs]
 
 # IK loop parameters
@@ -222,10 +233,10 @@ data.qpos[actuator_jids] = q  # Set the robot's joint positions
 
 
 ## T POSITIONING THE BLOCK
-data.qpos[0] = 0.6
-data.qpos[1] = 0.1
+data.qpos[0] = det_init["block_pos_x"]
+data.qpos[1] = det_init["block_pos_y"]
 data.qpos[2] = 0.08  # block z position
-angle = 6 * np.pi / 5  # 30 degrees
+angle = det_init["block_angle"]
 
 quat = euler_to_quaternion(0, 0, angle)  # x,y,z,w
 print("Block quaternion (x,y,z,w):", quat[0], quat[1], quat[2], quat[3])

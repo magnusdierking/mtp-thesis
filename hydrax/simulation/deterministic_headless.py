@@ -14,11 +14,15 @@ from chrono import Timer
 import os, pickle
 from pathlib import Path
 
+from hydrax.utils.utils import mujoco_to_scipy_quat, quat_normalize, quat_conj, quat_mul, quat_error_body, quat_to_rotvec
+
+
 def differential_IK(
     model: mujoco.MjModel,
     data: mujoco.MjData,
     body_id: str = "ee_frame",
     world_site_vel_desired: np.ndarray = np.zeros(2),
+    with_null_space: bool = True,
 ) -> np.ndarray:
     """
     Differential IK for all dofs in the model.
@@ -27,27 +31,51 @@ def differential_IK(
     jacp = np.zeros((3, model.nv), dtype=np.float64)  # translational
     jacr = np.zeros((3, model.nv), dtype=np.float64)  # rotational
 
-    mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
+    bodyid = model.body("ee_frame").id
+    mujoco.mj_jacBody(model, data, jacp, jacr, bodyid)
+
+    actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
+    actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
+    actuator_jids = model.jnt_qposadr[actuator_joint_idxs]
+    dof_adr  = model.jnt_dofadr[actuator_joint_idxs]    
+
+    # get current joint positions
+    qpos = data.qpos.copy()
+    qnow = qpos[jnp.array(actuator_jids)]
+    qhome = np.array([ 0.51199203,  0.1014329,  -0.36340348, -2.9813132,   0.50339095,  3.06692214, -1.92271156])
 
     # Build jacobian
-    J = np.vstack((jacp, jacr))  # (6, n)
-
-    # Compute dq with damped pseudo-inverse
-    J_pseudo_inv = J.T @ np.linalg.inv(J @ J.T + 1e-6 * np.eye(6))
+    J = np.vstack((jacp, jacr))[:,np.array(dof_adr)]  # (6, n)
+    J_pinv = np.linalg.pinv(J)
     twist = np.concatenate([world_site_vel_desired, np.zeros(4)])
-    dq = J_pseudo_inv @ twist
+
+    ee_position_sensor = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
+    )
+    sensor_adr_pos = model.sensor_adr[ee_position_sensor]
+    ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
+
+    ee_orientation_sensor = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_quat"
+        )
+    sensor_adr = model.sensor_adr[ee_orientation_sensor]
+    ee_quat = data.sensordata[sensor_adr : sensor_adr + 4]
+    ee_quat = np.array(ee_quat)
+    goal_quat = np.array([0.0, 0.7071, 0.7071, 0.0])  #([0.0, 0.0, 0.7071, 0.7071])  # Assuming goal orientation is aligned with x-axis
+    goal_quat = np.array(goal_quat)
+    goal_vec = quat_error_body(goal_quat, ee_quat)                                   # (3,)
+    
+    # print("End effector translation z error:", 0.035 - ee_pos[2])
+    temp = np.concatenate([world_site_vel_desired, np.array([0.045-ee_pos[2]])])
+    twist_err = np.concatenate([temp, goal_vec])                 # [ex, ey, ez, ewx, ewy, ewz]
+    dq = J_pinv @ twist_err
+
+    if with_null_space:
+        N = np.eye(J.shape[1]) - J_pinv @ J
+        kp_ori = 10.0
+        dq += N @ (kp_ori * (qhome - qnow))
 
     return dq
-
-
-def gravity_comp_torque(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
-    qvel_bak, qacc_bak = data.qvel.copy(), data.qacc.copy()
-    data.qvel[:] = 0.0; data.qacc[:] = 0.0
-    tau = np.zeros(model.nv)
-    mujoco.mj_rne(model, data, 0, tau)  # tau = g(q) via inverse dynamics solver
-    data.qvel[:] = qvel_bak; data.qacc[:] = qacc_bak
-    mujoco.mj_forward(model, data)
-    return tau
 
 
 def run_headless_simulation(
@@ -126,32 +154,23 @@ def run_headless_simulation(
                     if delay_ctrl_start > 0:
                         delay_ctrl_start -= 1
                     else:
-                        #  remap controls if a control mapper is provided
                         if controller.control_mapper is not None:
-                            print(f"Original control action: {u}")
-                            u = differential_IK(
-                                mj_model,
-                                mj_data,
-                                controller.task.ee_body_id,
-                                u,  # Exclude base DOF
-                            )
-                            print(f"Remapped control action: {u}")
-                            
-                        # Gravity compensation for the robot only
-                        tau_g = gravity_comp_torque(mj_model, mj_data)
-                        # Clear and apply external torques (generalized forces)
-                        mj_data.qfrc_applied[:] = 0.0        # clears all user generalized forces
-                        mj_data.xfrc_applied[:] = 0.0        # clears any body-space external wrenches
-                        mj_data.qfrc_applied[controller.task.actuator_joint_idxs] = tau_g[controller.task.actuator_joint_idxs]
-                        # Apply the control to the simulation
-                        mj_data.ctrl[:] = np.array(u[controller.task.actuator_joint_idxs])
+                        # print(f"Original control action: {u}")
+                            if controller.task.actuation_type == 'velocity':
+                                u = differential_IK(
+                                    model=mj_model,
+                                    data=mj_data,
+                                    # controller.task.ee_body_id,
+                                    world_site_vel_desired=u,  # Exclude base DOF
+                                )
+                        mj_data.ctrl[:] = np.array(u)
 
                     mujoco.mj_step(mj_model, mj_data)
 
                     if np.isnan(u).any():
                         print("NaN detected in control input; stopping current experiment.")
                         break
-                
+                state_error = controller.task.running_cost(mj_data, u)
                 task_success |= controller.task.success(mj_data)
                                 
                 logs.append({
@@ -161,7 +180,7 @@ def run_headless_simulation(
                     "qpos": np.array(mjx_data.qpos).tolist(),
                     "qvel": np.array(mjx_data.qvel).tolist(),
                     "control": np.array(u).tolist(),
-                    "running_cost": jnp.sum(rollouts.costs, axis=1).tolist(),
+                    "state_error": float(state_error),
                     "state_cost": float(rollouts.costs[0, 0]),
                     "success": task_success,
                 })
@@ -178,14 +197,8 @@ def run_headless_simulation(
             plan_times = np.array(plan_times)
             print(f"Iteration time: {np.mean(plan_times)} \\pm {np.std(plan_times)} seconds")
             if log_file_prefix:
-                log_file = os.path.join(save_path, f"{log_file_prefix}_seed_{seed}.csv")
-                with open(log_file, "w", newline="") as csvfile:
-                    fieldnames = [
-                        "step", "sim_time", "plan_time", "qpos", "qvel",
-                        "control", "running_cost", "state_cost", "success"
-                    ]
-                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                    writer.writeheader()
-                    for log in logs:
-                        writer.writerow(log)
-                print(f"Logs saved to {log_file}")
+                log_file = os.path.join(save_path, f"{log_file_prefix}_seed_{seed}.pkl")
+        
+                with open(log_file, "wb") as f:
+                    pickle.dump(logs, f, protocol=pickle.HIGHEST_PROTOCOL)
+                print(f"Saved to {log_file}")

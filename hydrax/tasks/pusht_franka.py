@@ -19,12 +19,15 @@ from scipy.spatial.transform import Rotation as R
 from hydrax.files import get_root_path
 from hydrax.task_base import Task
 from hydrax.utils.utils import (
+    euler_to_quaternion,
+    mat2quat,
     mujoco_to_scipy_quat,
     quat_conj,
     quat_error_body,
     quat_mul,
     quat_normalize,
     quat_to_rotvec,
+    se3_left_invariant_metric,
 )
 
 
@@ -232,11 +235,12 @@ class PushTFranka(Task):
         # Assuming the block's pose is at the beginning of qpos
         mj_data.qpos[0] = pos_x
         mj_data.qpos[1] = pos_y
-        if self.block_type == "joint" or self.block_type == "sim-real":
+        mj_data.qpos[2] = 0.045
+        if self.block_type in ["joint"]:
             mj_data.qpos[2] = angle
         else:
             quat = euler_to_quaternion(
-                0, 0, angle - np.pi / 2
+                0, 0, angle
             )  # roll, pitch, yaw to x ,y,z,w
             mj_data.qpos[3:7] = np.array(
                 [quat[3], quat[0], quat[1], quat[2]]

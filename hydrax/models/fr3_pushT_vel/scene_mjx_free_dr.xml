@@ -125,7 +125,7 @@
     </body>
 
     <!-- Mocap bodies to visualize domain randomization -->
-    <!-- <body name="ghost_block_0" mocap="true" pos="0.5 0.0 0.04" quat="1 0 0 0">
+    <body name="ghost_block_0" mocap="true" pos="0.5 0.0 0.04" quat="1 0 0 0">
       <geom
                 class="tblock"
                 name="ghost_bottom_0"
@@ -353,7 +353,7 @@
                 conaffinity="0"
                 rgba="0.4 0.4 0.4 0.05"
             />
-    </body> -->
+    </body>
 
 
 

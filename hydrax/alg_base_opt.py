@@ -81,7 +81,8 @@ class SamplingBasedController(ABC):
         self._xfrc0 = jnp.zeros((self.model.nbody, 6), dtype=jnp.float32) # maybe not needed
         
         
-        
+    def set_seed(self, seed: int) -> None:
+        pass    
         
     def update_randomized_axes(self, randomized_fields: list[str]) -> None:
         """Initialize vmap axes for randomized fields.

@@ -222,6 +222,7 @@ class MTP(SamplingBasedController):
             cov=cov,
             predicted_state=predicted_state,
             domain_weights=domain_weights,
+            beta=self.beta,
         )
 
     def sample_controls(self, params: MTPParams) -> Tuple[jax.Array, MTPParams]:
@@ -363,7 +364,9 @@ class MTP(SamplingBasedController):
                 + self.nbr_mppi_samples
             ].set(mppi_controls)
         if self.keep_elites > 0 and params.elites is not None:
-            out = out.at[: self.keep_elites].set(params.elites)
+            # add uniformly 
+            keep_elites_idxs = jnp.linspace(0, self.num_samples - 1, self.keep_elites, dtype=jnp.int32)
+            out = out.at[keep_elites_idxs].set(params.elites)
         # default zero controls
         if self.default_zero_controls:
             out = out.at[-1, ...].set(

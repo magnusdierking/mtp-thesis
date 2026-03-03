@@ -34,10 +34,10 @@ from hydrax.risk import (
 from hydrax.tasks.pusht_franka import PushTFranka
 from hydrax.utils.files import get_data_path, get_root_path
 
-NUM_SAMPLES = 150
+NUM_SAMPLES = 32
 NUM_RANDOMIZATIONS = 10
 MAX_SPEED = 0.35  # m/s
-PLANNING_FREQUENCY = 2
+PLANNING_FREQUENCY = 5
 
 seed = 42
 update_cov = False
@@ -237,8 +237,11 @@ print(ctrl.model.geom_friction[:, mj_model.geom("ground").id, ...])
 
 
 # Define mass values for each geom
-top_masses = jnp.linspace(0.05, 3.0, NUM_RANDOMIZATIONS)  # vertical
-bottom_masses = jnp.linspace(0.05, 3.1, NUM_RANDOMIZATIONS)  # bottom
+# top_masses = jnp.linspace(0.05, 3.0, NUM_RANDOMIZATIONS)  # vertical
+# bottom_masses = jnp.linspace(0.05, 3.1, NUM_RANDOMIZATIONS)  # bottom
+
+top_masses = jnp.array([0.03, 0.06, 0.15, 0.4, 0.5, 0.8, 1.3, 2.3, 2.5, 4.0])   
+bottom_masses = jnp.array([0.03, 0.09, 0.15, 0.5, 0.4, 1.0, 2.3, 1.3, 2.5, 6.0])
 
 body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "block")
 
@@ -326,6 +329,6 @@ run_interactive(
     record_video=False,
     max_step=100,
     seed=seed,
-    log_file=path.as_posix(),
+    # log_file=path.as_posix(),
     trace_idxs=trace_idxs,
 )

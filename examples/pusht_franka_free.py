@@ -19,10 +19,10 @@ import numpy as np
 
 # --------------------------------------------------- #
 UPDATE_COV = False
-NUM_SAMPLES = 512
+NUM_SAMPLES = 128
 NUM_RANDOMIZATIONS = 1
 PLANNING_FREQUENCY = 20
-PLANNING_HORIZON = 12
+PLANNING_HORIZON = 14
 SIM_STEPS_PER_CONTROL_STEP = 2
 MAX_SPEED = 0.35  # m/s
 
@@ -30,61 +30,55 @@ SIGMA = 0.2
 ALPHA = 0.1
 TEMPERATURE = 0.1
 NUM_ELITES = 48
+KEEP_ELITES = 1
 
 SEED = 42
 # ------------------------------------------------- #
 
 
-if SEED == 42:
+if SEED == 40:
     det_init = {
         "block_pos_x": 0.6,
         "block_pos_y": -0.1,
-        "block_angle": np.pi/8,
+        "block_angle": np.pi/2,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 41:
+    det_init = {
+        "block_pos_x": 0.65,
+        "block_pos_y": 0.0,
+        "block_angle": np.pi,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 42:
+    det_init = {
+        "block_pos_x": 0.7,
+        "block_pos_y": 0.05,
+        "block_angle": 5*np.pi/4,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 43:
+    det_init = {
+        "block_pos_x": 0.5,
+        "block_pos_y": 0.15,
+        "block_angle": -np.pi/2,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 44:
+    det_init = {
+        "block_pos_x": 0.4,
+        "block_pos_y": -0.05,
+        "block_angle": -np.pi/4,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 45:
+    det_init = {
+        "block_pos_x": 0.55,
+        "block_pos_y": -0.1,
+        "block_angle": 0*np.pi,
         "ee_goal_pos": [0.45, 0.1, 0.035]
     }
 
-
-# seed = 100
-# update_cov = True
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": -0.1,
-#     "block_pos_y": 0.15,
-#     "block_angle": np.pi/4,
-#     "ee_goal_pos": [0.35, 0.0, 0.035]
-# }
-
-# seed = 200
-# update_cov = False
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": 0.05,
-#     "block_pos_y": 0.15,
-#     "block_angle": 3*np.pi/4,
-#     "ee_goal_pos": [0.45, 0.1, 0.035]
-# }
-
-
-# det_init = {
-#     "block_pos_x": 0.6,
-#     "block_pos_y": 0.05,
-#     "block_angle": np.pi/8,
-#     "ee_goal_pos": [0.4, 0.0, 0.045]
-# }
-
-
-
-
-# det_init = {
-#     "block_pos_x": 0.6,
-#     "block_pos_y": -0.2,
-#     "block_angle": 0,
-#     "ee_goal_pos": [0.4, 0.0, 0.045]
-# }
 
 
 task = PushTFranka(ik_type = 'pinv',
@@ -126,6 +120,7 @@ elif args.algorithm == "mppi":
         alpha=ALPHA,
         seed=SEED,
         update_cov=UPDATE_COV,
+        shift=True,
     )
 elif args.algorithm == "cem":
     print("Running CEM")
@@ -139,6 +134,7 @@ elif args.algorithm == "cem":
         alpha=ALPHA,
         num_randomizations=NUM_RANDOMIZATIONS,
         seed=SEED,
+        shift=True,
         planning_freq=PLANNING_FREQUENCY,
         update_cov=UPDATE_COV,
     )
@@ -154,13 +150,14 @@ elif args.algorithm == "mtp":
         sigma_max=SIGMA,
         sigma_start=SIGMA,
         num_elites=NUM_ELITES,
-        keep_elites=1,   
+        keep_elites=KEEP_ELITES,   
         beta=0.25,
         alpha=ALPHA,
-        interpolation='bspline',
+        interpolation='akima',
         num_randomizations=NUM_RANDOMIZATIONS,
         seed=SEED,
         update_cov=UPDATE_COV,
+        shift=True,
         planning_freq=PLANNING_FREQUENCY,
     )
     
@@ -168,10 +165,13 @@ elif args.algorithm == "mtp":
 
 mj_model, mj_data = task.reset(seed=SEED)
 
-path = get_data_path() / "pushT_sim_sweep" / "free"
+path = get_data_path() / "pushT_sim_extensions" / "keep_elites"
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{SEED}_{args.algorithm}.pkl"
+if KEEP_ELITES > 1:
+    path = path / f"seed_{SEED}_{args.algorithm}_{KEEP_ELITES}.pkl"
+else:    
+    path = path / f"seed_{SEED}_{args.algorithm}.pkl"
 
 # Run the interactive simulation
 max_traces = 30
