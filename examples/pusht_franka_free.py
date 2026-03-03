@@ -6,8 +6,7 @@ from hydrax.algs.mtp.an_mtp_opt import AnMTP
 # from hydrax.algs.mtp.an_mtp_dr import AnMTP
 
 from hydrax.utils.files import get_data_path
-from hydrax.simulation.deterministic import run_interactive
-# from hydrax.simulation.deterministic_dr import run_interactive
+from hydrax.simulation.deterministic_beta import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
 
 from hydrax.tasks.pusht_franka import PushTFranka
@@ -19,11 +18,13 @@ import numpy as np
 
 # --------------------------------------------------- #
 UPDATE_COV = False
-NUM_SAMPLES = 128
+SHIFT = True
+SAVGOL_FILTER = False,
+NUM_SAMPLES = 256
 NUM_RANDOMIZATIONS = 1
 PLANNING_FREQUENCY = 20
-PLANNING_HORIZON = 14
-SIM_STEPS_PER_CONTROL_STEP = 2
+PLANNING_HORIZON = 15
+SIM_STEPS_PER_CONTROL_STEP = 1
 MAX_SPEED = 0.35  # m/s
 
 SIGMA = 0.2
@@ -32,7 +33,10 @@ TEMPERATURE = 0.1
 NUM_ELITES = 48
 KEEP_ELITES = 1
 
-SEED = 42
+# AnMTP
+BETA = 0.4
+
+SEED = 43
 # ------------------------------------------------- #
 
 
@@ -52,7 +56,7 @@ elif SEED == 41:
     }
 elif SEED == 42:
     det_init = {
-        "block_pos_x": 0.7,
+        "block_pos_x": 0.6,
         "block_pos_y": 0.05,
         "block_angle": 5*np.pi/4,
         "ee_goal_pos": [0.45, 0.1, 0.035]
@@ -60,7 +64,7 @@ elif SEED == 42:
 elif SEED == 43:
     det_init = {
         "block_pos_x": 0.5,
-        "block_pos_y": 0.15,
+        "block_pos_y": 0.2,
         "block_angle": -np.pi/2,
         "ee_goal_pos": [0.45, 0.1, 0.035]
     }
@@ -73,8 +77,8 @@ elif SEED == 44:
     }
 elif SEED == 45:
     det_init = {
-        "block_pos_x": 0.55,
-        "block_pos_y": -0.1,
+        "block_pos_x": 0.45,
+        "block_pos_y": -0.15,
         "block_angle": 0*np.pi,
         "ee_goal_pos": [0.45, 0.1, 0.035]
     }
@@ -120,7 +124,7 @@ elif args.algorithm == "mppi":
         alpha=ALPHA,
         seed=SEED,
         update_cov=UPDATE_COV,
-        shift=True,
+        shift=SHIFT,
     )
 elif args.algorithm == "cem":
     print("Running CEM")
@@ -134,7 +138,7 @@ elif args.algorithm == "cem":
         alpha=ALPHA,
         num_randomizations=NUM_RANDOMIZATIONS,
         seed=SEED,
-        shift=True,
+        shift=SHIFT,
         planning_freq=PLANNING_FREQUENCY,
         update_cov=UPDATE_COV,
     )
@@ -145,33 +149,32 @@ elif args.algorithm == "mtp":
         temperature=TEMPERATURE,
         num_samples=NUM_SAMPLES,
         M=3,
-        N=48,
+        N=64,
         sigma_min=SIGMA,
         sigma_max=SIGMA,
         sigma_start=SIGMA,
         num_elites=NUM_ELITES,
         keep_elites=KEEP_ELITES,   
-        beta=0.25,
+        beta=BETA,
         alpha=ALPHA,
         interpolation='akima',
         num_randomizations=NUM_RANDOMIZATIONS,
         seed=SEED,
         update_cov=UPDATE_COV,
-        shift=True,
+        shift=SHIFT,
+        savgol_filter=SAVGOL_FILTER,
         planning_freq=PLANNING_FREQUENCY,
     )
-    
+
 
 
 mj_model, mj_data = task.reset(seed=SEED)
 
-path = get_data_path() / "pushT_sim_extensions" / "keep_elites"
+path = get_data_path() / "pushT_sim_sweep" / "free"
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
-if KEEP_ELITES > 1:
-    path = path / f"seed_{SEED}_{args.algorithm}_{KEEP_ELITES}.pkl"
-else:    
-    path = path / f"seed_{SEED}_{args.algorithm}.pkl"
+
+path = path / f"seed_{SEED}_{args.algorithm}.pkl"
 
 # Run the interactive simulation
 max_traces = 30

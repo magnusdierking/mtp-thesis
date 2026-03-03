@@ -108,7 +108,7 @@ class PushTFranka(Task):
                         get_root_path()
                         / "models"
                         / "fr3_pushT_vel"
-                        / "scene_mjx_joint_small.xml"
+                        / "scene_mjx_joint.xml"
                     ).as_posix()
                 )
             else:
@@ -180,7 +180,7 @@ class PushTFranka(Task):
         self.block_type = block_type
 
         # Get block joint indices
-        if block_type == "dr-3dof" or block_type == "sim-real":
+        if block_type == "dr-3dof" or block_type == "3dof":
             self.block_joint_names = ["T_x", "T_y", "T_z"]
         elif block_type == "free" or block_type == "dr-free":
             self.block_joint_names = ["T"]
@@ -236,7 +236,7 @@ class PushTFranka(Task):
         mj_data.qpos[0] = pos_x
         mj_data.qpos[1] = pos_y
         mj_data.qpos[2] = 0.045
-        if self.block_type in ["joint"]:
+        if self.block_type in ["3dof"]:
             mj_data.qpos[2] = angle
         else:
             quat = euler_to_quaternion(
@@ -430,7 +430,7 @@ class PushTFranka(Task):
         if self.block_type == "3dof" or self.block_type == "dr-3dof":
             total_goal_err = 30 * position_cost + 3 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost
-        elif self.block_type == "free" or self.block_type == "dr-free":
+        elif self.block_type == "free":
             total_goal_err = 30 * position_cost + 3 * orientation_cost
             error = total_goal_err + 0.005 * ee_block_distance_cost
         elif self.block_type == "dr-free":

@@ -122,7 +122,11 @@ class AnMTP(SamplingBasedController):
         self.alpha_noise = 1.0  # 0=white, 1=pink, 2=brown
         # shift
         self.shift = shift
-        self.last_a_idx = int(self.task.dt * planning_freq)
+        replan_period = 1 / planning_freq
+        prediction_horizon = self.task.planning_horizon * self.task.dt
+        self.last_a_idx = int(
+            jnp.floor(replan_period / prediction_horizon * self.task.planning_horizon)
+        )
         
         self.default_zero_controls = default_zero_controls
 

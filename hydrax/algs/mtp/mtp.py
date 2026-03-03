@@ -21,7 +21,7 @@ class MTPParams:
     cov: jax.Array = None
     spline: jax.Array = None
     elites: jax.Array = None  # (num_elites, T, U), optional
-    beta: float = 0.0
+    # beta: float = 0.0
 
     predicted_state: jax.Array = (
         None  # (domains, sites, prediction_horizon, state), optional
@@ -222,7 +222,7 @@ class MTP(SamplingBasedController):
             cov=cov,
             predicted_state=predicted_state,
             domain_weights=domain_weights,
-            beta=self.beta,
+            # beta=self.beta,
         )
 
     def sample_controls(self, params: MTPParams) -> Tuple[jax.Array, MTPParams]:

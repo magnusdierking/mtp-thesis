@@ -1,12 +1,12 @@
 import argparse
+from random import seed
 
 from hydrax.algs import MPPI, MTP, CEM
 from hydrax.algs.mtp.an_mtp_opt import AnMTP
 # from hydrax.algs.mtp.an_mtp_dr import AnMTP
 
 from hydrax.utils.files import get_data_path
-from hydrax.simulation.deterministic import run_interactive
-# from hydrax.simulation.deterministic_dr import run_interactive
+from hydrax.simulation.deterministic_beta import run_interactive
 from hydrax.simulation.deterministic_headless import run_headless_simulation
 
 from hydrax.tasks.pusht_franka import PushTFranka
@@ -18,70 +18,80 @@ import numpy as np
 
 # --------------------------------------------------- #
 UPDATE_COV = False
-NUM_SAMPLES = 512
+SHIFT = True
+SAVGOL_FILTER = False,
+NUM_SAMPLES = 256
 NUM_RANDOMIZATIONS = 1
 PLANNING_FREQUENCY = 20
-PLANNING_HORIZON = 10
+PLANNING_HORIZON = 8
 SIM_STEPS_PER_CONTROL_STEP = 2
 MAX_SPEED = 0.35  # m/s
 
 SIGMA = 0.2
 ALPHA = 0.1
 TEMPERATURE = 0.1
-NUM_ELITES = 36
+NUM_ELITES = 48
+KEEP_ELITES = 1
+
+# AnMTP
+BETA = 0.1
+BETA_MIN = 0.1
+BETA_MAX = 0.75
 
 SEED = 42
 # ------------------------------------------------- #
 
 
+if SEED == 40:
+    det_init = {
+        "block_pos_x": 0.6,
+        "block_pos_y": -0.1,
+        "block_angle": np.pi/2,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 41:
+    det_init = {
+        "block_pos_x": 0.65,
+        "block_pos_y": 0.0,
+        "block_angle": np.pi,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 42:
+    det_init = {
+        "block_pos_x": 0.6,
+        "block_pos_y": 0.05,
+        "block_angle": 5*np.pi/4,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 43:
+    det_init = {
+        "block_pos_x": 0.5,
+        "block_pos_y": 0.15,
+        "block_angle": -np.pi/2,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 44:
+    det_init = {
+        "block_pos_x": 0.4,
+        "block_pos_y": -0.05,
+        "block_angle": -np.pi/4,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
+elif SEED == 45:
+    det_init = {
+        "block_pos_x": 0.55,
+        "block_pos_y": -0.1,
+        "block_angle": 0*np.pi,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
 
-# seed = 100
-# update_cov = True
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": -0.1,
-#     "block_pos_y": 0.15,
-#     "block_angle": np.pi/4,
-#     "ee_goal_pos": [0.35, 0.0, 0.035]
-# }
-
-# seed = 200
-# update_cov = False
-# sigma_max = 0.75
-# sigma_min = 0.05
-# sigma_start = 0.2
-# det_init = {
-#     "block_pos_x": 0.05,
-#     "block_pos_y": 0.15,
-#     "block_angle": 3*np.pi/4,
-#     "ee_goal_pos": [0.45, 0.1, 0.035]
-# }
-
-
-# det_init = {
-#     "block_pos_x": 0.6,
-#     "block_pos_y": 0.05,
-#     "block_angle": np.pi/8,
-#     "ee_goal_pos": [0.4, 0.0, 0.045]
-# }
-
-
-det_init = {
-    "block_pos_x": 0.6,
-    "block_pos_y": -0.1,
-    "block_angle": np.pi/4,
-    "ee_goal_pos": [0.45, 0.1, 0.035]
-}
-
-
-# det_init = {
-#     "block_pos_x": 0.6,
-#     "block_pos_y": -0.2,
-#     "block_angle": 0,
-#     "ee_goal_pos": [0.4, 0.0, 0.045]
-# }
+elif SEED == 48:
+    det_init = {
+        "block_pos_x": 0.6,
+        "block_pos_y": -0.1,
+        "block_angle": np.pi/8,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
+    }
 
 
 task = PushTFranka(ik_type = 'pinv',
@@ -109,103 +119,113 @@ subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
 
-path = get_data_path() / "pushT_sim_sweep" / "free"
-if not path.exists():       
-    path.mkdir(parents=True, exist_ok=True)
-path = path / f"seed_{SEED}_update_cov_{UPDATE_COV}.csv"
 
-
-# Set the controller based on command-line arguments
 if args.algorithm is None: 
     args.algorithm = "mtp"  # Default to MTP
-
+elif args.algorithm == "mppi":
+    print("Running MPPI")
+    ctrl = MPPI(
+        task,
+        num_samples=NUM_SAMPLES,
+        noise_level=SIGMA,
+        temperature=TEMPERATURE,
+        num_randomizations=NUM_RANDOMIZATIONS,
+        alpha=ALPHA,
+        seed=SEED,
+        update_cov=UPDATE_COV,
+        shift=SHIFT,
+    )
+elif args.algorithm == "cem":
+    print("Running CEM")
+    ctrl = CEM(
+        task,
+        num_samples=NUM_SAMPLES,
+        num_elites=NUM_ELITES,
+        sigma_start=SIGMA,
+        sigma_min=SIGMA,
+        sigma_max=SIGMA,
+        alpha=ALPHA,
+        num_randomizations=NUM_RANDOMIZATIONS,
+        seed=SEED,
+        shift=SHIFT,
+        planning_freq=PLANNING_FREQUENCY,
+        update_cov=UPDATE_COV,
+    )
 elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
         task,
-        temperature=0.1,
+        temperature=TEMPERATURE,
         num_samples=NUM_SAMPLES,
-        M=4, # horizon via control points
-        N=32, # samples
-        sigma_min=sigma_min,
-        sigma_max=sigma_max,
-        sigma_start=sigma_start,
-        num_elites=36,
-        keep_elites=1,   # !experimental
-        beta=0.3,
-        alpha=0.1,
-        interpolation='bspline',
+        M=3,
+        N=64,
+        sigma_min=SIGMA,
+        sigma_max=SIGMA,
+        sigma_start=SIGMA,
+        num_elites=NUM_ELITES,
+        keep_elites=KEEP_ELITES,   
+        beta=BETA,
+        alpha=ALPHA,
+        interpolation='akima',
         num_randomizations=NUM_RANDOMIZATIONS,
-        seed=seed,
-        update_cov=update_cov,
-        planning_freq=20,
-        savgol_filter=True,  # !experimental
-        default_zero_controls=False,
+        seed=SEED,
+        update_cov=UPDATE_COV,
+        shift=SHIFT,
+        savgol_filter=SAVGOL_FILTER,
+        planning_freq=PLANNING_FREQUENCY,
     )
-    error_log = "./../data/error_log_pushT/mtp_{seed}.npy".format(seed=seed)
-    
 elif args.algorithm == "anmtp":
     print("Running AnMTP")
     ctrl = AnMTP(
-            task,
-            num_samples=NUM_SAMPLES,
-            M=3, # horizon via control points
-            N=64, # samples
-            sigma_min=sigma_min,
-            sigma_max=sigma_max,
-            sigma_start=sigma_start,
-            num_elites=24,
-            keep_elites=3,   # !experimental
-            beta = 0.25,
-            beta_lr = 0.1,        # adaptation step size
-            beta_min = 0.0,
-            beta_max = 0.35,
-            alpha=0.0,
-            interpolation='bspline',
-            shift = True,
-            num_randomizations=NUM_RANDOMIZATIONS,
-            seed=seed,
-            update_cov=update_cov,
-        )
-    error_log = "./../data/error_log_pushT/anmtp_{seed}.npy".format(seed=seed)
-    
+        task,
+        num_samples=NUM_SAMPLES,
+        M=3, # horizon via control points
+        N=64, # samples
+        sigma_min=SIGMA,
+        sigma_max=SIGMA,
+        sigma_start=SIGMA,
+        num_elites=NUM_ELITES,
+        keep_elites=KEEP_ELITES,   # !experimental
+        beta = BETA_MAX,
+        beta_min = BETA_MIN,
+        beta_max = BETA_MAX,
+        alpha=ALPHA,
+        interpolation='akima',
+        savgol_filter=SAVGOL_FILTER,
+        shift = SHIFT,
+        num_randomizations=NUM_RANDOMIZATIONS,
+        seed=SEED,
+        update_cov=UPDATE_COV ,
+    )
 
 
+mj_model, mj_data = task.reset(seed=SEED)
 
-
-
-
-
-mj_model, mj_data = task.reset(seed=seed)
+path = get_data_path() / "pushT_sim_extensions" / "annealing"
+if not path.exists():       
+    path.mkdir(parents=True, exist_ok=True)
+if args.algorithm in ["mtp"]:
+    path = path / f"seed_{SEED}_{args.algorithm}_{BETA}.pkl"
+else:    
+    path = path / f"seed_{SEED}_{args.algorithm}.pkl"
 
 # Run the interactive simulation
-max_traces = 20
+max_traces = 30
 trace_idxs = [i * max_traces for i in range(NUM_SAMPLES // max_traces)]
 print("Tracing indices:", trace_idxs)
 run_interactive(
     ctrl,
     mj_model,
     mj_data,
-    frequency=20,
+    frequency=PLANNING_FREQUENCY,
     show_traces=True,
     trace_width=0.25,
     max_traces=max_traces,
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,
-    max_step=300,
-    seed=seed,
+    max_step=200,
+    seed=SEED,
     trace_idxs=trace_idxs,
-    # log_file=path.as_posix(),
+    log_file=path.as_posix(),
     )
-
-
-# run_headless_simulation(
-#     task,
-#     ctrl,
-#     frequency=50,
-#     seeds=[seed],
-#     max_step=500,
-#     log_file_prefix="pusht_franka_" + args.algorithm,
-#     save_path="./results"
-#     )

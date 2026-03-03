@@ -28,7 +28,7 @@
 
     <default class="tblock">
       <!-- friction = [slide spin roll]; -->
-      <geom friction="0.3 0.001 0.01" 
+      <geom friction="0.5 0.001 0.01" 
             solref="0.05 1.1" 
             solimp="0.8 0.85 0.002 0.5 2"
             condim="3"
@@ -43,7 +43,7 @@
     </default>
 
     <default class="wood">
-      <geom friction="0.3"
+      <geom friction="0.6"
             solref="0.05 1.5" 
             solimp="0.5 0.85 0.002 0.5 2"
             rgba="0.295 0.227 0.15 1.0"
@@ -80,31 +80,6 @@
   <!-- Robot model -->
   <include file="fr3_vel_mjx_free.xml"/>
 
-  <worldbody>
-    <!-- <body name="sphere_carrier" pos="0.45 0 0.035" quat="0 0.7071068 0.7071068 0">  -->
-      <!-- <joint name="carrier_x" type="slide" axis="1 0 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             x -->
-      <!-- <joint name="carrier_y" type="slide" axis="0 1 0" damping="0" frictionloss="0" armature="0" stiffness="0"/>             y -->
-      <!-- <joint type="hinge" axis="0 0 1" damping="0" frictionloss="0" armature="0" stiffness="0"/>       -->
-      <!-- <geom name="ee_sphere" type="sphere" size="0.015" -->
-            <!-- friction="0 0.0 0.0" -->
-            <!-- contype="0" conaffinity="0"/> -->
-      <!-- <site name="sphere_site" pos="0 0 0"/> -->
-    <!-- </body> -->
-  </worldbody>
-
-  <contact>
-    <!-- <exclude body1="ee_frame" body2="sphere_carrier"/> -->
-  </contact>
-
-  <equality>
-    <!-- (Linear) equality constraint for end effector -->
-    <!-- <connect site1="ee_site" site2="sphere_site"
-             solref="0.06 1.0"
-             solimp="0.8 0.95 0.01 0.1 5.0"/> -->
-    <!-- Full 6 DoF equality MoCAP vs free object -->
-    <!-- <weld name="sensor_coupling" body1="block" body2="ghost_block" 
-          solref="0.05 1" solimp="0.85 0.99 0.001"/> -->
-  </equality>
 
   <sensor>
     <framepos name="position" objtype="body" objname="block" reftype="body" refname="goal"/>

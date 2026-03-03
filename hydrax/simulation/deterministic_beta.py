@@ -28,38 +28,6 @@ controller running one after the other in the same thread.
 """    
 
 
-def ik(
-    model: mujoco.MjModel,
-    data: mujoco.MjData,
-    body_id: str = "ee_frame",
-    desired_xy: np.ndarray = np.zeros(2),
-    num_iters: int = 10,
-) -> np.ndarray:
-
-    step_size = 0.05
-    actuator_joint_names = ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7']
-    actuator_joint_idxs = [model.joint(name).id for name in actuator_joint_names]
-
-    for _ in range(num_iters):
-        ee_position_sensor = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_frame_pos"
-        )
-        sensor_adr_pos = model.sensor_adr[ee_position_sensor]
-        ee_pos = data.sensordata[sensor_adr_pos : sensor_adr_pos + 3]
-
-        desired_xy_vel = np.clip(desired_xy - ee_pos[:2], -step_size, step_size)
-
-        dq = differential_IK(
-            model,
-            data,
-            body_id=body_id,
-            world_site_vel_desired=desired_xy,
-        )
-        # Apply joint update
-        data.qpos[actuator_joint_idxs] += dq
-        mujoco.mj_forward(model, data)
-    return data.qpos[actuator_joint_idxs]
-
 
 def differential_IK(
     model: mujoco.MjModel,
@@ -296,20 +264,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
         # --- init ---
         if hasattr(policy_params, 'beta'):
-            sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
-            ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
+            max_error = controller.task.running_cost(mj_data, jnp.zeros(2))
 
-            sensor_adr_block = mj_model.sensor_adr[controller.task.block_global_position_sensor]
-            block_pos = mj_data.sensordata[sensor_adr_block : sensor_adr_block + 3]
-
-            error = jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) # only x,y
-            max_error = error
-            print(f"Initial position error: {error:.4f} m")
-            # alpha = 0.25          
-            # sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
-            # ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
-            # kw = {"beta_min": controller.beta_min, "beta_max": controller.beta_max}
-            # sched = RatioEMAScheduler(alpha=alpha, **kw).init(np.array(ee_pos))
 
         step = 0 
         while viewer.is_running():
@@ -432,19 +388,13 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
             # ----- adaptive beta (single alpha) -----
             if hasattr(policy_params, 'beta'):
-                sensor_adr = mj_model.sensor_adr[controller.task.ee_position_sensor]
-                ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
 
-                sensor_adr_block = mj_model.sensor_adr[controller.task.block_global_position_sensor]
-                block_pos = mj_data.sensordata[sensor_adr_block : sensor_adr_block + 3]
-
-                error = jnp.linalg.norm(ee_pos[:2] - block_pos[:2]) # only x,y
-                max_error = max(max_error, error)
+                max_error = max(max_error, state_error)
                 
-                new_beta = controller.beta_max * (error / max_error)
+                new_beta = controller.beta_max * (state_error / max_error)
                 new_beta = jnp.clip(new_beta, controller.beta_min, controller.beta_max)
                 policy_params = controller.update_beta(float(new_beta), policy_params)
-                print(f"Initial position error: {error:.4f} m")
+                print(f"Initial error: {state_error:.4f} m")
          
             # -------------------------------------------
 
