@@ -101,13 +101,13 @@ def differential_IK(
     return dq
 
 # ------------------------------ #
-
 det_init = {
-        "block_pos_x": 0.65,
-        "block_pos_y": 0.0,
-        "block_angle": np.pi,
-        "ee_goal_pos": [0.5, 0.0, 0.035]
+        "block_pos_x": 0.6,
+        "block_pos_y": 0.05,
+        "block_angle": 5*np.pi/4,
+        "ee_goal_pos": [0.45, 0.1, 0.035]
     }
+
 
 
 

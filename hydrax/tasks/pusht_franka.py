@@ -112,7 +112,7 @@ class PushTFranka(Task):
                     ).as_posix()
                 )
             else:
-                raise ValueError("block_type must be 'joint', 'free' or 'sim-real'")
+                raise ValueError("block_type must be 'joint', '3dof' or 'dr-free' or 'dr-3dof'")
         else:
             raise ValueError("actuation_type must be 'position' or 'velocity'")
 

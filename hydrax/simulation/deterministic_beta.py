@@ -387,15 +387,27 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # ee_pos = mj_data.sensordata[sensor_adr : sensor_adr + 3]
 
             # ----- adaptive beta (single alpha) -----
-            if hasattr(policy_params, 'beta'):
+            if hasattr(policy_params, 'beta') and step > 1:
 
-                max_error = max(max_error, state_error)
+                # max_error = max(max_error, state_error)
                 
-                new_beta = controller.beta_max * (state_error / max_error)
-                new_beta = jnp.clip(new_beta, controller.beta_min, controller.beta_max)
-                policy_params = controller.update_beta(float(new_beta), policy_params)
-                print(f"Initial error: {state_error:.4f} m")
-         
+                # new_beta = controller.beta_max * (state_error / max_error)
+                # new_beta = jnp.clip(new_beta, controller.beta_min, controller.beta_max)
+                # policy_params = controller.update_beta(float(new_beta), policy_params)
+                # print(f"Initial error: {state_error:.4f} m")
+                
+                # Alternative, scale up with factor if state error doesnt change
+                if logs[-1]["state_error"] >= state_error:
+                    new_beta = policy_params.beta * 0.9
+                    new_beta = jnp.clip(new_beta, controller.beta_min, controller.beta_max)
+                    policy_params = controller.update_beta(float(new_beta), policy_params)
+                    print(f"State error improved, decreasing beta to {new_beta:.4f}")
+                else:
+                    new_beta = policy_params.beta * 1.01
+                    new_beta = jnp.clip(new_beta, controller.beta_min, controller.beta_max)
+                    policy_params = controller.update_beta(float(new_beta), policy_params)
+                    print(f"State error unchanged, increasing beta to {new_beta:.4f}")
+                    
             # -------------------------------------------
 
             # Capture frame if recording
@@ -437,6 +449,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 "state_error": float(state_error),
                 "state_cost": float(rollouts.costs[0, 0]),
                 "success": task_success,
+                "beta": float(policy_params.beta) if hasattr(policy_params, 'beta') else None,
             })
 
 

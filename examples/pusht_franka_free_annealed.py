@@ -23,8 +23,8 @@ SAVGOL_FILTER = False,
 NUM_SAMPLES = 256
 NUM_RANDOMIZATIONS = 1
 PLANNING_FREQUENCY = 20
-PLANNING_HORIZON = 8
-SIM_STEPS_PER_CONTROL_STEP = 2
+PLANNING_HORIZON = 15
+SIM_STEPS_PER_CONTROL_STEP = 1
 MAX_SPEED = 0.35  # m/s
 
 SIGMA = 0.2
@@ -34,11 +34,12 @@ NUM_ELITES = 48
 KEEP_ELITES = 1
 
 # AnMTP
-BETA = 0.1
-BETA_MIN = 0.1
-BETA_MAX = 0.75
+BETA = 0.4
+BETA_MIN = 0.2
+BETA_MAX = 0.6
 
-SEED = 42
+SEED = 44
+TYPE = 'free' # '3dof' or 'free'
 # ------------------------------------------------- #
 
 
@@ -66,7 +67,7 @@ elif SEED == 42:
 elif SEED == 43:
     det_init = {
         "block_pos_x": 0.5,
-        "block_pos_y": 0.15,
+        "block_pos_y": 0.2,
         "block_angle": -np.pi/2,
         "ee_goal_pos": [0.45, 0.1, 0.035]
     }
@@ -79,8 +80,8 @@ elif SEED == 44:
     }
 elif SEED == 45:
     det_init = {
-        "block_pos_x": 0.55,
-        "block_pos_y": -0.1,
+        "block_pos_x": 0.45,
+        "block_pos_y": -0.15,
         "block_angle": 0*np.pi,
         "ee_goal_pos": [0.45, 0.1, 0.035]
     }
@@ -93,6 +94,8 @@ elif SEED == 48:
         "ee_goal_pos": [0.45, 0.1, 0.035]
     }
 
+if TYPE == '3dof':
+    det_init["block_pos_x"] = det_init["block_pos_x"] - 0.5 - 0.09
 
 task = PushTFranka(ik_type = 'pinv',
                     planning_horizon=PLANNING_HORIZON,
@@ -103,7 +106,7 @@ task = PushTFranka(ik_type = 'pinv',
                     actuation_type='velocity',
                     sampling_space="velocity",
                     det_init=det_init,
-                    block_type = 'free',
+                    block_type = TYPE,
                 )
 
 parser = argparse.ArgumentParser(
@@ -112,8 +115,6 @@ parser = argparse.ArgumentParser(
 subparsers = parser.add_subparsers(
     dest="algorithm", help="Sampling algorithm (choose one)"
 )
-subparsers.add_parser("mppi", help="Model Predictive Path Integral Control")
-subparsers.add_parser("cem", help="Cross Entropy Method")
 subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
@@ -122,35 +123,6 @@ args = parser.parse_args()
 
 if args.algorithm is None: 
     args.algorithm = "mtp"  # Default to MTP
-elif args.algorithm == "mppi":
-    print("Running MPPI")
-    ctrl = MPPI(
-        task,
-        num_samples=NUM_SAMPLES,
-        noise_level=SIGMA,
-        temperature=TEMPERATURE,
-        num_randomizations=NUM_RANDOMIZATIONS,
-        alpha=ALPHA,
-        seed=SEED,
-        update_cov=UPDATE_COV,
-        shift=SHIFT,
-    )
-elif args.algorithm == "cem":
-    print("Running CEM")
-    ctrl = CEM(
-        task,
-        num_samples=NUM_SAMPLES,
-        num_elites=NUM_ELITES,
-        sigma_start=SIGMA,
-        sigma_min=SIGMA,
-        sigma_max=SIGMA,
-        alpha=ALPHA,
-        num_randomizations=NUM_RANDOMIZATIONS,
-        seed=SEED,
-        shift=SHIFT,
-        planning_freq=PLANNING_FREQUENCY,
-        update_cov=UPDATE_COV,
-    )
 elif args.algorithm == "mtp":
     print("Running MTP")
     ctrl = MTP(
@@ -186,11 +158,11 @@ elif args.algorithm == "anmtp":
         sigma_start=SIGMA,
         num_elites=NUM_ELITES,
         keep_elites=KEEP_ELITES,   # !experimental
-        beta = BETA_MAX,
+        beta = BETA,
         beta_min = BETA_MIN,
         beta_max = BETA_MAX,
         alpha=ALPHA,
-        interpolation='akima',
+        interpolation='bspline',
         savgol_filter=SAVGOL_FILTER,
         shift = SHIFT,
         num_randomizations=NUM_RANDOMIZATIONS,
@@ -224,7 +196,7 @@ run_interactive(
     fixed_camera_id=0,
     show_ui=True,
     record_video=False,
-    max_step=200,
+    max_step=100,
     seed=SEED,
     trace_idxs=trace_idxs,
     log_file=path.as_posix(),

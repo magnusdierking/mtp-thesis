@@ -1,18 +1,12 @@
 import argparse
-from random import seed
 
-from hydrax.algs import MPPI, MTP, CEM
-from hydrax.algs.mtp.an_mtp_opt import AnMTP
-# from hydrax.algs.mtp.an_mtp_dr import AnMTP
-
-from hydrax.utils.files import get_data_path
-from hydrax.simulation.deterministic_beta import run_interactive
-from hydrax.simulation.deterministic_headless import run_headless_simulation
-
-from hydrax.tasks.pusht_franka import PushTFranka
-import jax
 import jax.numpy as jnp
 import numpy as np
+
+from hydrax.algs import MPPI, MTP, CEM, PredictiveSampling
+from hydrax.simulation.deterministic_beta import run_interactive
+from hydrax.tasks.pusht_franka import PushTFranka
+from hydrax.utils.files import get_data_path
 
 
 
@@ -23,7 +17,9 @@ SAVGOL_FILTER = False,
 NUM_SAMPLES = 256
 NUM_RANDOMIZATIONS = 1
 PLANNING_FREQUENCY = 20
-PLANNING_HORIZON = 15
+
+# short horizon 15 x 1, long horizon 25 x 1
+PLANNING_HORIZON = 20
 SIM_STEPS_PER_CONTROL_STEP = 1
 MAX_SPEED = 0.35  # m/s
 
@@ -34,9 +30,9 @@ NUM_ELITES = 48
 KEEP_ELITES = 1
 
 # AnMTP
-BETA = 0.4
+BETA = 0.5
 
-SEED = 40
+SEED = 41
 # ------------------------------------------------- #
 
 
@@ -107,7 +103,7 @@ subparsers = parser.add_subparsers(
 subparsers.add_parser("mppi", help="Model Predictive Path Integral Control")
 subparsers.add_parser("cem", help="Cross Entropy Method")
 subparsers.add_parser("mtp", help="MTP")
-subparsers.add_parser("anmtp", help="Annealed MTP")
+subparsers.add_parser("ps", help="Predictive Sampling")
 args = parser.parse_args()
 
 
@@ -166,12 +162,24 @@ elif args.algorithm == "mtp":
         savgol_filter=SAVGOL_FILTER,
         planning_freq=PLANNING_FREQUENCY,
     )
-
+elif args.algorithm == "ps":
+    print("Running Predictive Sampling")
+    ctrl = PredictiveSampling(
+        task,
+        num_samples=NUM_SAMPLES,
+        num_randomizations=NUM_RANDOMIZATIONS,
+        seed=SEED,
+        noise_level=SIGMA,
+        shift=SHIFT,
+        alpha=ALPHA,
+        savgol_filter=SAVGOL_FILTER,
+        planning_freq=PLANNING_FREQUENCY,
+    )
 
 
 mj_model, mj_data = task.reset(seed=SEED)
 
-path = get_data_path() / "pushT_sim_sweep" / "joint"
+path = get_data_path() / "pushT_sim_sweep" / "joint_long"
 if not path.exists():       
     path.mkdir(parents=True, exist_ok=True)
 
