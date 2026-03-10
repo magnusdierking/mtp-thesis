@@ -43,7 +43,6 @@ subparsers.add_parser("mppi", help="Model Predictive Path Integral Control")
 subparsers.add_parser("cem", help="CEM")
 subparsers.add_parser("mtp", help="MTP")
 subparsers.add_parser("ps", help="Predictive Sampling")
-subparsers.add_parser("anmtp", help="Annealed MTP")
 args = parser.parse_args()
 
 
@@ -97,28 +96,6 @@ elif args.algorithm == "mtp":
             num_randomizations=1,
         )
 
-elif args.algorithm == "anmtp":
-    print("Running Annealed MTP")
-    ctrl = AnMTP(
-            task,
-            num_samples=num_samples,
-            M=3,
-            N=32,
-            sigma_start=0.15,
-            temperature=0.01,
-            num_elites=8,
-            keep_elites=1,   # !experimental
-            beta=0.35,
-            beta_lr=0.3,
-            beta_decay=0.9,
-            beta_min=0.1,
-            beta_max=0.6,
-            alpha=0.1,
-            interpolation='akima',
-            num_randomizations=1,
-            beta_strategy='greedy',
-        )
-    
 else:
     parser.error("Invalid algorithm")
 
@@ -148,18 +125,3 @@ run_interactive(
 )
 sys.exit()
 
-
-
-
-
-# run headless simulation
-# seeds = [0, 1, 2, 10, 11, 12]
-# run_headless_simulation(
-#     task,
-#     ctrl,
-#     seeds=seeds,
-#     frequency=25,
-#     max_step=1000,       
-#     log_file_prefix="clean",
-#     save_path=save_path,
-# )

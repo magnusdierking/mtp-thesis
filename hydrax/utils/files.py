@@ -24,6 +24,10 @@ def get_log_path():
     path = get_root_path() / 'logs'
     return path
 
+def get_img_path():
+    path = get_root_path() / 'img'
+    return path
+
 
 def load_yaml(filename):
     with open(filename, 'r') as stream:
